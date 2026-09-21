@@ -29,6 +29,12 @@ const ownerSql=`select u.id::text as id from auth.users u where u.id=$1::uuid
  and u.created_at is not null and not exists(select from auth.users other
  where other.id<>u.id and (other.created_at is null
  or date_trunc('milliseconds',other.created_at)<=date_trunc('milliseconds',u.created_at))))) for share of u`;
+const targetIdentitySql=`select current_user='postgres' and session_user='postgres'
+ and exists(select from pg_roles r join pg_database d on d.datdba=r.oid
+ where r.rolname=current_user and not r.rolsuper and r.rolbypassrls and d.datname=current_database())
+ and exists(select from pg_class c join pg_namespace n on n.oid=c.relnamespace
+ where n.nspname='public' and c.relname='SearchJob' and c.relowner=(select oid from pg_roles where rolname=current_user)
+ and c.relrowsecurity and not c.relforcerowsecurity) as safe`;
 const readSql=`select id::text as id,user_id::text as owner,
  jsonb_build_object('state',state,'county',county,'property_type',property_type,
  'date_range_start',date_range_start::text,'date_range_end',date_range_end::text,
@@ -76,7 +82,7 @@ export function validateOwnedBuyerAcceptanceCatalog(value){
  if(definitions.filter(c=>c===primary).length!==1
   ||definitions.some(c=>c!==primary&&c!==status)||definitions.filter(c=>c===status).length>1)fail();
 }
-export const OWNED_ACCEPTANCE_PREPARATION_SQL=Object.freeze({identity:identitySql,owner:ownerSql,read:readSql,insert:insertSql,catalog:catalogSql});
+export const OWNED_ACCEPTANCE_PREPARATION_SQL=Object.freeze({identity:identitySql,targetIdentity:targetIdentitySql,owner:ownerSql,read:readSql,insert:insertSql,catalog:catalogSql});
 function ownerInput(v){
  if(!exact(v,['schema','kind','ownerId','criteria'])||v.schema!==1
   ||v.kind!=='zola_acceptance_owner'||!uuid(v.ownerId)||!exact(v.criteria,fields))fail();
@@ -125,6 +131,11 @@ function aclFree(run,args,stdio=['ignore','pipe','pipe']){
 // Atomic rename is protected by the host flock and root-only ancestors. A
 // surviving complete stage is reconciled; a torn stage is retained fail-closed.
 // Never unlink a durable intent, target or unknown staging inode.
+function syncValidatedFile(io,name,snapshot){
+ const fd=io.openSync(name,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+ try{const stat=io.fstatSync(fd);for(const key of ['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'])if(stat[key]!==snapshot.identity[key])fail();io.fsyncSync(fd);}
+ finally{io.closeSync(fd);}
+}
 function publish(name,value,gid,{io,run,read}){
  const stage=name+'.stage',bytes=Buffer.from(JSON.stringify(value)+'\n');
  safeParents(io,name);
@@ -132,11 +143,11 @@ function publish(name,value,gid,{io,run,read}){
  if(exists(io,name)){
   if(exists(io,stage))fail();
   const found=read(name,gid);if(!same(found.value,value)||found.identity.gid!==gid
-   ||(found.identity.mode&0o7777)!==(gid===0?0o600:0o640))fail();return;
+   ||(found.identity.mode&0o7777)!==(gid===0?0o600:0o640))fail();syncValidatedFile(io,name,found);syncDir(io,name);return;
  }
  if(exists(io,stage)){
   const found=read(stage,gid);if(!same(found.value,value)||found.identity.gid!==gid
-   ||(found.identity.mode&0o7777)!==(gid===0?0o600:0o640))fail();
+   ||(found.identity.mode&0o7777)!==(gid===0?0o600:0o640))fail();syncValidatedFile(io,stage,found);
  }else{
   let fd;
   try{
@@ -203,6 +214,8 @@ export async function prepareOwnedBuyerAcceptanceTarget({releaseSha,credentialGr
   await client.query('begin',[]);
   await client.query('select pg_advisory_xact_lock(206994,128)',[]);
   await client.query('lock table public."SearchJob" in share row exclusive mode',[]);
+  const targetAuthority=await client.query(targetIdentitySql,[]);
+  if(targetAuthority.rows?.length!==1||targetAuthority.rows[0]?.safe!==true)fail();
   const catalog=await client.query(catalogSql,[]);
   if(catalog.rows?.length!==1)fail();validateOwnedBuyerAcceptanceCatalog(catalog.rows[0]?.proof);
   const verifiedOwner=await ownerClient.query(ownerSql,[owner.ownerId]);

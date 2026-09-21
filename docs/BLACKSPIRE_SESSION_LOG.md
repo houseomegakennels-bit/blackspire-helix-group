@@ -2210,3 +2210,6 @@ Added fixed-path source-security preparation, apply and reconcile wrapper with g
 ## 2026-09-21 — source configuration replay durability repair
 
 Independent review identified missing replay synchronization after an uncertain directory sync. Existing configuration and directory paths now synchronize before successful return; seven host tests pass including the exact rename/sync interruption. No production effects.
+## 2026-09-21 — acceptance target authority and durability review
+
+Repaired owned target BYPASSRLS/owner/FORCE checks and retained-file retry fsync. Nine focused tests and actual separate-cluster role/RLS drift checks pass; production execution remains pending review.

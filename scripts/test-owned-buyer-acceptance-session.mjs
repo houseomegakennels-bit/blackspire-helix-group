@@ -27,7 +27,7 @@ function fixture(t){
  const connect=async connection=>{connections++;return {fixtureSide:connection.fixtureSide,async query(text,values){
   if(text===sql.owner)assert.equal(connection.fixtureSide,'source');
   if(text===sql.insert||text===sql.read||text===sql.catalog)assert.equal(connection.fixtureSide,'target');
-  if(text===sql.identity)return {rows:[{safe:true}]};
+  if(text===sql.identity||text===sql.targetIdentity)return {rows:[{safe:true}]};
   if(text===sql.catalog)return {rows:[{proof:{heap:true,noEffects:!unsafeCatalog,columns:Object.entries({id:2950,user_id:2950,state:25,county:25,property_type:25,date_range_start:1082,date_range_end:1082,min_purchases:23,cash_buyers_only:16,llc_buyers_only:16,status:25,total_sales_analyzed:23,total_buyers_found:23,error_message:25,created_at:1184,updated_at:1184}).map(([name,type])=>({name,type,generated:'',identity:''})),constraints:['PRIMARY KEY (id)']}}]};
   if(text===sql.owner)return {rows:denyOwner?[]:[{id:ownerId}]};
   if(text===sql.read)return {rows:row?[structuredClone(row)]:[]};
@@ -46,12 +46,15 @@ function fixture(t){
 
 assert.equal(process.env.ZOLA_DISPOSABLE_EXECUTOR,'1');
 const ports=JSON.parse(fs.readFileSync(0,'utf8'));assert.ok([ports.source,ports.target].every(v=>/^172\.[0-9]+\.[0-9]+\.[0-9]+$/.test(v)));assert.notEqual(ports.source,ports.target);
-const clients=[],cleanups=[];const connect=async side=>{const c=new pg.Client({host:ports[side],port:5432,user:'postgres',database:'postgres',connectionTimeoutMillis:2000,query_timeout:10000,options:'-c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});await c.connect();clients.push(c);return c;};
+const clients=[],cleanups=[];const connect=async (side,user='postgres')=>{const c=new pg.Client({host:ports[side],port:5432,user,database:'postgres',connectionTimeoutMillis:2000,query_timeout:10000,options:'-c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});await c.connect();clients.push(c);return c;};
 try{
- const source=await connect('source'),target=await connect('target');
+ const source=await connect('source'),admin=await connect('target','blackspire_cluster_admin');
+ await admin.query('CREATE ROLE postgres LOGIN SUPERUSER BYPASSRLS;ALTER DATABASE postgres OWNER TO postgres');
+ const target=await connect('target');
  await source.query(`CREATE SCHEMA auth;CREATE TABLE auth.users(id uuid PRIMARY KEY,deleted_at timestamptz,banned_until timestamptz,email_confirmed_at timestamptz,raw_app_meta_data jsonb,created_at timestamptz);`);
  await source.query(`INSERT INTO auth.users(id,email_confirmed_at,raw_app_meta_data,created_at)VALUES($1,now(),' {"blackspire_role":"admin"}'::jsonb,now())`,[ownerId]);
  await target.query(prepareOwnedBuyerSchema(JSON.parse(fs.readFileSync(new URL('../packages/buyer-writer/owned-source-schema.json',import.meta.url)))).body);
+ await target.query('GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_system() TO postgres;ALTER ROLE postgres NOSUPERUSER');
  const system=(await target.query('SELECT (pg_control_system()).system_identifier::text AS id')).rows[0].id;
  const f=fixture({after:fn=>cleanups.push(fn)});
  const legacy='/var/lib/blackspire-operator/writer-acceptance.json';f.write(legacy,{retained:'original target'});const original=fs.readFileSync(f.map(legacy));
@@ -67,6 +70,9 @@ try{
  assert.equal((await target.query("SELECT to_regclass('auth.users') AS relation")).rows[0].relation,null);
  assert.equal((await source.query('SELECT deleted_at FROM auth.users WHERE id=$1',[ownerId])).rows[0].deleted_at,null);
  assert.deepEqual(fs.readFileSync(f.map(legacy)),original);
+ await target.query('ALTER TABLE public."SearchJob" FORCE ROW LEVEL SECURITY');
+ await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));await target.query('ALTER TABLE public."SearchJob" NO FORCE ROW LEVEL SECURITY');
+ await admin.query('ALTER ROLE postgres NOBYPASSRLS');await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));await admin.query('ALTER ROLE postgres BYPASSRLS');
  await source.query('UPDATE auth.users SET deleted_at=now() WHERE id=$1',[ownerId]);
  await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));assert.equal(inserts,1);
  console.log('PASS: actual original-owner lock, separate target insert, exact retry, revocation refusal and untouched legacy target; protected profile/systemd modeled.');

@@ -26,7 +26,7 @@ function fixture(t){
  const connect=async connection=>{connections++;return {fixtureSide:connection.fixtureSide,async query(text,values){
   if(text===sql.owner)assert.equal(connection.fixtureSide,'source');
   if(text===sql.insert||text===sql.read||text===sql.catalog)assert.equal(connection.fixtureSide,'target');
-  if(text===sql.identity)return {rows:[{safe:true}]};
+  if(text===sql.identity||text===sql.targetIdentity)return {rows:[{safe:true}]};
   if(text===sql.catalog)return {rows:[{proof:{heap:true,noEffects:!unsafeCatalog,columns:Object.entries({id:2950,user_id:2950,state:25,county:25,property_type:25,date_range_start:1082,date_range_end:1082,min_purchases:23,cash_buyers_only:16,llc_buyers_only:16,status:25,total_sales_analyzed:23,total_buyers_found:23,error_message:25,created_at:1184,updated_at:1184}).map(([name,type])=>({name,type,generated:'',identity:''})),constraints:['PRIMARY KEY (id)']}}]};
   if(text===sql.owner)return {rows:denyOwner?[]:[{id:ownerId}]};
   if(text===sql.read)return {rows:row?[structuredClone(row)]:[]};
@@ -73,7 +73,8 @@ test('crash after target rename is reconciled without new database write',option
  const f=fixture(t),rename=f.deps.io.renameSync;let interrupted=false;
  f.deps.io.renameSync=(from,to)=>{rename(from,to);if(to===TARGET&&!interrupted){interrupted=true;throw new Error('crash');}};
  await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));
- await prepareOwnedBuyerAcceptanceTarget(input,f.deps);assert.equal(f.inserts,1);assert.equal(f.ids,1);
+ let fileSynced=0,directorySynced=0;const sync=f.deps.io.fsyncSync;f.deps.io.fsyncSync=fd=>{const stat=fs.fstatSync(fd);if(stat.isDirectory())directorySynced++;else if(stat.ino===fs.statSync(f.map(TARGET)).ino)fileSynced++;return sync(fd);};
+ await prepareOwnedBuyerAcceptanceTarget(input,f.deps);assert.equal(f.inserts,1);assert.equal(f.ids,1);assert.ok(fileSynced>0);assert.ok(directorySynced>0);
 });
 test('torn intent stage, symlink target, unexpected criteria and broad owner mode refuse',options,async t=>{
  const f=fixture(t);fs.writeFileSync(f.map(INTENT+'.stage'),'{',{mode:0o600});
@@ -97,4 +98,10 @@ test('host flock excludes overlapping invocation and is released after failure',
 test('unsafe relation effects and running services refuse before insertion',options,async t=>{
  const f=fixture(t);f.unsafeCatalog();await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));assert.equal(f.inserts,0);
  f.active();const prior=f.connections;await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));assert.equal(f.connections,prior);
+});
+
+test('target bypass, ownership and FORCE RLS authority is required before target data access',options,async t=>{
+ const f=fixture(t),connect=f.deps.connect;let targetData=0;
+ f.deps.connect=async(...args)=>{const c=await connect(...args),query=c.query.bind(c);c.query=async(text,values)=>{if(text===sql.targetIdentity)return {rows:[{safe:false}]};if(text===sql.read||text===sql.insert)targetData++;return query(text,values);};return c;};
+ await assert.rejects(prepareOwnedBuyerAcceptanceTarget(input,f.deps));assert.equal(targetData,0);assert.equal(f.inserts,0);
 });
