@@ -1,3 +1,4 @@
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 const reject=()=>{throw new Error('Production stage history rejected');};
@@ -27,8 +28,7 @@ export function inspectSequencedHeldAcceptanceHistory(events){
   const state=inspectReleaseSequenceHistory(events.slice(0,index));
   if(state.pending?.stage!==stage||observed.claims.commanderRunId!==state.context.operationId
    ||observed.claims.mergeMainSha!==state.outputs.capture_new_main_sha?.newMainSha
-   ||observed.claims.workspace!==state.context.workspace||observed.claims.principal!==state.context.principal
-   ||row.attemptId!==undefined&&row.attemptId!==state.pending.attemptId)reject();
+   ||!isProductionAcceptanceIdentity(observed.claims))reject();
  }
  return observed;
 }

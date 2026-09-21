@@ -1,3 +1,4 @@
+import {HELD_ACCEPTANCE_CAPABILITIES,HELD_ACCEPTANCE_OPERATIONS} from '../packages/zola-release/held-acceptance-authority.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
@@ -78,4 +79,38 @@ test('final record histories bind completed-stage evidence and reject tampered r
  assert.equal((await runReleaseSequence({input,journal,adapters})).stage,'guarded_held_to_open');
  assert.equal(inspectReleaseCommander(journal).status,'OBSERVED');
  record.stageInputDigest='0'.repeat(64);assert.throws(()=>inspectReleaseCommander(journal));
+});
+
+test('HELD journal distinguishes runtime principal and inner permit attempts from coordinator identities',async()=>{
+ const events=[],journal={stream:()=>({events:()=>structuredClone(events),append:row=>events.push(structuredClone(row))})};
+ const pass=()=>({status:'PASS',evidence:{ok:true}}),coordinator={...input,workspace:'zola-production'};
+ delete coordinator.inputDigest;coordinator.inputDigest=hash(coordinator);
+ const adapters=Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,{check:stage==='worker_readiness'?()=>({status:'BLOCKED_EXTERNAL'}):pass,
+  observe:stage==='capture_new_main_sha'?()=>({status:'PASS',evidence:{newMainSha:'e'.repeat(40)}}):pass,
+  ...(MUTATING_STAGES.has(stage)?{execute:()=>{},reconcile:pass}:{})}]));
+ let claims,claimsDigest;
+ adapters.mint_acceptance_permit.execute=call=>{
+  const epochRunId='33333333-3333-4333-8333-333333333333',workspace='blackspire-command';
+  claims={schema:1,kind:'held-epoch-acceptance',permitId:'44444444-4444-4444-8444-444444444444',
+   commanderRunId:call.state.context.operationId,mergeMainSha:'e'.repeat(40),expectedDeploymentSha:'e'.repeat(40),epochRunId,
+   workspace,principal:'blackspire-operator',apiGeneration:'1'.repeat(32),workerGeneration:'2'.repeat(32),
+   issuedAt:1000,expiresAt:2000,operations:[...HELD_ACCEPTANCE_OPERATIONS],tokenDigest:'f'.repeat(64),
+   reads:HELD_ACCEPTANCE_CAPABILITIES.map((capability,index)=>{
+    const request=`read-${index}`,idempotencyKey=`zola-six:${epochRunId}:${index}`;
+    return {index,idempotencyKey,capability,permission:capability.replace(/\.(search|get|status)$/,'.read'),request,
+     requestDigest:hash({channel:'jarvis',workspaceId:workspace,text:request,idempotencyKey,executionIntent:'read_only'})};
+   })};claimsDigest=hash(claims);
+  events.push({schema:1,type:'held_acceptance_mint_intent',claims,claimsDigest},
+   {schema:1,type:'held_acceptance_minted',permitId:claims.permitId,claimsDigest});
+ };
+ adapters.api_health.execute=call=>{
+  const attemptId='55555555-5555-4555-8555-555555555555';assert.notEqual(attemptId,call.attemptId);
+  events.push({schema:1,type:'held_acceptance_consume_intent',permitId:claims.permitId,claimsDigest},
+   {schema:1,type:'held_acceptance_operation_intent',permitId:claims.permitId,claimsDigest,operation:'api_health',attemptId});
+ };
+ const result=await runReleaseSequence({input:coordinator,journal,adapters});assert.equal(result.stage,'worker_readiness');
+ assert.equal(inspectReleaseCommander(journal).status,'OBSERVED');
+ claims.principal='blackspire-release-root';events.find(row=>row.type==='held_acceptance_mint_intent').claimsDigest=hash(claims);
+ for(const row of events.filter(row=>row.claimsDigest!==undefined))row.claimsDigest=hash(claims);
+ assert.throws(()=>inspectReleaseCommander(journal));
 });
