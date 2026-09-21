@@ -11,6 +11,7 @@ import {
   listAllBuyerReports,
   listSearchJobsByIds,
 } from "@/lib/buyer-engine-server";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 const INITIAL_REPORT_LIMIT = 20;
 
@@ -19,6 +20,7 @@ export default async function BuyersPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
   }) {
+  await requireWorkspacePage();
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
   const searchJobId =
     typeof resolvedSearchParams?.searchJobId === "string"

@@ -43,7 +43,11 @@ export async function captureBuyerDispatchAuthority(
         if (error || data.user?.id !== operatorId) throw unavailable();
         const users = await listAuthUsers({ signal: controller.signal });
         if (!Array.isArray(users) || !users.length || !users.some(user => user.id === operatorId)) throw unavailable();
-        const currentRole = users[0]?.id === operatorId ? "admin" : "beta_tester";
+        const appRole = data.user.app_metadata?.blackspire_role;
+        const explicitRole = typeof appRole === "string" && ["admin", "beta_tester", "demo_viewer", "client_only"].includes(appRole)
+          ? appRole
+          : null;
+        const currentRole = explicitRole ?? (users[0]?.id === operatorId ? "admin" : "client_only");
         if (currentRole !== role) throw unavailable();
       } catch {
         throw unavailable();

@@ -1,0 +1,263 @@
+//@version=6
+indicator("Helix London V2 Prospective Collector", overlay = false)
+
+// Research telemetry only. No orders, alerts, or broker actions.
+string tz = "America/New_York"
+int validationStart = timestamp(tz, 2026, 9, 12, 0, 0)
+float minCoverage = 0.85
+float displacementMult = 1.5
+float riskPct = 0.005
+float startEquity = 50000.0
+int maxContracts = 6
+float tickValue = 0.625
+float commissionRt = 1.50
+int slipTicks = 1
+
+f_lower95(float sumR, float sumR2, int n) =>
+    float out = na
+    if n >= 2
+        float mean = sumR / n
+        float variance = math.max(0.0, (sumR2 - n * mean * mean) / (n - 1))
+        out := mean - 1.959963984540054 * math.sqrt(variance) / math.sqrt(n)
+    out
+
+int h = hour(time, tz)
+bool inAsia = h >= 20
+bool inLondon = h >= 2 and h < 5
+bool afterLondon = h >= 5 and h < 20
+bool newAsia = inAsia and not inAsia[1]
+bool asiaJustEnded = not inAsia and inAsia[1]
+bool londonJustEnded = not inLondon and inLondon[1]
+bool tenOClock = h >= 10 and hour(time[1], tz) < 10
+bool fiveMinute = timeframe.isminutes and timeframe.multiplier == 5
+float medianBody20 = ta.median(math.abs(close - open)[1], 20)
+
+var int cycleStart = na
+var float asiaHi = na
+var float asiaLo = na
+var bool asiaDone = false
+var int asiaBars = 0
+var int londonBars = 0
+var int sweptSide = 0
+var float sweepExtreme = na
+var int sweepBar = na
+var float lastSwingHi = na
+var float lastSwingLo = na
+var float mssLevel = na
+var int mssBar = na
+var int displacementBar = na
+var float fvgLow = na
+var float fvgHigh = na
+var float fvgMid = na
+var bool invalidDouble = false
+var bool entryFilled = false
+var int entryBar = na
+var float entryRef = na
+var float stopRef = na
+var float targetRef = na
+var int contracts = 0
+var float equity = startEquity
+var bool tradeClosed = false
+var float tradeNet = na
+var float tradeR = na
+var int tradeWin = -1
+var string exitType = ""
+var bool finalized = false
+
+var int trades = 0
+var int wins = 0
+var float sumR = 0.0
+var float sumR2 = 0.0
+var float grossWin = 0.0
+var float grossLoss = 0.0
+var int daysRecorded = 0
+var int lastDayKey = 0
+var int lastReason = 0
+var int lastCandidate = 0
+var int lastTrade = 0
+var int lastWin = -1
+var float lastR = na
+var float lastNet = na
+
+if newAsia
+    cycleStart := time
+    asiaHi := high
+    asiaLo := low
+    asiaDone := false
+    asiaBars := 0
+    londonBars := 0
+    sweptSide := 0
+    sweepExtreme := na
+    sweepBar := na
+    lastSwingHi := na
+    lastSwingLo := na
+    mssLevel := na
+    mssBar := na
+    displacementBar := na
+    fvgLow := na
+    fvgHigh := na
+    fvgMid := na
+    invalidDouble := false
+    entryFilled := false
+    entryBar := na
+    entryRef := na
+    stopRef := na
+    targetRef := na
+    contracts := 0
+    tradeClosed := false
+    tradeNet := na
+    tradeR := na
+    tradeWin := -1
+    exitType := ""
+    finalized := false
+
+if inAsia
+    asiaBars += 1
+    asiaHi := math.max(nz(asiaHi, high), high)
+    asiaLo := math.min(nz(asiaLo, low), low)
+
+if asiaJustEnded and not na(asiaHi) and not na(asiaLo)
+    asiaDone := true
+
+bool swingHiConfirmed = high[1] > high[2] and high[1] > high
+bool swingLoConfirmed = low[1] < low[2] and low[1] < low
+if swingHiConfirmed
+    lastSwingHi := high[1]
+if swingLoConfirmed
+    lastSwingLo := low[1]
+
+if inLondon
+    londonBars += 1
+    if asiaDone and not entryFilled
+        bool hiSweep = high >= asiaHi + syminfo.mintick and close >= asiaLo and close <= asiaHi
+        bool loSweep = low <= asiaLo - syminfo.mintick and close >= asiaLo and close <= asiaHi
+        if hiSweep and loSweep
+            invalidDouble := true
+        if sweptSide == 0 and not invalidDouble
+            if hiSweep
+                sweptSide := -1
+                sweepExtreme := high
+                sweepBar := bar_index
+                mssLevel := lastSwingLo
+            else if loSweep
+                sweptSide := 1
+                sweepExtreme := low
+                sweepBar := bar_index
+                mssLevel := lastSwingHi
+        else if sweptSide == -1
+            if loSweep
+                invalidDouble := true
+            if hiSweep
+                sweepExtreme := math.max(sweepExtreme, high)
+        else if sweptSide == 1
+            if hiSweep
+                invalidDouble := true
+            if loSweep
+                sweepExtreme := math.min(sweepExtreme, low)
+
+        if sweptSide != 0 and not invalidDouble and na(mssBar) and not na(mssLevel) and bar_index > sweepBar
+            if sweptSide == -1 and close < mssLevel
+                mssBar := bar_index
+            else if sweptSide == 1 and close > mssLevel
+                mssBar := bar_index
+
+        float body = math.abs(close - open)
+        bool displacement = (sweptSide == -1 and close < open and not na(medianBody20) and body >= displacementMult * medianBody20) or (sweptSide == 1 and close > open and not na(medianBody20) and body >= displacementMult * medianBody20)
+        bool bearishFvg = sweptSide == -1 and high < low[2]
+        bool bullishFvg = sweptSide == 1 and low > high[2]
+        if not na(mssBar) and na(displacementBar) and bar_index >= mssBar and displacement
+            if bearishFvg
+                displacementBar := bar_index
+                fvgLow := high
+                fvgHigh := low[2]
+                fvgMid := (fvgLow + fvgHigh) / 2.0
+            else if bullishFvg
+                displacementBar := bar_index
+                fvgLow := high[2]
+                fvgHigh := low
+                fvgMid := (fvgLow + fvgHigh) / 2.0
+
+        if not na(displacementBar) and not entryFilled and bar_index > displacementBar and low <= fvgMid and high >= fvgMid
+            float proposedStop = sweptSide == -1 ? sweepExtreme + syminfo.mintick : sweepExtreme - syminfo.mintick
+            bool validStop = sweptSide == -1 ? proposedStop > fvgMid : proposedStop < fvgMid
+            float risk = math.abs(fvgMid - proposedStop)
+            float opposite = sweptSide == -1 ? asiaLo : asiaHi
+            float reward = sweptSide == -1 ? fvgMid - opposite : opposite - fvgMid
+            float rr = risk > 0 ? reward / risk : 0.0
+            if validStop and rr >= 1.5
+                float riskPerContract = risk / syminfo.mintick * tickValue
+                int proposedContracts = riskPerContract > 0 ? math.min(maxContracts, int(math.floor(equity * riskPct / riskPerContract))) : 0
+                if proposedContracts > 0
+                    entryFilled := true
+                    entryBar := bar_index
+                    entryRef := fvgMid
+                    stopRef := proposedStop
+                    targetRef := fvgMid + sweptSide * math.min(rr, 3.0) * risk
+                    contracts := proposedContracts
+
+if entryFilled and not tradeClosed
+    bool stopHit = not tenOClock and (sweptSide == 1 ? low <= stopRef : high >= stopRef)
+    bool targetHit = not tenOClock and (sweptSide == 1 ? high >= targetRef : low <= targetRef)
+    bool allowTarget = bar_index > entryBar
+    if stopHit or (targetHit and allowTarget) or tenOClock
+        float exitRef = tenOClock ? close[1] : (stopHit ? stopRef : targetRef)
+        float entryFill = entryRef + sweptSide * syminfo.mintick * slipTicks
+        float exitFill = exitRef - sweptSide * syminfo.mintick * slipTicks
+        float pnlTicks = (exitFill - entryFill) / syminfo.mintick * sweptSide
+        float gross = pnlTicks * tickValue * contracts
+        float commission = commissionRt * contracts
+        tradeNet := gross - commission
+        float referenceRisk = math.abs(entryRef - stopRef) / syminfo.mintick * tickValue * contracts
+        tradeR := referenceRisk > 0 ? tradeNet / referenceRisk : na
+        tradeWin := tradeNet > 0 ? 1 : 0
+        exitType := stopHit ? "stop" : (targetHit and allowTarget ? "target" : "time")
+        equity += tradeNet
+        tradeClosed := true
+
+if tenOClock and not finalized
+    finalized := true
+    bool inValidation = not na(cycleStart) and cycleStart >= validationStart
+    bool missing = asiaBars == 0 or londonBars == 0
+    bool short = not missing and (asiaBars < math.ceil(48 * minCoverage) or londonBars < math.ceil(36 * minCoverage))
+    bool candidate = sweptSide != 0 and not invalidDouble
+    if inValidation
+        daysRecorded += 1
+        lastDayKey := year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+        lastCandidate := candidate ? 1 : 0
+        lastTrade := 0
+        lastWin := -1
+        lastR := na
+        lastNet := na
+        // Reasons: 1 no sweep, 2 missing, 3 short, 4 double, 5 no MSS, 6 no disp/FVG, 7 no retrace/invalid/RR/risk, 8 counted trade, 9 wrong TF.
+        lastReason := not fiveMinute ? 9 : missing ? 2 : short ? 3 : invalidDouble ? 4 : sweptSide == 0 ? 1 : na(mssBar) ? 5 : na(displacementBar) ? 6 : not entryFilled ? 7 : not tradeClosed ? 7 : 8
+        if fiveMinute and not missing and not short and not invalidDouble and entryFilled and tradeClosed
+            trades += 1
+            wins += tradeWin == 1 ? 1 : 0
+            sumR += tradeR
+            sumR2 += tradeR * tradeR
+            grossWin += tradeNet > 0 ? tradeNet : 0
+            grossLoss += tradeNet <= 0 ? math.abs(tradeNet) : 0
+            lastTrade := 1
+            lastWin := tradeWin
+            lastR := tradeR
+            lastNet := tradeNet
+
+float expectancyR = trades > 0 ? sumR / trades : na
+float lower95 = f_lower95(sumR, sumR2, trades)
+float profitFactor = grossLoss > 0 ? grossWin / grossLoss : (grossWin > 0 ? 999.0 : na)
+int gateCode = trades < 30 ? 0 : (expectancyR > 0.10 and lower95 > 0 and profitFactor >= 1.25 ? 1 : -1)
+
+plot(lastDayKey, "V2_DAY_KEY", display = display.data_window)
+plot(lastReason, "V2_REASON_CODE", display = display.data_window)
+plot(lastCandidate, "V2_CANDIDATE", display = display.data_window)
+plot(lastTrade, "V2_COUNTED_TRADE", display = display.data_window)
+plot(lastWin, "V2_WIN", display = display.data_window)
+plot(lastR, "V2_R_MULTIPLE", display = display.data_window)
+plot(lastNet, "V2_NET_PNL", display = display.data_window)
+plot(trades, "V2_TRADES", display = display.data_window)
+plot(wins, "V2_WINS", display = display.data_window)
+plot(expectancyR, "V2_EXPECTANCY_R", display = display.data_window)
+plot(lower95, "V2_MEAN_R_LOWER95", display = display.data_window)
+plot(profitFactor, "V2_PROFIT_FACTOR", display = display.data_window)
+plot(gateCode, "V2_GATE_CODE", display = display.data_window)
+plot(daysRecorded, "V2_DAYS_RECORDED", display = display.data_window)

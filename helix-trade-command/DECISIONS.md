@@ -53,3 +53,15 @@ The master architecture calls for a dedicated private `helix-trade-command` repo
 - Stop one tick beyond the sweep extreme; target the opposite Asia extreme, requiring >=1.5R and capping credit at 3R.
 - Do not optimize V2 after viewing its historical results. Any parameter change requires a separately preregistered V3.
 - Historical V2 results are too small for execution authorization; continue research only.
+
+## 2026-09-11 — Run London V2 prospectively beside R1-H1
+- Keep R1-H1 frozen and active; do not replace it with V2.
+- Start London V2 prospective evidence on 2026-09-12 using the second TradingView Basic indicator slot.
+- Because V2 has variable reward:risk exits, use an execution gate rather than the R1 directional hit-rate gate: >=30 executed M6E trades, post-cost expectancy > +0.10R, normal-approximation 95% lower bound on mean R > 0, and profit factor >=1.25.
+- A PASS does not authorize demo/live execution. It only permits a separately approved next stage.
+
+## London V2 extended-history decision
+A 2009-2024 EUR/USD spot robustness backtest using the frozen V2 rules produced 459 trades with 27.23% win rate, -$6,440.63 modeled net P&L, 0.682 profit factor, and -0.775R expectancy. This fails the V2 execution gate decisively. Recent positive 2026 samples are therefore treated as regime-specific signals only. Continue frozen prospective M6E evidence collection; do not authorize demo/live execution. Any redesign requires a separately preregistered V3.
+
+## 2026-09-12 — London Dual-State V4 rejected
+Preregistered rejection/acceptance branches were tested on the 2009-2024 EUR/USD proxy and direct 2026 M6E robustness data. Combined long-history result: 443 trades, -0.239R expectancy, PF 0.700, -$9,732.31 modeled P&L, positive net in only 4/16 years. Direct M6E also failed. V4 does not advance to demo/live execution.

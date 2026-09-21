@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { workspaceEntries } from "@/lib/site-structure";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 export const metadata: Metadata = {
   title: "Workspace Directory | Blackspire Helix Group",
@@ -15,7 +16,8 @@ const groupedWorkspaces = workspaceEntries.reduce<Record<string, typeof workspac
   return groups;
 }, {});
 
-export default function WorkspacesDirectoryPage() {
+export default async function WorkspacesDirectoryPage() {
+  await requireWorkspacePage();
   return (
     <MarketingShell>
       <div className="mx-auto max-w-[1450px] px-4 py-10 lg:px-6">

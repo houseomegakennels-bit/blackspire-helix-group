@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createOrUpdateMarketplaceEntity, getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
+import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const snapshot = await getHarvesterWorkspaceSnapshot();
     return NextResponse.json({ ok: true, entities: snapshot.entities });
   } catch (error) {
@@ -18,6 +21,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const body = (await request.json()) as { intakeId?: string };
     if (!body.intakeId?.trim()) {
       return NextResponse.json({ ok: false, error: "intakeId is required." }, { status: 400 });

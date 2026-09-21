@@ -1,161 +1,89 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-
 import { MarketingShell } from "@/components/marketing-shell";
-import { ecosystemProjects } from "@/lib/ecosystem";
-
 export const metadata: Metadata = {
-  title: "Demos | Blackspire Helix Group",
+  title: "See It in Action | Blackspire Helix Group",
   description:
-    "Watch Blackspire Helix Group demo workflows, including Buyer Engine and Helix Lawn Command operator experiences.",
+    "Explore Blackspire demonstrations for service-business inquiries and real estate buyer research.",
 };
-
-const proofLanes = [
-  "Launch reels and cinematic walkthrough clips",
-  "Dashboard screenshots and command-surface captures",
-  "Workflow logic maps and operating sequences",
-  "Before/after proof tied to real business outcomes",
-] as const;
-
-const featuredDemoSlots = [
+const demos = [
   {
-    id: "01",
-    title: "Blackspire Buyer Engine Demo",
-    summary:
-      "A live walkthrough of the Buyer Engine command surface, showing how the Blackspire product layer turns buyer intelligence into a premium operator experience.",
-    src: "/demos/buyer-engine-demo-final.mp4",
-    badge: "Flagship workflow",
-    whyItMatters:
-      "Wholesalers and investors see a working intelligence surface — county sweeps, scored buyer dossiers, and outreach — not a slide deck. It's the fastest way to show what automated buyer-finding actually looks like.",
-  },
-  {
-    id: "02",
-    title: "Helix Lawn Command Demo",
-    summary:
-      "Helix Lawn Command in action: AI captures every missed lawn-care call and web inquiry 24/7, qualifies the lead, and turns it into a booked $150-$1,500 job before it ever goes cold.",
+    title: "Keep customer inquiries moving.",
+    category: "Service businesses · Helix Lawn Command",
     src: "/demos/helix-lawn-command-demo.mp4",
-    badge: "Lawn automation",
-    whyItMatters:
-      "Service-business owners get it instantly: every missed call is lost revenue, and the AI books the job around the clock. It turns an abstract automation pitch into money they can picture.",
+    problem: "You’re busy with a job when another customer reaches out.",
+    workflow:
+      "Explore an example of inquiry capture and follow-up for a lawn-care business.",
+    benefit:
+      "A clearer next step for the customer and less chasing for the owner.",
   },
-] as const;
-
+  {
+    title: "Make buyer research easier to use.",
+    category: "Real estate · Buyer Engine",
+    src: "/demos/buyer-engine-demo-final.mp4",
+    problem:
+      "Buyer information is scattered, and preparing outreach takes time.",
+    workflow:
+      "See how buyer research, organized profiles, and outreach preparation fit together.",
+    benefit:
+      "Spend less time sorting information and more time reviewing relevant opportunities.",
+  },
+];
 export default function DemosPage() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] px-4 py-16 lg:px-6">
-        <section className="brand-panel overflow-hidden px-6 py-8 lg:px-8">
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-[34%] bg-[radial-gradient(circle_at_center,hsl(198_100%_70%/.08),transparent_72%)]" />
-          <p className="text-xs uppercase tracking-[0.48em] text-[var(--gold-soft)]">Demo Gallery</p>
-          <h1 className="brand-accent-text mt-3 text-4xl font-semibold lg:text-5xl">
-            Proof that feels curated, not improvised.
+      <div className="public-wrap">
+        <section className="public-section">
+          <p className="public-eyebrow">See it in action</p>
+          <h1>
+            Picture a simpler
+            <br />
+            <em>working day.</em>
           </h1>
-          <p className="mt-4 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-            Real product walkthroughs from across the Blackspire ecosystem — see the systems running
-            live before you ever get on a call. Every clip is an actual workflow, not a concept.
+          <p className="public-lead">
+            Explore examples of what Blackspire can build around your business.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              Start strategy intake
-            </Link>
-            <Link href="/ecosystem" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              Tour all divisions
-            </Link>
-          </div>
+          <p>
+            These videos are demonstrations, not measured client results or
+            guarantees. Your workflow and scope will be agreed before a project
+            begins.
+          </p>
         </section>
-
-        <section className="mt-8 grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-          <div className="grid gap-6">
-            {featuredDemoSlots.map((slot) => (
-              <article key={slot.id} className="brand-panel overflow-hidden px-6 py-8">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.34em] text-[var(--copy-muted)]">
-                      Featured Demo {slot.id}
-                    </p>
-                    <h2 className="brand-display mt-3 text-3xl text-white">{slot.title}</h2>
-                  </div>
-                  <span className="rounded-full border border-[var(--line)] px-3 py-2 text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">
-                    {slot.badge}
-                  </span>
-                </div>
-
-                <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-                  <div className="brand-card overflow-hidden p-3">
-                    <video
-                      src={slot.src}
-                      controls
-                      preload="metadata"
-                      className="h-full min-h-[280px] w-full rounded-[18px] object-cover"
-                    />
-                  </div>
-
-                  <div className="space-y-4">
-                    <div className="brand-card p-5">
-                      <div className="text-[11px] uppercase tracking-[0.26em] text-[var(--copy-muted)]">
-                        Proof note
-                      </div>
-                      <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{slot.summary}</p>
-                    </div>
-                    <div className="brand-card p-5">
-                      <div className="text-[11px] uppercase tracking-[0.26em] text-[var(--copy-muted)]">
-                        Why it matters
-                      </div>
-                      <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{slot.whyItMatters}</p>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <div className="space-y-6">
-            <section className="brand-panel px-6 py-8">
-              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Recon Surface</p>
-              <h2 className="brand-display mt-3 text-2xl text-white">See the opportunity feed live</h2>
-              <p className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
-                Recon Engine is already live inside the ecosystem with a public landing page,
-                industry-specific entry points, and a dashboard for opportunity review.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-3">
-                <Link href="/recon-engine" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  Open Recon Engine
-                </Link>
-                <Link href="/recon-engine/dashboard" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-                  View live dashboard
-                </Link>
-              </div>
-            </section>
-
-            <section className="brand-panel px-6 py-8">
-              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Proof lanes</p>
-              <div className="mt-5 grid gap-4">
-                {proofLanes.map((lane) => (
-                  <div key={lane} className="brand-card p-4 text-sm leading-6 text-[var(--copy-soft)]">
-                    {lane}
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="brand-panel px-6 py-8">
-              <p className="text-xs uppercase tracking-[0.36em] text-[var(--gold)]">Division Library</p>
-              <div className="mt-5 grid gap-4">
-                {ecosystemProjects.map((project) => (
-                  <article key={project.slug} className="brand-card p-5">
-                    <p className="text-[11px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">{project.role}</p>
-                    <h2 className="mt-3 text-2xl font-semibold text-white">{project.name}</h2>
-                    <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-                      {project.tagline}
-                    </p>
-                    <Link href={project.href} className="brand-button mt-5 inline-flex px-4 py-3 text-sm transition">
-                      Open project overview
-                    </Link>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </div>
+        {demos.map((d) => (
+          <section className="public-section public-demo-row" key={d.src}>
+            <div>
+              <p className="public-eyebrow">{d.category}</p>
+              <h2>{d.title}</h2>
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                aria-label={d.title}
+                src={d.src}
+              />
+            </div>
+            <div className="public-card">
+              <h3>The everyday problem</h3>
+              <p>{d.problem}</p>
+              <h3>The example</h3>
+              <p>{d.workflow}</p>
+              <h3>What it helps with</h3>
+              <p>{d.benefit}</p>
+              <Link href="/contact" className="public-button">
+                Could this help my business?
+              </Link>
+            </div>
+          </section>
+        ))}
+        <section className="public-section public-close">
+          <h2>Your business has its own way of working.</h2>
+          <p>Let’s talk about a solution that fits yours.</p>
+          <Link href="/contact" className="public-button">
+            Start the conversation
+          </Link>
+          <p>
+            <Link href="/ecosystem">Explore all Blackspire products</Link>
+          </p>
         </section>
       </div>
     </MarketingShell>

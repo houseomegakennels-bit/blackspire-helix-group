@@ -1,0 +1,348 @@
+{
+  "data_first_utc": "2009-01-01T23:55:00+00:00",
+  "data_last_utc": "2024-12-31T21:55:00+00:00",
+  "cycles": 4151,
+  "combined": {
+    "trades": 443,
+    "wins": 152,
+    "win_rate_pct": 34.31151241534989,
+    "net_pnl": -9732.31250000699,
+    "return_pct": -19.464625000014003,
+    "expectancy_r": -0.23893691087730196,
+    "profit_factor": 0.6997468276324633,
+    "max_drawdown_dollars": 10891.43750000665,
+    "max_drawdown_pct": 21.41191359694627,
+    "longest_losing_streak": 14,
+    "exit_counts": {
+      "stop": 286,
+      "target": 125,
+      "time": 32
+    },
+    "positive_years": 4,
+    "active_years": 16,
+    "positive_year_pct": 25.0
+  },
+  "branches": {
+    "REJECTION": {
+      "trades": 129,
+      "wins": 41,
+      "win_rate_pct": 31.782945736434108,
+      "net_pnl": -4108.125000002159,
+      "return_pct": -8.216250000004266,
+      "expectancy_r": -0.23051703696612136,
+      "profit_factor": 0.6264407010842352,
+      "max_drawdown_dollars": 4901.125000001717,
+      "max_drawdown_pct": 9.748390144455351,
+      "longest_losing_streak": 11,
+      "exit_counts": {
+        "stop": 85,
+        "target": 37,
+        "time": 7
+      }
+    },
+    "ACCEPTANCE": {
+      "trades": 314,
+      "wins": 111,
+      "win_rate_pct": 35.35031847133758,
+      "net_pnl": -5624.18750000483,
+      "return_pct": -11.248375000009736,
+      "expectancy_r": -0.24239603105100352,
+      "profit_factor": 0.7373892133085348,
+      "max_drawdown_dollars": 6869.937500004693,
+      "max_drawdown_pct": 13.474693040963265,
+      "longest_losing_streak": 15,
+      "exit_counts": {
+        "stop": 201,
+        "target": 88,
+        "time": 25
+      }
+    }
+  },
+  "yearly": {
+    "2009": {
+      "trades": 29,
+      "wins": 12,
+      "win_rate_pct": 41.37931034482759,
+      "net_pnl": 777.9999999994694,
+      "return_pct": 1.5559999999989582,
+      "expectancy_r": 0.02806911590850493,
+      "profit_factor": 1.3976488627647892,
+      "max_drawdown_dollars": 647.0000000000873,
+      "max_drawdown_pct": 1.2719632369205303,
+      "longest_losing_streak": 4,
+      "exit_counts": {
+        "stop": 17,
+        "target": 11,
+        "time": 1
+      }
+    },
+    "2010": {
+      "trades": 39,
+      "wins": 9,
+      "win_rate_pct": 23.076923076923077,
+      "net_pnl": -3082.7500000006517,
+      "return_pct": -6.165500000001279,
+      "expectancy_r": -0.5637473009378159,
+      "profit_factor": 0.32193230870744743,
+      "max_drawdown_dollars": 3251.750000000633,
+      "max_drawdown_pct": 6.503500000001266,
+      "longest_losing_streak": 8,
+      "exit_counts": {
+        "stop": 30,
+        "target": 6,
+        "time": 3
+      }
+    },
+    "2011": {
+      "trades": 44,
+      "wins": 11,
+      "win_rate_pct": 25.0,
+      "net_pnl": -2608.7500000008004,
+      "return_pct": -5.217500000001618,
+      "expectancy_r": -0.4083459178373148,
+      "profit_factor": 0.4763780515341511,
+      "max_drawdown_dollars": 3431.1250000008004,
+      "max_drawdown_pct": 6.811926890100984,
+      "longest_losing_streak": 11,
+      "exit_counts": {
+        "stop": 32,
+        "target": 9,
+        "time": 3
+      }
+    },
+    "2012": {
+      "trades": 33,
+      "wins": 15,
+      "win_rate_pct": 45.45454545454545,
+      "net_pnl": 374.4999999995619,
+      "return_pct": 0.7489999999991115,
+      "expectancy_r": 0.030653572957148666,
+      "profit_factor": 1.1916091071882708,
+      "max_drawdown_dollars": 398.6250000002183,
+      "max_drawdown_pct": 0.788055364040497,
+      "longest_losing_streak": 3,
+      "exit_counts": {
+        "stop": 18,
+        "target": 11,
+        "time": 4
+      }
+    },
+    "2013": {
+      "trades": 34,
+      "wins": 11,
+      "win_rate_pct": 32.35294117647059,
+      "net_pnl": -998.6250000004575,
+      "return_pct": -1.9972500000009163,
+      "expectancy_r": -0.27347909049693564,
+      "profit_factor": 0.5546077939453763,
+      "max_drawdown_dollars": 1398.0000000003856,
+      "max_drawdown_pct": 2.7774190664462473,
+      "longest_losing_streak": 7,
+      "exit_counts": {
+        "stop": 23,
+        "target": 11,
+        "time": 0
+      }
+    },
+    "2014": {
+      "trades": 17,
+      "wins": 7,
+      "win_rate_pct": 41.1764705882353,
+      "net_pnl": -92.25000000024897,
+      "return_pct": -0.18450000000050926,
+      "expectancy_r": -0.1705856913656695,
+      "profit_factor": 0.8898343036271382,
+      "max_drawdown_dollars": 387.0000000000873,
+      "max_drawdown_pct": 0.7709297721824582,
+      "longest_losing_streak": 5,
+      "exit_counts": {
+        "stop": 8,
+        "target": 4,
+        "time": 5
+      }
+    },
+    "2015": {
+      "trades": 36,
+      "wins": 9,
+      "win_rate_pct": 25.0,
+      "net_pnl": -1387.0000000006012,
+      "return_pct": -2.77400000000122,
+      "expectancy_r": -0.45629083947180005,
+      "profit_factor": 0.5623915444075339,
+      "max_drawdown_dollars": 2088.7500000005166,
+      "max_drawdown_pct": 4.124439091094116,
+      "longest_losing_streak": 13,
+      "exit_counts": {
+        "stop": 27,
+        "target": 8,
+        "time": 1
+      }
+    },
+    "2016": {
+      "trades": 34,
+      "wins": 10,
+      "win_rate_pct": 29.41176470588235,
+      "net_pnl": -710.625000000625,
+      "return_pct": -1.421250000001284,
+      "expectancy_r": -0.36189798915577126,
+      "profit_factor": 0.6756803012149352,
+      "max_drawdown_dollars": 882.0000000006112,
+      "max_drawdown_pct": 1.7579745422576354,
+      "longest_losing_streak": 5,
+      "exit_counts": {
+        "stop": 23,
+        "target": 8,
+        "time": 3
+      }
+    },
+    "2017": {
+      "trades": 20,
+      "wins": 12,
+      "win_rate_pct": 60.0,
+      "net_pnl": 712.4999999997518,
+      "return_pct": 1.424999999999499,
+      "expectancy_r": 0.4699214777107801,
+      "profit_factor": 2.0226049515601985,
+      "max_drawdown_dollars": 304.87500000013097,
+      "max_drawdown_pct": 0.5983822335189862,
+      "longest_losing_streak": 3,
+      "exit_counts": {
+        "stop": 8,
+        "target": 11,
+        "time": 1
+      }
+    },
+    "2018": {
+      "trades": 23,
+      "wins": 8,
+      "win_rate_pct": 34.78260869565217,
+      "net_pnl": -161.00000000034984,
+      "return_pct": -0.3220000000006884,
+      "expectancy_r": -0.2583615024366229,
+      "profit_factor": 0.8856331024682583,
+      "max_drawdown_dollars": 637.1250000002328,
+      "max_drawdown_pct": 1.2705051859648357,
+      "longest_losing_streak": 5,
+      "exit_counts": {
+        "stop": 15,
+        "target": 7,
+        "time": 1
+      }
+    },
+    "2019": {
+      "trades": 11,
+      "wins": 1,
+      "win_rate_pct": 9.090909090909092,
+      "net_pnl": -595.5000000002717,
+      "return_pct": -1.1910000000005416,
+      "expectancy_r": -1.0037067810807314,
+      "profit_factor": 0.22687439143124474,
+      "max_drawdown_dollars": 770.2500000002401,
+      "max_drawdown_pct": 1.5351347042092698,
+      "longest_losing_streak": 10,
+      "exit_counts": {
+        "stop": 10,
+        "target": 1,
+        "time": 0
+      }
+    },
+    "2020": {
+      "trades": 28,
+      "wins": 11,
+      "win_rate_pct": 39.285714285714285,
+      "net_pnl": -387.62500000040154,
+      "return_pct": -0.7752500000007823,
+      "expectancy_r": -0.08451957258568167,
+      "profit_factor": 0.7852641783808191,
+      "max_drawdown_dollars": 922.7500000003129,
+      "max_drawdown_pct": 1.8455000000006256,
+      "longest_losing_streak": 7,
+      "exit_counts": {
+        "stop": 17,
+        "target": 10,
+        "time": 1
+      }
+    },
+    "2021": {
+      "trades": 19,
+      "wins": 7,
+      "win_rate_pct": 36.8421052631579,
+      "net_pnl": -529.5000000003002,
+      "return_pct": -1.0590000000006095,
+      "expectancy_r": -0.3429320177273192,
+      "profit_factor": 0.5537294563841599,
+      "max_drawdown_dollars": 529.5000000003056,
+      "max_drawdown_pct": 1.0590000000006112,
+      "longest_losing_streak": 4,
+      "exit_counts": {
+        "stop": 12,
+        "target": 3,
+        "time": 4
+      }
+    },
+    "2022": {
+      "trades": 39,
+      "wins": 13,
+      "win_rate_pct": 33.333333333333336,
+      "net_pnl": -1031.6875000006194,
+      "return_pct": -2.063375000001233,
+      "expectancy_r": -0.2950097361067379,
+      "profit_factor": 0.6314167690073367,
+      "max_drawdown_dollars": 1556.3125000005966,
+      "max_drawdown_pct": 3.0909497151238883,
+      "longest_losing_streak": 7,
+      "exit_counts": {
+        "stop": 26,
+        "target": 10,
+        "time": 3
+      }
+    },
+    "2023": {
+      "trades": 18,
+      "wins": 7,
+      "win_rate_pct": 38.888888888888886,
+      "net_pnl": -203.25000000018696,
+      "return_pct": -0.406500000000376,
+      "expectancy_r": -0.09444430333294168,
+      "profit_factor": 0.7931297709922273,
+      "max_drawdown_dollars": 484.50000000013824,
+      "max_drawdown_pct": 0.9652500037357633,
+      "longest_losing_streak": 5,
+      "exit_counts": {
+        "stop": 11,
+        "target": 7,
+        "time": 0
+      }
+    },
+    "2024": {
+      "trades": 19,
+      "wins": 9,
+      "win_rate_pct": 47.36842105263158,
+      "net_pnl": 191.2499999997419,
+      "return_pct": 0.38249999999948603,
+      "expectancy_r": 0.15159379722743319,
+      "profit_factor": 1.2158273381291433,
+      "max_drawdown_dollars": 405.00000000016735,
+      "max_drawdown_pct": 0.8041378351818605,
+      "longest_losing_streak": 4,
+      "exit_counts": {
+        "stop": 9,
+        "target": 8,
+        "time": 2
+      }
+    }
+  },
+  "skips": {
+    "acceptance_no_entry": 1281,
+    "double_break": 707,
+    "acceptance_stop_lt_10": 295,
+    "rejection_no_entry": 628,
+    "no_break": 192,
+    "invalid_stop": 189,
+    "rejection_stop_lt_15": 84,
+    "missing_session": 5,
+    "unclear_break_close": 272,
+    "short_session": 55
+  },
+  "advancement_gate": "FAIL"
+}

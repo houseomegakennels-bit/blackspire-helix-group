@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-21 — merged release continuation
+
+1. Complete isolated main/release reconciliation, focused authorization checks and independent review, then publish under applicable authority. Keep PR125 open because the release verifier requires its exact-head CI and artifact.
+2. Rebuild the isolated package for the final reconciled SHA; the verified 6b87259 package does not attest future source changes.
+3. Implement and review an explicit, crash-safe transition for the observation-only historical release journal. Preserve original bytes and fail closed on uncertain history. Production execution needs separate approval.
+4. Recheck the disk envelope and protected input bindings before requesting bounded production installation/activation approval. Standing merge and non-production deployment approval does not authorize production effects.
+
+
 ## 2026-09-21 — integrated cold-start release continuation
 
 1. DONE locally: 33/33 focused checks, 2,180 total / 2,103 passed / 77 intended skips / zero failures in the contained suite, static/security/memory gates and independent source re-review. All production fences and old journal history remain preserved.
