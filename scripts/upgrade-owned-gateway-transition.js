@@ -1,3 +1,4 @@
+import {verifyOwnedBuyerMigrationQuiescence} from '../packages/buyer-writer/owned-migration-host.js';
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
@@ -27,8 +28,6 @@ const fail=()=>{throw new Error('Buyer writer gateway configuration upgrade stop
 const commandEnvironment=Object.freeze({PATH:'/usr/bin:/bin',LC_ALL:'C',LANG:'C'});
 const releaseRoot='/opt/blackspire-command/releases';
 const lockFile='/run/blackspire-buyer-writer-gateway-configuration-upgrade.lock';
-const services=['blackspire-command.service','blackspire-command-worker.service',
-  'blackspire-buyer-writer-gateway.service','blackspire-buyer-store.service'];
 
 function acquireLock(){
   const parent=fs.lstatSync(path.dirname(lockFile));
@@ -69,17 +68,7 @@ function safeStateDirectory(){
 }
 function proveQuiesced(){
   if(ownedSource&&(JSON.stringify(readRootOwnedJsonSnapshot(sourceFile,{groupId:0,maxBytes:65536}))!==JSON.stringify(ownedSource)||JSON.stringify(readOwnedDatabaseProfile())!==JSON.stringify(ownedProfile)))return false;
-  for(const service of services){
-    const result=spawnSync('/usr/bin/systemctl',['show','--no-pager',
-      '--property=ActiveState,SubState,MainPID','--',service],{
-      encoding:'utf8',stdio:['ignore','pipe','pipe'],env:commandEnvironment,
-      timeout:5000,maxBuffer:4096,killSignal:'SIGKILL'});
-    if(result.status!==0||result.error||result.signal!==null||result.stderr!=='')return false;
-    const entries=result.stdout.trim().split('\n').map(line=>line.split('='));
-    if(entries.length!==3||entries.some(row=>row.length!==2))return false;
-    const state=Object.fromEntries(entries);
-    if(state.ActiveState!=='inactive'||state.SubState!=='dead'||state.MainPID!=='0')return false;
-  }
+  verifyOwnedBuyerMigrationQuiescence();
   return true;
 }
 function journal(operationId,{resume=false}={}){
