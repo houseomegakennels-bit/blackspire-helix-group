@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {assertOwnedN8nInstalledIngress,verifyOwnedN8nProtectedAsyncFence,createOwnedN8nLazySource} from '../packages/zola-release/owned-n8n-installed-fence.js';
+import {activateBuyerWriterBeforeHeld} from '../packages/zola-release/buyer-writer-activation.js';
 import {createOwnedN8nRetiredJournalView} from '../packages/zola-release/owned-n8n-retired-journal.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import {synchronizeOwnedN8nWriter,createOwnedN8nCredentialTransport} from '../packages/zola-release/owned-n8n-credential.js';
@@ -118,7 +119,17 @@ try{
    if(inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage!=='n8n_migration')return transport(...args);
    initializeSource();return request(...args);
   };
-  return createFixedProductionOperations({...context,journal:scopedJournal},{n8nMigration:{n8n:{request:routed}}});
+  const activate=activation=>activateBuyerWriterBeforeHeld({...activation,backendProfile:release.backendProfile,profileDigest:release.profileDigest},{journal:scopedJournal,
+   paths:{upgradeStateDirectory:'/var/lib/blackspire-operator/owned-gateway-transition'},
+   run:(script,args)=>{
+    verifyReleaseSource(release.releaseSha);
+    if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
+    const replacements={'scripts/prepare-buyer-writer-gateway-v4.js':'scripts/prepare-owned-gateway-transition.js','scripts/upgrade-buyer-writer-gateway-configuration.js':'scripts/upgrade-owned-gateway-transition.js'};
+    const selected=replacements[script]?operatorRoot+replacements[script]:script;
+    const stdout=execFileSync('/bin/bash',['scripts/with-node.sh',selected,...args],{cwd:canonical,encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
+    verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return JSON.parse(stdout);
+   }});
+  return createFixedProductionOperations({...context,journal:scopedJournal},{n8nMigration:{n8n:{request:routed}},held:{activate}});
  };
  const result=await runProductionRelease({loadedInput:input,journal},{operations});
  process.stdout.write(JSON.stringify(result)+'\n');if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
