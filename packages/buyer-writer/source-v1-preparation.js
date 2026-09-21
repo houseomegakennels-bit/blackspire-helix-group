@@ -121,7 +121,7 @@ function exactFile(io,aclTool,filename,bytes,links=1){
     const after=io.fstatSync(fd);
     if(used!==bytes.length||!found.subarray(0,used).equals(bytes)
       ||['dev','ino','uid','gid','mode','nlink','size','ctimeMs','mtimeMs'].some(key=>before[key]!==after[key]))fail();
-    return after;
+    io.fsyncSync(fd);return after;
   }finally{found?.fill(0);if(fd!==undefined)io.closeSync(fd);}
 }
 function maybeStat(io,filename){try{return io.lstatSync(filename);}catch(error){if(error?.code==='ENOENT')return null;throw error;}}
@@ -167,6 +167,25 @@ export function verifyOwnedSourceServicesStopped(run=spawnSync){
   if(r.status!==0||r.error||r.signal!==null||r.stderr!==''||Object.keys(fields).length!==3||fields.ActiveState!=='inactive'||fields.SubState!=='dead'||fields.MainPID!=='0')fail();
  }
 }
+function readOwnedLinkedPair(io,aclTool,filename,temp){
+ let fd,bytes;
+ try{
+  safeDirectory(io,path.dirname(filename));
+  const left=io.lstatSync(filename),right=io.lstatSync(temp);
+  if(!left.isFile()||left.isSymbolicLink()||!right.isFile()||right.isSymbolicLink()||left.dev!==right.dev||left.ino!==right.ino||left.nlink!==2||right.nlink!==2)fail();
+  fd=io.openSync(filename,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+  const before=io.fstatSync(fd);
+  if(before.dev!==left.dev||before.ino!==left.ino||before.uid!==0||before.gid!==0||(before.mode&0o7777)!==0o600||before.nlink!==2||!Number.isSafeInteger(before.size)||before.size<1||before.size>65536)fail();
+  aclFree(aclTool,['--numeric','--omit-header','--skip-base','--logical','--','/proc/self/fd/3'],['ignore','pipe','pipe',fd]);
+  bytes=Buffer.alloc(before.size+1);let used=0;
+  while(used<bytes.length){const count=io.readSync(fd,bytes,used,bytes.length-used,null);if(!count)break;used+=count;}
+  const after=io.fstatSync(fd),again=io.lstatSync(temp),installed=io.lstatSync(filename);
+  if(used!==before.size||['dev','ino','uid','gid','mode','nlink','size','ctimeMs','mtimeMs'].some(key=>before[key]!==after[key])||[again,installed].some(stat=>stat.dev!==before.dev||stat.ino!==before.ino||stat.nlink!==2))fail();
+  const value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,used)));
+  if(!bytes.subarray(0,used).equals(Buffer.from(JSON.stringify(value)+'\n')))fail();
+  return value;
+ }finally{bytes?.fill(0);if(fd!==undefined)io.closeSync(fd);}
+}
 // Fresh owned credentials have their own retained private source. Recover an
 // interrupted exact publication from its attempt-stable temporary inode.
 export async function prepareOwnedBuyerWriterCredentialSource(input,{io=fs,aclTool=spawnSync,readSnapshot=readRootOwnedJsonSnapshot,readProfile=readOwnedDatabaseProfile,inspectArtifact=inspectSealedBuyerWriterArtifact,assertStopped=verifyOwnedSourceServicesStopped,random=randomBytes}={}){
@@ -178,7 +197,9 @@ export async function prepareOwnedBuyerWriterCredentialSource(input,{io=fs,aclTo
  const management=readSnapshot(input.managementConfigFile,{groupId:0,maxBytes:65536,io,aclTool});
  validateManagementCredential(management.value,{ownedProfile:profile});
  const nonce=hash(input.attemptId+':owned-credentials').slice(0,32),temp=path.join(PREPARATION_ROOT,`.source-v1-${nonce}.tmp`);
- let retained;for(const filename of [input.credentialSourceFile,temp]){
+ let retained;const installed=maybeStat(io,input.credentialSourceFile),staged=maybeStat(io,temp);
+ if(installed?.nlink===2&&staged)retained=readOwnedLinkedPair(io,aclTool,input.credentialSourceFile,temp);
+ else for(const filename of [input.credentialSourceFile,temp]){
   if(maybeStat(io,filename)){retained=readSnapshot(filename,{groupId:0,maxBytes:65536,io,aclTool}).value;break;}
  }
  const authority={releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,workspace:WORKSPACE,gatewayIdentity:'blackspire-writer'};

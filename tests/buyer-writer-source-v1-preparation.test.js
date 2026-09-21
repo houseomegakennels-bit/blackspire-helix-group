@@ -184,7 +184,16 @@ test('fresh owned credential publication recovers exact retained random material
  try{
   await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource(input,options),/preparation failed/);assert.equal(generated,5);
   const result=await prepareOwnedBuyerWriterCredentialSource(input,options);assert.equal(result.status,'OWNED_CREDENTIAL_SOURCE_PREPARED');assert.equal(generated,5);
-  const before=fs.readFileSync(translate(input.credentialSourceFile));await prepareOwnedBuyerWriterCredentialSource(input,options);assert.deepEqual(fs.readFileSync(translate(input.credentialSourceFile)),before);assert.equal(generated,5);
+  const before=fs.readFileSync(translate(input.credentialSourceFile));
+  const {readRootOwnedJsonSnapshot}=await import('../packages/buyer-writer/protected-json.js');
+  options.readSnapshot=name=>name===input.managementConfigFile?readSnapshot(name):readRootOwnedJsonSnapshot(name,{groupId:0,maxBytes:65536,io,aclTool:options.aclTool});
+  const staged='/var/lib/blackspire-operator/preparation/.source-v1-'+hash(attemptId+':owned-credentials').slice(0,32)+'.tmp';
+  fs.linkSync(translate(input.credentialSourceFile),translate(staged));assert.equal(fs.statSync(translate(staged)).nlink,2);
+  assert.throws(()=>options.readSnapshot(input.credentialSourceFile),/protected configuration unavailable/);
+  let synced=0;io.fsyncSync=fd=>{synced++;fs.fsyncSync(fd);};
+  await prepareOwnedBuyerWriterCredentialSource(input,options);assert.deepEqual(fs.readFileSync(translate(input.credentialSourceFile)),before);assert.equal(generated,5);
+  assert.equal(fs.statSync(translate(input.credentialSourceFile)).nlink,1);assert.equal(fs.existsSync(translate(staged)),false);assert.ok(synced>=3);
+  await prepareOwnedBuyerWriterCredentialSource(input,options);assert.equal(generated,5);
   const saved=JSON.parse(before);assert.equal(saved.creatorOid,profile.creatorOid);assert.equal(saved.runtime.profileDigest,management.profileDigest);assert.equal(new Set([saved.writerCredential,saved.issuerCredential,saved.gatewayCapability,saved.runtime.password,saved.issuer.password,management.password]).size,6);assert.ok(stopped>=7);
   await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource({...input,attemptId:'00000000-0000-4000-8000-000000000003'},options),/preparation failed/);
   await assert.rejects(()=>prepareOwnedBuyerWriterCredentialSource(input,{...options,assertStopped:()=>{throw new Error('running');}}),/running/);assert.deepEqual(fs.readFileSync(translate(input.credentialSourceFile)),before);
