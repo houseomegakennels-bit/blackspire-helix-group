@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {assertOwnedN8nInstalledIngress,verifyOwnedN8nProtectedAsyncFence,createOwnedN8nLazySource} from '../packages/zola-release/owned-n8n-installed-fence.js';
+import {createOwnedN8nRetiredJournalView} from '../packages/zola-release/owned-n8n-retired-journal.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import {synchronizeOwnedN8nWriter,createOwnedN8nCredentialTransport} from '../packages/zola-release/owned-n8n-credential.js';
 const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/';
@@ -43,6 +44,7 @@ try{
  const keyFile='/var/lib/blackspire-operator/n8n-api-key',key=readReleaseProtectedBytes(keyFile,16384).trim();
  if(databaseProfileDigest(profile)!==release.profileDigest)fail();
  const plan=prepareN8nTransition({configuration:configuration.value,backupBytes:backup});if(plan.releaseSha!==release.releaseSha)fail();
+ const scopedJournal=createOwnedN8nRetiredJournalView({journal,release,plan});
  const files=createBuyerStoreProtectedFiles(),root='/var/lib/blackspire-operator/preparation/owned-n8n-held-writer';files.directory(root,{create:true});
  const currentBinding=()=>{
   const state=inspectReleaseSequenceHistory(journal.stream('release').events());
@@ -109,14 +111,14 @@ try{
  };
  const transport=createN8nTransport(key);
  const operations=context=>{
-  const request=createOwnedN8nRequestGate({request:transport,events:()=>journal.stream('n8n').events(),binding:currentBinding,synchronize,assertConfigured,workflowId:WORKFLOW_ID});
+  const request=createOwnedN8nRequestGate({request:transport,events:()=>scopedJournal.stream('n8n').events(),binding:currentBinding,synchronize,assertConfigured,workflowId:WORKFLOW_ID});
   // Other n8n stages inspect before the migration attempt exists. Only route
   // through the gate during the exact pending migration; all others stay native.
   const routed=(...args)=>{
    if(inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage!=='n8n_migration')return transport(...args);
    initializeSource();return request(...args);
   };
-  return createFixedProductionOperations(context,{n8nMigration:{n8n:{request:routed}}});
+  return createFixedProductionOperations({...context,journal:scopedJournal},{n8nMigration:{n8n:{request:routed}}});
  };
  const result=await runProductionRelease({loadedInput:input,journal},{operations});
  process.stdout.write(JSON.stringify(result)+'\n');if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
