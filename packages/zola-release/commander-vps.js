@@ -1,3 +1,4 @@
+import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -7,7 +8,7 @@ import {observeHeldLifecycle} from './held-lifecycle.js';
 import {validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {acquireReleaseAdmissionLock} from '../shared/release-admission.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
-import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectBuyerWriterArtifact,inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {verifyProtectedReleaseBackup} from './commander-backup.js';
 
 const ROOT='/opt/blackspire-command',ADMISSION='/etc/blackspire/release-admission';
@@ -17,7 +18,7 @@ const sha=v=>typeof v==='string'&&/^[a-f0-9]{40}$/.test(v),uuid=v=>typeof v==='s
 const digest=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const reject=()=>{throw new Error('Journaled VPS cutover rejected; retain evidence and reconcile');};
 const exact=(v,keys)=>v&&Object.keys(v).sort().join(',')===keys.sort().join(',');
-const baseKeys=['schema','type','operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'];
+const baseKeys=['schema','type','operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'];
 
 export function inspectVpsCutoverHistory(events){
  const rows=events.filter(row=>String(row?.type??'').startsWith('vps_'));
@@ -25,9 +26,9 @@ export function inspectVpsCutoverHistory(events){
  let intent,pending=null,next=0,completed=false,rollingBack=false,rollbackComplete=false;
  for(const row of rows){
   const extras=row.type==='vps_cutover_intent'?['snapshot']:row.type==='vps_step_intent'||row.type==='vps_step_result'?['step']:[];
-  if(row.schema!==4||!exact(row,[...baseKeys,...extras])
-   ||![row.operationId,row.commanderRunId,row.epochRunId,row.rollbackEpochRunId].every(uuid)||![row.newMainSha,row.rollbackSha].every(sha)
-   ||!['artifactDigest','rollbackArtifactDigest','backupDigest','admissionDigest','snapshotDigest'].every(key=>digest(row[key]))
+  if(row.schema!==5||!exact(row,[...baseKeys,...extras])
+   ||![row.operationId,row.commanderRunId,row.epochRunId,row.rollbackEpochRunId].every(uuid)||![row.newMainSha,row.candidateSha,row.rollbackSha].every(sha)
+   ||!['artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','admissionDigest','snapshotDigest'].every(key=>digest(row[key]))
    ||typeof row.backupManifestFile!=='string'||!row.backupManifestFile.startsWith('/'))reject();
   if(!intent){if(row.type!=='vps_cutover_intent'||hash(row.snapshot)!==row.snapshotDigest||JSON.stringify(row.snapshot).length>8192)reject();intent=row;continue;}
   if(!baseKeys.slice(2).every(key=>row[key]===intent[key]))reject();
@@ -69,9 +70,11 @@ function productionHost(){
   async snapshot(plan){
    assertAdmission(plan);
    const current=fs.realpathSync(path.join(ROOT,'current'));
-   if(current!==path.join(ROOT,'releases',plan.rollbackSha))reject();
+   if(current!==path.join(ROOT,'releases',plan.candidateSha))reject();
+   const candidateProof=await inspectBuyerWriterArtifact({artifactRoot:current,releaseSha:plan.candidateSha,environment:'production'});
+   if(candidateProof.artifactDigest!==plan.candidateArtifactDigest)reject();
    command('/bin/bash',[path.join(repository,'scripts/release-preflight.sh'),plan.rollbackSha],{BLACKSPIRE_RELEASE_ROOT:ROOT});
-   const rollbackProof=await inspectBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.rollbackSha),releaseSha:plan.rollbackSha,environment:'production'});
+   const rollbackProof=await inspectSealedBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.rollbackSha),releaseSha:plan.rollbackSha,environment:'production'});
    if(rollbackProof.artifactDigest!==plan.rollbackArtifactDigest)reject();
    const runtimeFile=path.join(ADMISSION,'runtime.env');let runtime=null;
    try{const stat=fs.lstatSync(runtimeFile);if(!stat.isFile()||stat.isSymbolicLink()||stat.uid!==0||stat.nlink!==1||(stat.mode&0o7777)!==0o640)reject();runtime={bytes:fs.readFileSync(runtimeFile,'utf8'),gid:stat.gid};}
@@ -82,7 +85,7 @@ function productionHost(){
    assertAdmission(plan);
    if(step==='backup'){const proof=await verifyProtectedReleaseBackup({releaseSha:plan.newMainSha,manifestFile:plan.backupManifestFile});return hash(proof)===plan.backupDigest;}
    if(step==='artifact'){command('/bin/bash',[path.join(repository,'scripts/release-preflight.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT});
-    const proof=await inspectBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.newMainSha),releaseSha:plan.newMainSha,environment:'production'});return proof.artifactDigest===plan.artifactDigest;}
+    const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.newMainSha),releaseSha:plan.newMainSha,environment:'production'});return proof.artifactDigest===plan.artifactDigest;}
    if(step==='state_pointer'){const file=path.join(ADMISSION,'runtime.env'),stat=fs.lstatSync(file);return stat.isFile()&&!stat.isSymbolicLink()&&stat.uid===0
     &&stat.gid===fs.statSync(ADMISSION).gid&&stat.nlink===1&&(stat.mode&0o7777)===0o640&&fs.readFileSync(file).equals(bindingBytes(plan.epochRunId))
     &&fs.realpathSync(path.join(ROOT,'current'))===path.join(ROOT,'releases',plan.newMainSha);}
@@ -99,7 +102,7 @@ function productionHost(){
    assertAdmission(plan);
    if(step==='backup'||step==='health'||step==='stopped_worker_rejection'||step==='generation_fence')return;
    if(step==='artifact')command('/bin/bash',[path.join(repository,'scripts/release-create.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_SOURCE_ROOT:repository});
-   else if(step==='state_pointer'){const gid=fs.statSync(ADMISSION).gid;atomicFile(path.join(ADMISSION,'runtime.env'),bindingBytes(plan.epochRunId),{gid});command('/bin/bash',[path.join(repository,'scripts/release-switch.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT});command('/usr/bin/systemctl',['daemon-reload']);}
+   else if(step==='state_pointer'){const gid=fs.statSync(ADMISSION).gid;atomicFile(path.join(ADMISSION,'runtime.env'),bindingBytes(plan.epochRunId),{gid});command('/bin/bash',[path.join(repository,'scripts/release-switch.sh'),plan.newMainSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});command('/usr/bin/systemctl',['daemon-reload']);}
    else if(step==='api_start')command('/usr/bin/systemctl',['start',API]);
    else if(step==='worker_start')command('/usr/bin/systemctl',['start',WORKER]);
    else if(step==='readiness')command('/bin/bash',[path.join(repository,'scripts/wait-production-ready.sh'),'http://127.0.0.1:8787',API,WORKER,'60','1']);
@@ -108,12 +111,12 @@ function productionHost(){
   },
   async rollback(plan,snapshot){command('/usr/bin/systemctl',['stop',TARGET]);command('/usr/bin/systemctl',['disable',TARGET]);
    if([active(API),active(WORKER)].some(value=>value.ActiveState!=='inactive'||value.MainPID!=='0'))reject();
-   const proof=await inspectBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.rollbackSha),releaseSha:plan.rollbackSha,environment:'production'});if(proof.artifactDigest!==plan.rollbackArtifactDigest)reject();
+   const proof=await inspectSealedBuyerWriterArtifact({artifactRoot:path.join(ROOT,'releases',plan.rollbackSha),releaseSha:plan.rollbackSha,environment:'production'});if(proof.artifactDigest!==plan.rollbackArtifactDigest)reject();
    const gid=fs.statSync(ADMISSION).gid,rollbackState={version:1,mode:'held',releaseSha:plan.rollbackSha,runId:plan.rollbackEpochRunId,apiGeneration:null,workerGeneration:null};
    atomicFile(path.join(ADMISSION,'state.json'),Buffer.from(JSON.stringify(rollbackState)+'\n'),{gid});
    atomicFile(path.join(ADMISSION,'runtime.env'),bindingBytes(plan.rollbackEpochRunId),{gid});
    atomicFile(path.join(ADMISSION,'pending.json'),Buffer.from(JSON.stringify({schema:4,kind:'vps_rollback_hold',commanderRunId:plan.commanderRunId,releaseSha:plan.rollbackSha,epochRunId:plan.rollbackEpochRunId})+'\n'),{mode:0o600,gid:0});
-   command('/bin/bash',[path.join(repository,'scripts/release-rollback.sh'),plan.rollbackSha],{BLACKSPIRE_RELEASE_ROOT:ROOT});command('/usr/bin/systemctl',['daemon-reload']);
+   command('/bin/bash',[path.join(repository,'scripts/release-rollback.sh'),plan.rollbackSha],{BLACKSPIRE_RELEASE_ROOT:ROOT,BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});command('/usr/bin/systemctl',['daemon-reload']);
    if(snapshot.targetEnabled)command('/usr/bin/systemctl',['enable',TARGET]);
    if(snapshot.api.ActiveState==='active')command('/usr/bin/systemctl',['start',API]);
    if(snapshot.worker.ActiveState==='active')command('/usr/bin/systemctl',['start',WORKER]);
@@ -127,16 +130,16 @@ function productionHost(){
 }
 
 function validatePlan(plan){
- if(!exact(plan,['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'])
-  ||![plan.operationId,plan.commanderRunId,plan.epochRunId,plan.rollbackEpochRunId].every(uuid)||![plan.newMainSha,plan.rollbackSha].every(sha)||plan.newMainSha===plan.rollbackSha
-  ||!['artifactDigest','rollbackArtifactDigest','backupDigest','admissionDigest','snapshotDigest'].every(key=>digest(plan[key]))
+ if(!exact(plan,['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'])
+  ||![plan.operationId,plan.commanderRunId,plan.epochRunId,plan.rollbackEpochRunId].every(uuid)||![plan.newMainSha,plan.candidateSha,plan.rollbackSha].every(sha)||new Set([plan.newMainSha,plan.candidateSha,plan.rollbackSha]).size!==3
+  ||!['artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','admissionDigest','snapshotDigest'].every(key=>digest(plan[key]))
   ||typeof plan.backupManifestFile!=='string'||!path.isAbsolute(plan.backupManifestFile))reject();return structuredClone(plan);
 }
-const planWithoutSnapshotKeys=['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest'];
+const planWithoutSnapshotKeys=['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest'];
 function validatePlanWithoutSnapshot(plan){
  if(!exact(plan,planWithoutSnapshotKeys)||![plan.operationId,plan.commanderRunId,plan.epochRunId,plan.rollbackEpochRunId].every(uuid)
-  ||![plan.newMainSha,plan.rollbackSha].every(sha)||plan.newMainSha===plan.rollbackSha
-  ||!['artifactDigest','rollbackArtifactDigest','backupDigest','admissionDigest'].every(key=>digest(plan[key]))
+  ||![plan.newMainSha,plan.candidateSha,plan.rollbackSha].every(sha)||new Set([plan.newMainSha,plan.candidateSha,plan.rollbackSha]).size!==3
+  ||!['artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','admissionDigest'].every(key=>digest(plan[key]))
   ||typeof plan.backupManifestFile!=='string'||!path.isAbsolute(plan.backupManifestFile))reject();
  return structuredClone(plan);
 }
@@ -152,11 +155,15 @@ export async function prepareVpsCutoverPlan({plan},{host=productionHost()}={}){
   return Object.freeze({plan:Object.freeze({...base,snapshotDigest}),snapshot:structuredClone(snapshot)});
  }catch{reject();}finally{lease?.close?.();}
 }
-const event=(plan,type,extra={})=>({schema:4,type,...plan,...extra});
+const event=(plan,type,extra={})=>({schema:5,type,...plan,...extra});
 export async function runVpsCutover({plan,journal,reconcile=false},{host=productionHost(),snapshot:preparedSnapshot}={}){
  const p=validatePlan(plan),stream=journal.stream('release');let state=inspectVpsCutoverHistory(stream.events()),lease;
  try{
   lease=host.lease?.(p);lease?.assertIdentity?.();
+  const candidate=inspectCandidateDeploymentHistory(stream.events());
+  if(!candidate.completed||candidate.plan.operationId!==p.commanderRunId||candidate.plan.releaseSha!==p.candidateSha
+   ||candidate.plan.artifactDigest!==p.candidateArtifactDigest||hash(candidate.plan)!==p.candidateDeploymentDigest
+   ||candidate.plan.recoverySha!==p.rollbackSha||candidate.plan.recoveryArtifactDigest!==p.rollbackArtifactDigest)reject();
   if(!state.started){if(reconcile)reject();const snapshot=preparedSnapshot??await host.snapshot(p);if(hash(snapshot)!==p.snapshotDigest)reject();
    if(await host.observe('backup',p)!==true)reject();stream.append(event(p,'vps_cutover_intent',{snapshot}));state=inspectVpsCutoverHistory(stream.events());}
   else if(!baseKeys.slice(2).every(key=>state.intent[key]===p[key])||state.intent.snapshotDigest!==p.snapshotDigest)reject();

@@ -1,4 +1,7 @@
 import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
+
+import {inspectReleaseSequenceHistory} from './commander-sequence.js';
+import {prepareCandidateDeployment,verifyCandidateDeploymentForStart} from './candidate-deployment.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -77,16 +80,27 @@ function runCandidateCollector(){
    ||report.paidProviderCalls!==0||report.observedFixtureMutationAttempts!==0)reject();return report;
  }catch(error){if(error?.message==='Fixed production HELD operation rejected')throw error;return null;}
 }
-function startCandidateServices(){
+async function startCandidateServices(context,binding){
+ await verifyCandidateDeploymentForStart({...binding,journal:context.journal});
  const result=execFileSync('/usr/bin/systemctl',['start','--','blackspire-command.target'],{encoding:'utf8',timeout:30000,maxBuffer:4096,
   stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});if(result!=='')reject();
 }
-async function establishCandidateHeld(context){
- const root=RELEASE_ADMISSION_ROOT,groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,events=context.journal.stream('release').events();
- if(inspectAdmissionHoldHistory(events))reconcileReleaseAdmissionHold({journal:context.journal},{root,groupId});
- else engageReleaseAdmissionHold({releaseSha:context.input.releaseSha,journal:context.journal},{root,groupId});
+export async function establishCandidateHeld(context,{root=RELEASE_ADMISSION_ROOT,
+ groupId=fs.existsSync(root)?fs.statSync(root).gid:fs.statSync('/etc/blackspire').gid,
+ engage=engageReleaseAdmissionHold,reconcile=reconcileReleaseAdmissionHold,
+ prepare=prepareCandidateDeployment,lifecycle=runHeldLifecycle,sequence=inspectReleaseSequenceHistory}={}){
+ const events=context.journal.stream('release').events();
+ const confirmed=events.filter(e=>e.type==='release_hold_result').at(-1);
+ if(inspectAdmissionHoldHistory(events))reconcile({journal:context.journal},{root,groupId});
+ else if(!confirmed)engage({releaseSha:context.input.releaseSha,journal:context.journal},{root,groupId});
+ else if(confirmed.releaseSha!==context.input.releaseSha)reject();
+ // Exact retained HELD state is revalidated under the candidate and lifecycle
+ // locks. A confirmed running lifecycle is observed without re-engaging a stop-only hold.
+ const state=sequence(context.journal.stream('release').events());
+ await prepare({operationId:state.context.operationId,releaseSha:context.input.releaseSha,recoverySha:context.input.recoverySha},{journal:context.journal});
  const pending=inspectHeldLifecycleHistory(context.journal.stream('release').events());
- return runHeldLifecycle({releaseSha:context.input.releaseSha,journal:context.journal,reconcile:Boolean(pending)},{root,groupId,start:startCandidateServices});
+ return lifecycle({releaseSha:context.input.releaseSha,journal:context.journal,reconcile:Boolean(pending)},
+  {root,groupId,start:binding=>startCandidateServices(context,binding)});
 }
 
 function authorityEvidence(operation,authorization,binding,evidence){

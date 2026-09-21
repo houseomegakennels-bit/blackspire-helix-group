@@ -1,3 +1,4 @@
+import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -9,7 +10,7 @@ import {verifyMergedRelease} from './commander-merged.js';
 import {prepareVpsCutoverPlan,inspectVpsCutoverHistory,runVpsCutover} from './commander-vps.js';
 import {beginPostMergeHeldEpoch,inspectPostMergeAdmissionHistory} from './postmerge-admission.js';
 import {readReleaseProtectedBytes} from './commander-host.js';
-import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 
 const ADMISSION='/etc/blackspire/release-admission',VERCEL_TOKEN='/var/lib/blackspire-operator/vercel-token';
 const RELEASE_ROOT='/opt/blackspire-command',REPOSITORY='https://github.com/houseomegakennels-bit/blackspire-helix-group.git';
@@ -55,14 +56,14 @@ function fixedStopAndVerify(){
  for(const unit of [API,WORKER]){const fields=Object.fromEntries(run('/usr/bin/systemctl',['show','--no-pager','--property=ActiveState,MainPID','--',unit]).split('\n').map(line=>line.split('=')));
   if(fields.ActiveState!=='inactive'||fields.MainPID!=='0')reject();}
 }
-export async function materializeFixedNewMainArtifact(newMainSha,{run=execFileSync,inspect=inspectBuyerWriterArtifact}={}){
+export async function materializeFixedNewMainArtifact(newMainSha,{run=execFileSync,inspect=inspectSealedBuyerWriterArtifact}={}){
  if(!sha(newMainSha)||typeof run!=='function'||typeof inspect!=='function')reject();
  const command=(file,args,extra={})=>run(file,args,{encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],
   env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',...extra}});
  try{command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'cat-file','-e',`${newMainSha}^{commit}`]);}
  catch{command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'fetch','--no-tags','--no-write-fetch-head',REPOSITORY,newMainSha]);}
  command('/usr/bin/git',['--no-replace-objects','-C',SOURCE_ROOT,'cat-file','-e',`${newMainSha}^{commit}`]);
- command('/bin/bash',[path.join(SOURCE_ROOT,'scripts/release-create.sh'),newMainSha],{BLACKSPIRE_RELEASE_ROOT:RELEASE_ROOT,BLACKSPIRE_SOURCE_ROOT:SOURCE_ROOT});
+ command('/bin/bash',[path.join(SOURCE_ROOT,'scripts/release-create.sh'),newMainSha],{BLACKSPIRE_RELEASE_ROOT:RELEASE_ROOT,BLACKSPIRE_SOURCE_ROOT:SOURCE_ROOT,BLACKSPIRE_EXPECTED_ENVIRONMENT:'production'});
  const artifact=await inspect({artifactRoot:path.join(RELEASE_ROOT,'releases',newMainSha),releaseSha:newMainSha,environment:'production'});
  if(artifact.releaseSha!==newMainSha||artifact.environment!=='production'||!digest(artifact.artifactDigest))reject();
  return artifact.artifactDigest;
@@ -70,7 +71,10 @@ export async function materializeFixedNewMainArtifact(newMainSha,{run=execFileSy
 async function vpsBase(context,args,held,dependencies){
  const binding=invocation(context,args,'journaled_vps_cutover',{attempt:true}),rollback=output(args,'rollback_acceptance'),newMainSha=capturedMain(context,args,'journaled_vps_cutover');
  if(held?.status!=='POST_MERGE_HELD'||held.newMainSha!==newMainSha||!uuid(held.epochRunId)||!digest(rollback.artifactDigest)||!digest(rollback.backupProofDigest))reject();
- return{operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
+ const candidate=inspectCandidateDeploymentHistory(context.journal.stream('release').events());
+ if(!candidate.completed||candidate.plan.operationId!==binding.operationId||candidate.plan.releaseSha!==context.input.releaseSha
+  ||candidate.plan.recoverySha!==context.input.recoverySha||candidate.plan.recoveryArtifactDigest!==rollback.artifactDigest)reject();
+ return{candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
   rollbackSha:context.input.recoverySha,artifactDigest:await dependencies.materializeArtifact(newMainSha),rollbackArtifactDigest:rollback.artifactDigest,
   backupDigest:rollback.backupProofDigest,backupManifestFile:context.release.backupManifestFile,
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
@@ -88,7 +92,7 @@ async function ensureHeld(context,args,dependencies){
 }
 async function driveVps(context,args,dependencies){
  const held=await ensureHeld(context,args,dependencies),history=inspectVpsCutoverHistory(context.journal.stream('release').events());let plan,options,reconcile;
- if(history.started){plan=Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','rollbackSha','artifactDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]));reconcile=true;}
+ if(history.started){plan=Object.fromEntries(['operationId','commanderRunId','epochRunId','rollbackEpochRunId','newMainSha','candidateSha','rollbackSha','artifactDigest','candidateArtifactDigest','candidateDeploymentDigest','rollbackArtifactDigest','backupDigest','backupManifestFile','admissionDigest','snapshotDigest'].map(key=>[key,history.intent[key]]));reconcile=true;}
  else{const prepared=await dependencies.prepareVps({plan:await vpsBase(context,args,held,dependencies)});plan=prepared.plan;options={snapshot:prepared.snapshot};reconcile=false;}
  const result=await dependencies.runVps({plan,journal:context.journal,reconcile},options);
  if(result.status!=='VPS_CUTOVER_COMPLETE'||result.newMainSha!==plan.newMainSha)reject();
