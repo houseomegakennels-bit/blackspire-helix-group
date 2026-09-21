@@ -1,4 +1,4 @@
-import {validateOwnedN8nAttempt3Supervisor} from './owned-n8n-cloud-supervisor.js';
+import {validateOwnedN8nAttempt3Supervisor,awaitOwnedN8nAttempt3SupervisorAcknowledgment} from './owned-n8n-cloud-supervisor.js';
 import {readOwnedN8nInterruptedAttempt2} from './owned-n8n-cloud-interrupted-host.js';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -62,7 +62,7 @@ async function cleanupInner(){
 export async function serveOwnedN8nCloudProof(){const c=await nativeContext();let server,timer,resolveDone,done=false;const stop=()=>{if(!done){done=true;resolveDone?.();}};try{
  const plan=validatePlan(read('plan'));if(!await operatorMatches(plan,c.operatorSha)||plan.sourceDigest!==hash(c.s)||Date.now()>=Date.parse(plan.expiresAt)||read('serve-intent')||read('cleanup-intent'))fail();
  const {validateOwnedN8nCloudWorkflowCreated,validateOwnedN8nCloudWorkflowCurrent,validateOwnedN8nCloudWorkflowAcknowledgment}=await import('./owned-n8n-cloud-workflow.js');const created=read('workflow-created'),workflow=validateOwnedN8nCloudWorkflowCreated(plan,created),fresh=await c.request('GET','/api/v1/workflows/'+workflow.id);if(fresh.status!==200||!same(validateOwnedN8nCloudWorkflowAcknowledgment(plan,read('workflow-create-ack')),created.workflow))fail();validateOwnedN8nCloudWorkflowCurrent(plan,created,fresh.body);
- const p=retainedProxy(plan);if(proxy()!==p.before)fail();noListener();if(supervisorIdentity(plan,'ready').pid!==process.pid)fail();await c.fence();record('serve-intent',{version:1,planDigest:hash(plan)});process.once('SIGTERM',stop);process.once('SIGINT',stop);
+ const p=retainedProxy(plan);if(proxy()!==p.before)fail();noListener();await awaitOwnedN8nAttempt3SupervisorAcknowledgment({observe:()=>supervisorIdentity(plan,'launch'),readResult:()=>read('supervisor-result'),validateReady:()=>supervisorIdentity(plan,'ready')});await c.fence();record('serve-intent',{version:1,planDigest:hash(plan)});process.once('SIGTERM',stop);process.once('SIGINT',stop);
  const complete=new Promise(resolve=>{resolveDone=resolve;});
  server=http.createServer({maxHeaderSize:8192},createOwnedN8nCloudVerifierAttempt3({plan,key:c.s.value.writerCredential,record:value=>record('server-receipt',value),rejectRecord:value=>record('server-rejection',value),fence:c.fence,complete:stop}));
  server.headersTimeout=5000;server.requestTimeout=30000;server.keepAliveTimeout=1000;server.maxRequestsPerSocket=1;server.setTimeout(30000,socket=>socket.destroy());server.on('clientError',(_,socket)=>socket.destroy());

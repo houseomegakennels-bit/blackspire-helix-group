@@ -25,3 +25,16 @@ export function validateOwnedN8nAttempt3Supervisor({plan,operatorRoot,root,inten
  if(phase!=='launch'&&!same(result,{version:1,planDigest:digest(plan),unit:expected.unit,started:true,supervisor:identity}))fail();
  return identity;
 }
+
+// The detached child can win scheduling before systemd-run returns to its parent.
+// It may wait only for the exact receipt; it never starts or restarts a service.
+export async function awaitOwnedN8nAttempt3SupervisorAcknowledgment({observe,readResult,validateReady,pid=process.pid,now=()=>performance.now(),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),timeoutMs=10000}){
+ if(!Number.isSafeInteger(pid)||pid<2||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw Error('Cloud launch rendezvous refused');
+ const start=now();let initial;
+ for(;;){
+  const identity=observe();if(identity.pid!==pid||initial&&JSON.stringify(identity)!==JSON.stringify(initial))throw Error('Cloud launch identity changed');initial??=identity;
+  if(now()-start>=timeoutMs)throw Error('Cloud launch acknowledgment unknown');
+  if(readResult()!==null){const ready=validateReady();if(JSON.stringify(ready)!==JSON.stringify(initial)||now()-start>=timeoutMs)throw Error('Cloud launch acknowledgment refused');return ready;}
+  await pause(Math.min(100,timeoutMs-(now()-start)));
+ }
+}
