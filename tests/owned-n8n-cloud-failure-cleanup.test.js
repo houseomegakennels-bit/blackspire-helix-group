@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildOwnedN8nCloudWorkflow,cloudProofDigest} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
-import {cleanupOwnedN8nCloudFailure} from '../packages/zola-release/owned-n8n-cloud-failure-cleanup.js';
+import {cleanupOwnedN8nCloudFailure,validateOwnedN8nCloudFailureCleanup} from '../packages/zola-release/owned-n8n-cloud-failure-cleanup.js';
 function fixture(){
  const plan={version:1,kind:'owned-n8n-cloud-proof-plan',releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137',operatorSha:'b'.repeat(40),credentialId:'RzOyDmXYmx58yZHi',challenge:'c'.repeat(64),receiptId:'11111111-1111-4111-8111-111111111111',origin:'https://jarvis.blackspirehelix.com',path:'/__zola_credential_proof/'+'c'.repeat(64),createdAt:'2026-09-21T20:00:00.000Z',expiresAt:'2026-09-21T20:15:00.000Z'};
  for(const k of ['authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','sourceDigest','profileDigest','ingressDigest','proxyBeforeDigest','proxyCandidateDigest'])plan[k]='d'.repeat(64);
@@ -46,4 +46,11 @@ test('pending cleanup with still existing workflow never redispatches DELETE',as
  await assert.rejects(cleanupOwnedN8nCloudFailure(f.input,f));let writes=0;
  f.request=async(method,path)=>{if(method!=='GET')writes++;return request(method,path);};
  await assert.rejects(cleanupOwnedN8nCloudFailure(f.input,f));assert.equal(writes,0);
+});
+
+test('pure predecessor cleanup validation rejects forged success or wrong evidence',async()=>{
+ const f=fixture();await cleanupOwnedN8nCloudFailure(f.input,f);const proof={observation:f.records.get('failure-execution-observed'),intent:f.records.get('failure-cleanup-intent'),result:f.records.get('failure-cleanup-result')};
+ assert.deepEqual(validateOwnedN8nCloudFailureCleanup(f.input,proof),proof.result);
+ assert.throws(()=>validateOwnedN8nCloudFailureCleanup(f.input,{...proof,result:{...proof.result,positiveProof:true}}));
+ assert.throws(()=>validateOwnedN8nCloudFailureCleanup(f.input,{...proof,observation:{...proof.observation,id:'2'}}));
 });

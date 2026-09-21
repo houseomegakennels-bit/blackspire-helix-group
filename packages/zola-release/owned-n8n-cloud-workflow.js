@@ -10,6 +10,8 @@ const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).
 export function validateOwnedN8nCloudPlan(p){
  if(p?.version!==1||p.kind!=='owned-n8n-cloud-proof-plan'||p.releaseSha!==N8N_REASSERTION.releaseSha||p.operationId!==N8N_REASSERTION.operationId||p.stageAttemptId!=='f163d812-3711-471b-863a-038e85d59137'||!/^[a-f0-9]{40}$/.test(p.operatorSha??'')||p.credentialId!==N8N_REASSERTION.credentialId||!hex(p.challenge)||!(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/).test(p.receiptId??'')||p.origin!=='https://jarvis.blackspirehelix.com'||p.path!=='/__zola_credential_proof/'+p.challenge)fail();
  for(const key of ['authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','sourceDigest','profileDigest','ingressDigest','proxyBeforeDigest','proxyCandidateDigest'])if(!hex(p[key]))fail();
+ if(p.attempt!==undefined&&(p.attempt!==2||!hex(p.predecessorFailureDigest)))fail();
+ if(p.attempt===undefined&&p.predecessorFailureDigest!==undefined)fail();
  const start=Date.parse(p.createdAt),end=Date.parse(p.expiresAt);if(!Number.isFinite(start)||!Number.isFinite(end)||end-start!==15*60*1000)fail();return p;
 }
 export function buildOwnedN8nCloudWorkflow(plan){
@@ -40,26 +42,50 @@ export function validateOwnedN8nCloudWorkflowDeletion(plan,created,executionProo
  if(!same(deleteIntent,intent)||!same(deleted,cleanup))fail();return cleanup;
 }
 async function getWorkflow(plan,request,workflowId){const r=await request('GET','/api/v1/workflows/'+workflowId);if(r?.status!==200)fail();return normalizeOwnedN8nCloudWorkflow(plan,r.body);}
+export function validateOwnedN8nCloudWorkflowAcknowledgment(plan,ack){
+ if(!exact(ack,'version,planDigest,status,responseDigest,body')||ack.version!==1||ack.planDigest!==cloudProofDigest(plan)||(ack.status!==200&&ack.status!==201)||ack.responseDigest!==cloudProofDigest(ack.body))fail();
+ return normalizeOwnedN8nCloudWorkflow(plan,ack.body);
+}
 export async function prepareOwnedN8nCloudWorkflow(plan,{request,store,fence,now=()=>Date.now()}){
  validateOwnedN8nCloudPlan(plan);await fence();if(now()<Date.parse(plan.createdAt)||now()>=Date.parse(plan.expiresAt))fail();
  const intent={version:1,planDigest:cloudProofDigest(plan),workflow:buildOwnedN8nCloudWorkflow(plan)};
  const prior=store.value('workflow-intent',true),created=store.value('workflow-created',true);
- if(prior&&!same(prior,intent)||created&&!prior)fail();
- if(created){const w=validateOwnedN8nCloudWorkflowCreated(plan,created),observed=await getWorkflow(plan,request,w.id);if(!same(w,observed))fail();await fence();store.record('workflow-intent',intent);store.record('workflow-created',created);return created;}
- if(prior)fail(); // Unknown create acknowledgment is never another create.
- store.record('workflow-intent',intent);await fence();
- const r=await request('POST','/api/v1/workflows',intent.workflow);
- if(r?.status!==200&&r?.status!==201)fail();
- const workflow=normalizeOwnedN8nCloudWorkflow(plan,r.body),result={version:1,planDigest:cloudProofDigest(plan),workflow};
- store.record('workflow-created',result);
- if(!same(await getWorkflow(plan,request,workflow.id),workflow))fail();await fence();return result;
+ let ack=store.value('workflow-create-ack',true);
+ if(prior&&!same(prior,intent)||(created||ack)&&!prior)fail();
+ if(created){
+  const w=validateOwnedN8nCloudWorkflowCreated(plan,created);
+  if(plan.attempt===2&&!same(validateOwnedN8nCloudWorkflowAcknowledgment(plan,ack),w))fail();
+  if(!same(w,await getWorkflow(plan,request,w.id)))fail();await fence();
+  store.record('workflow-intent',intent);if(ack)store.record('workflow-create-ack',ack);store.record('workflow-created',created);return created;
+ }
+ if(prior&&!ack)fail();
+ if(!prior){
+  store.record('workflow-intent',intent);await fence();
+  const r=await request('POST','/api/v1/workflows',intent.workflow);
+  if(!Number.isInteger(r?.status)||r.status<100||r.status>599)fail();
+  ack={version:1,planDigest:cloudProofDigest(plan),status:r.status,responseDigest:cloudProofDigest(r.body??null),body:r.body??null};
+  store.record('workflow-create-ack',ack);
+ }
+ const workflow=validateOwnedN8nCloudWorkflowAcknowledgment(plan,ack),result={version:1,planDigest:cloudProofDigest(plan),workflow};
+ if(!same(await getWorkflow(plan,request,workflow.id),workflow))fail();await fence();
+ store.record('workflow-intent',intent);store.record('workflow-create-ack',ack);store.record('workflow-created',result);return result;
+}
+export function normalizeOwnedN8nCloudExecutionWorkflow(plan,workflow,raw){
+ if(plan.attempt!==2)return normalizeOwnedN8nCloudWorkflow(plan,raw);
+ const w=normalizeOwnedN8nCloudWorkflow(plan,workflow);
+ if(!exact(raw,'id,name,nodes,connections,settings,nodeGroups')||raw.id!==w.id||!isDeepStrictEqual(raw.nodeGroups,[]))fail();
+ const expected={id:w.id,name:w.name,nodes:structuredClone(w.nodes),connections:w.connections,settings:w.settings,nodeGroups:[]};
+ expected.nodes[0].parameters.notice='';
+ Object.assign(expected.nodes[1].parameters,{curlImport:'',provideSslCertificates:false,sendQuery:false,sendHeaders:false,sendBody:false,infoMessage:''});
+ Object.assign(expected.nodes[1].parameters.options.response.response,{fullResponse:false,neverError:false});
+ if(!isDeepStrictEqual(raw,expected))fail();return w;
 }
 export function validateOwnedN8nCloudExecution({plan,workflow,execution,serverReceipt}){
  validateOwnedN8nCloudPlan(plan);const w=normalizeOwnedN8nCloudWorkflow(plan,workflow),r=serverReceipt,e=execution;
  if(!exact(r,'version,kind,planDigest,challenge,receiptId,receivedAt,authenticated')||r.version!==1||r.kind!=='owned-n8n-cloud-authenticated'||r.planDigest!==cloudProofDigest(plan)||r.challenge!==plan.challenge||r.receiptId!==plan.receiptId||r.authenticated!==true)fail();
  const at=Date.parse(r.receivedAt),start=Date.parse(e?.startedAt),stop=Date.parse(e?.stoppedAt);
  if(!Number.isFinite(at)||at<Date.parse(plan.createdAt)||at>=Date.parse(plan.expiresAt)||!Number.isFinite(start)||!Number.isFinite(stop)||start<Date.parse(plan.createdAt)||stop<start||at<start||at>stop||stop>Date.parse(plan.expiresAt)+60000)fail();
- if(!id(e.id)||e.workflowId!==w.id||e.mode!=='manual'||e.usedPrivateCredentials!==false||e.status!=='success'||e.finished!==true||e.retryOf!=null||e.retrySuccessId!=null||e.waitTill!=null||e.data?.resultData?.error||e.workflowVersionId!==w.versionId||!same(normalizeOwnedN8nCloudWorkflow(plan,e.workflowData),w))fail();
+ if(!id(e.id)||e.workflowId!==w.id||e.mode!=='manual'||e.usedPrivateCredentials!==false||e.status!=='success'||e.finished!==true||e.retryOf!=null||e.retrySuccessId!=null||e.waitTill!=null||e.data?.resultData?.error||e.workflowVersionId!==w.versionId||!same(normalizeOwnedN8nCloudExecutionWorkflow(plan,w,e.workflowData),w))fail();
  const result=e.data.resultData,run=result.runData;
  if(!exact(run,'Manual Trigger,Verify stored credential')||result.lastNodeExecuted!=='Verify stored credential')fail();
  for(const name of ['Manual Trigger','Verify stored credential']){

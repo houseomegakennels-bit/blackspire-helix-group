@@ -46,3 +46,21 @@ export function assertOwnedN8nCloudContinuationOperator({plan,workflowCreated,ad
   ||Object.entries(fixed).some(([k,v])=>plan[k]!==v))fail();
  validateOwnedN8nCloudWorkflowAdoption(plan,workflowCreated,adoption,currentOperatorSha);return true;
 }
+
+export function validateOwnedN8nCloudAttempt2Continuation({complete,currentOperatorSha}){
+ const p=complete?.plan,old=complete?.predecessor?.plan,result=complete?.predecessor?.result;
+ if(p?.attempt!==2||!(/^[a-f0-9]{40}$/).test(currentOperatorSha??'')||p.operatorSha!==currentOperatorSha||complete.adoption!=null
+  ||old?.operatorSha!=='4a1a329a35e10691af2eadbf4088c8bb306d505f'||old.attempt!==undefined
+  ||!exact(result,'version,kind,binding,intentDigest,failedExecutionDigest,workflowDeleted,positiveProof,executionGraphAcceptance,originalOutcome,administrativeReassertionStatus')
+  ||result.version!==1||result.kind!=='owned-n8n-failed-workflow-cleanup-result'||result.workflowDeleted!==true||result.positiveProof!==false
+  ||result.executionGraphAcceptance!=='UNVERIFIED'||result.originalOutcome!=='UNKNOWN'||result.administrativeReassertionStatus!==405
+  ||result.binding?.planDigest!==hash(old)||result.binding.workflowId!=='JjlvgzqIgFQSWOM7'||result.binding.executionId!=='1'
+  ||!digest(result.intentDigest)||!digest(result.failedExecutionDigest)||p.predecessorFailureDigest!==hash(result))fail();
+ for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])if(p[key]!==old[key])fail();
+ if(Object.entries(fixed).some(([k,v])=>p[k]!==v)||p.challenge===old.challenge||p.receiptId===old.receiptId||p.path===old.path
+  ||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ const before=old.credentialMetadata,after=p.credentialMetadata;
+ if(!before||!after||after.updatedAt!=='2026-09-21T22:55:51.254Z'||!same({...before,updatedAt:null},{...after,updatedAt:null})||!same(after,complete.credentialMetadata)
+  ||!Number.isFinite(Date.parse(before.updatedAt))||!Number.isFinite(Date.parse(after.updatedAt))||Date.parse(after.updatedAt)<=Date.parse(before.updatedAt))fail();
+ return Object.freeze({attempt:2,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
+}

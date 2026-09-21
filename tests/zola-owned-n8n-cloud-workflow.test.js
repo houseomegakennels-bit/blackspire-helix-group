@@ -99,3 +99,46 @@ test('adoption refuses duplicate planned name, changed graph, source copy and st
   assert.equal(f.records.has('workflow-created'),false);
  }
 });
+
+function secondFixture(){
+ const f=fixture();f.plan.attempt=2;f.plan.predecessorFailureDigest='a'.repeat(64);f.serverReceipt.planDigest=cloudProofDigest(f.plan);
+ const w=copy(f.workflow);
+ const snapshot={id:w.id,name:w.name,nodes:w.nodes,connections:w.connections,settings:w.settings,nodeGroups:[]};
+ snapshot.nodes[0].parameters.notice='';
+ Object.assign(snapshot.nodes[1].parameters,{curlImport:'',provideSslCertificates:false,sendQuery:false,sendHeaders:false,sendBody:false,infoMessage:''});
+ Object.assign(snapshot.nodes[1].parameters.options.response.response,{fullResponse:false,neverError:false});
+ f.execution.workflowData=snapshot;return f;
+}
+test('attempt2 exact observed n8n snapshot projection proves success without relaxing saved graph',async()=>{
+ const f=secondFixture();const created=await prepareOwnedN8nCloudWorkflow(f.plan,f);
+ assert.equal(f.records.get('workflow-create-ack').status,200);
+ assert.equal((await completeOwnedN8nCloudWorkflow({...f,executionId:f.execution.id},f)).workflowDeleted,true);
+ assert.deepEqual(created.workflow,f.workflow);
+ const first=fixture();first.execution.workflowData=f.execution.workflowData;assert.throws(()=>validateOwnedN8nCloudExecution(first));
+});
+test('attempt2 denies changed UI defaults, snapshot fields, credential and version',()=>{
+ for(const mutate of [
+  f=>{f.execution.workflowData.nodes[1].parameters.sendHeaders=true;},
+  f=>{f.execution.workflowData.nodes[1].parameters.sendBody=true;},
+  f=>{f.execution.workflowData.nodes[1].parameters.options.response.response.neverError=true;},
+  f=>{f.execution.workflowData.nodes[1].parameters.options.response.response.fullResponse=true;},
+  f=>{f.execution.workflowData.nodes[1].parameters.other=false;},
+  f=>{f.execution.workflowData.nodes[0].parameters.notice='changed';},
+  f=>{f.execution.workflowData.active=false;},
+  f=>{f.execution.workflowData.nodeGroups=[{}];},
+  f=>{f.execution.workflowData.nodes[1].credentials.httpHeaderAuth.id='other';},
+  f=>{f.execution.workflowVersionId='other';},
+ ]){const f=secondFixture();mutate(f);assert.throws(()=>validateOwnedN8nCloudExecution(f));}
+ const f=secondFixture();delete f.plan.predecessorFailureDigest;assert.throws(()=>buildOwnedN8nCloudWorkflow(f.plan));
+});
+test('retained create acknowledgment reconciles exact GET only after interruption',async()=>{
+ const f=secondFixture(),request=f.request;let failGet=true;
+ f.request=async(method,path,body)=>{if(method==='GET'&&failGet){failGet=false;throw Error('read interrupted');}return request(method,path,body);};
+ await assert.rejects(prepareOwnedN8nCloudWorkflow(f.plan,f));assert.equal(f.records.has('workflow-create-ack'),true);assert.equal(f.records.has('workflow-created'),false);
+ assert.equal((await prepareOwnedN8nCloudWorkflow(f.plan,f)).workflow.id,f.workflow.id);
+ assert.equal(f.calls.filter(c=>c.method==='POST').length,1);
+});
+test('non-success create response is retained and never redispatched',async()=>{
+ const f=secondFixture();let posts=0;f.request=async method=>{assert.equal(method,'POST');posts++;return{status:403,body:{message:'denied'}};};
+ await assert.rejects(prepareOwnedN8nCloudWorkflow(f.plan,f));await assert.rejects(prepareOwnedN8nCloudWorkflow(f.plan,f));assert.equal(posts,1);assert.equal(f.records.get('workflow-create-ack').status,403);
+});

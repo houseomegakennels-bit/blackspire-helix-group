@@ -49,3 +49,10 @@ export async function cleanupOwnedN8nCloudFailure(input,{request,store,fence,clo
  if(result&&!same(result,expected))fail();
  store.record('failure-execution-observed',observation);store.record('failure-cleanup-intent',intent);store.record('failure-cleanup-result',expected);return expected;
 }
+
+export function validateOwnedN8nCloudFailureCleanup(input,{observation,intent,result}){
+ const b=failedExecution(input,observation);
+ const expectedIntent={version:1,kind:'owned-n8n-failed-workflow-cleanup-intent',binding:b,failedExecutionDigest:cloudProofDigest(observation),positiveProof:false,executionGraphAcceptance:'UNVERIFIED',originalOutcome:'UNKNOWN'};
+ const expectedResult={version:1,kind:'owned-n8n-failed-workflow-cleanup-result',binding:b,intentDigest:cloudProofDigest(expectedIntent),failedExecutionDigest:cloudProofDigest(observation),workflowDeleted:true,positiveProof:false,executionGraphAcceptance:'UNVERIFIED',originalOutcome:'UNKNOWN',administrativeReassertionStatus:405};
+ if(!same(intent,expectedIntent)||!same(result,expectedResult))fail();return expectedResult;
+}
