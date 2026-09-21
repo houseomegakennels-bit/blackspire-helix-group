@@ -1,7 +1,10 @@
 import {verifyHeldCanonicalWriter} from './held-writer-binding.js';
 import {createHash} from 'node:crypto';
 import pg from 'pg';
-import {readRootOwnedJson,readRootOwnedMetadataSnapshot} from '../buyer-writer/protected-json.js';
+import path from 'node:path';
+import {prepareBuyerMigrationExecution} from '../buyer-writer/migration-executor.js';
+import {BUYER_WRITER_MANAGEMENT_CONFIG} from '../buyer-writer/management-config-preparation.js';
+import {readRootOwnedJson,readRootOwnedJsonSnapshot,readRootOwnedMetadataSnapshot} from '../buyer-writer/protected-json.js';
 import {hash} from './commander-journal.js';
 import {prepareN8nTransition,createN8nTransport,executeN8nTransition} from './commander-n8n.js';
 import {verifyReleaseMigrationPackage,executeReleaseNativeMigration,inspectReleaseMigrationState} from './commander-migration.js';
@@ -96,21 +99,50 @@ function validateCredential(value){
  return value;
 }
 
+// The immutable package is metadata only. Credentials have one fixed host path;
+// native execution inputs are rebuilt from the verified sibling package bytes.
+export function prepareProductionMigrationInput({releaseSha,configurationFile,events,mode},{
+ readMetadata=file=>readRootOwnedMetadataSnapshot(file,{groupId:0}).value,
+ readBytes=readReleaseProtectedBytes,now=()=>new Date(),verifyPackage,
+}={}){
+ if(!['apply','reconcile'].includes(mode)||!Array.isArray(events))reject();
+ const verify=verifyPackage??(value=>verifyReleaseMigrationPackage(value,{readJson:readMetadata,readBytes}));
+ const before=verify({releaseSha,configurationFile}),configuration=readMetadata(configurationFile);
+ if(Object.keys(configuration).sort().join(',')!=='creatorOid,providerManifest,releaseSha'||configuration.releaseSha!==releaseSha)reject();
+ const root=path.dirname(configurationFile),manifestBytes=readBytes(path.join(root,'migration-manifest.json'),2*1024*1024),body=readBytes(path.join(root,'application-body.sql'),2*1024*1024);
+ const prior=inspectReleaseMigrationState(events).intent;
+ if(mode==='apply'&&prior||mode==='reconcile'&&(!prior||prior.releaseSha!==releaseSha))reject();
+ const migrationVersion=prior?.migrationVersion??now().toISOString().replace(/\D/g,'').slice(0,14);
+ const input={...configuration,manifestBytes,body,expectedManifestSha256:before.manifestSha256,migrationVersion};
+ const plan=prepareBuyerMigrationExecution(input);
+ if(plan.releaseSha!==before.releaseSha||plan.bodySha256!==before.bodySha256||plan.manifestSha256!==before.manifestSha256
+  ||prior&&(prior.bodySha256!==plan.bodySha256||prior.manifestSha256!==plan.manifestSha256))reject();
+ const after=verify({releaseSha,configurationFile});
+ if(JSON.stringify(before)!==JSON.stringify(after)||JSON.stringify(readMetadata(configurationFile))!==JSON.stringify(configuration)
+  ||readBytes(path.join(root,'migration-manifest.json'),2*1024*1024)!==manifestBytes||readBytes(path.join(root,'application-body.sql'),2*1024*1024)!==body)reject();
+ return Object.freeze(input);
+}
+
 function fixedMigrations(context,dependencies={}){
  const readMetadata=dependencies.readMetadata??(file=>readRootOwnedMetadataSnapshot(file,{groupId:0}).value);
- const verifyPackage=dependencies.verifyPackage??verifyReleaseMigrationPackage;
+ const readBytes=dependencies.readBytes??readReleaseProtectedBytes;
+ const verifyPackage=dependencies.verifyPackage??(input=>verifyReleaseMigrationPackage(input,{readJson:readMetadata,readBytes}));
  const packageProof=()=>verifyPackage({releaseSha:context.input.releaseSha,configurationFile:context.release.migrationConfigurationFile});
- const migrationInput=()=>{
-  const value=readMetadata(context.release.migrationConfigurationFile);
-  if(value.releaseSha!==context.input.releaseSha||typeof value.databaseConfigPath!=='string')reject();
-  return value;
- };
- const connect=dependencies.connect??(async input=>{
-  const credential=validateCredential(readRootOwnedJson(input.databaseConfigPath,{groupId:0,maxBytes:65536}));
-  const client=new pg.Client({host:credential.host,port:5432,database:'postgres',user:'postgres',password:credential.password,
-   ssl:{rejectUnauthorized:true,ca:credential.ca},connectionTimeoutMillis:5000,query_timeout:35000,
-   application_name:'zola-guarded-application-migration'});
-  client.on('error',()=>{});await client.connect();return client;
+ const migrationInput=mode=>prepareProductionMigrationInput({releaseSha:context.input.releaseSha,
+  configurationFile:context.release.migrationConfigurationFile,events:context.journal.stream('release').events(),mode},
+  {readMetadata,readBytes,verifyPackage,...dependencies.now?{now:dependencies.now}:{}});
+ const connect=dependencies.connect??(async()=>{
+  let client;try{
+   const snapshot=readRootOwnedJsonSnapshot(BUYER_WRITER_MANAGEMENT_CONFIG,{groupId:0,maxBytes:65536});
+   if(snapshot.identity.uid!==0||snapshot.identity.gid!==0||(snapshot.identity.mode&0o7777)!==0o600)reject();
+   const credential=validateCredential(snapshot.value);
+   client=new pg.Client({host:credential.host,port:5432,database:'postgres',user:'postgres',password:credential.password,
+    ssl:{rejectUnauthorized:true,ca:credential.ca},connectionTimeoutMillis:5000,query_timeout:35000,
+    application_name:'zola-guarded-application-migration'});
+   client.on('error',()=>{});await client.connect();
+   const after=readRootOwnedJsonSnapshot(BUYER_WRITER_MANAGEMENT_CONFIG,{groupId:0,maxBytes:65536});
+   if(JSON.stringify(snapshot)!==JSON.stringify(after))reject();return client;
+  }catch{try{await client?.end();}catch{}reject();}
  });
  const packageEvidence=(stage,args)=>{
   const bound=binding(context,args),verified=packageProof();
@@ -128,8 +160,10 @@ function fixedMigrations(context,dependencies={}){
    migrationStatus:state.lastStatus??'not-started',migrationReconciliationRequired:state.reconciliationRequired})});
  };
  const run=async(args,mode)=>{
-  binding(context,args,{attempt:true});packageProof();const input=migrationInput(),client=await connect(input);
+  binding(context,args,{attempt:true});packageProof();const input=migrationInput(mode),client=await connect(input);
   try{
+   const current=packageProof();
+   if(current.bodySha256!==hash(input.body)||current.manifestSha256!==input.expectedManifestSha256)reject();
    const result=await (dependencies.execute??executeReleaseNativeMigration)({input,client,journal:context.journal,mode});
    if(!['committed','committed-history-verified'].includes(result?.status))reject();
   }finally{await client.end().catch(()=>{});}
@@ -141,8 +175,9 @@ function fixedMigrations(context,dependencies={}){
   check:async args=>{packageEvidence('migration_postconditions',args);
    const prior=inspectReleaseMigrationState(context.journal.stream('release').events());
    if(prior.lastStatus==='committed'){
-    const input=migrationInput(),client=await connect(input);
-    try{const result=await (dependencies.execute??executeReleaseNativeMigration)({input,client,journal:context.journal,mode:'reconcile'});
+    const input=migrationInput('reconcile'),client=await connect(input);
+    try{const current=packageProof();if(current.bodySha256!==hash(input.body)||current.manifestSha256!==input.expectedManifestSha256)reject();
+     const result=await (dependencies.execute??executeReleaseNativeMigration)({input,client,journal:context.journal,mode:'reconcile'});
      if(result?.status!=='committed-history-verified')reject();}finally{await client.end().catch(()=>{});}
    }else if(prior.lastStatus!=='committed-history-verified')reject();
    return stateProof('migration_postconditions',args,{required:true});},

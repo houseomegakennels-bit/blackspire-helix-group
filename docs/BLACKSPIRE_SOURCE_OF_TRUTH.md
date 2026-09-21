@@ -16,6 +16,12 @@ A dedicated root composition now resolves the exact installed manifest and prote
 
 Focused state-machine, real protected-file retirement and loopback HTTP regressions pass locally. The API HELD preparation guard and postmerge hook are separately developed dependencies and require integrated validation and independent review. Production activation remains UNVERIFIED; no production file, journal, service or database was changed.
 
+## 2026-09-21 — native migration package adapter repaired locally
+
+The production migration adapter now preserves the immutable package's exact three-field metadata schema and constructs the native executor input from its verified sibling manifest and SQL body. The production input must reference the generated bundle's migration-input.json, not the outer repin seed. Management credentials come only from the fixed protected management configuration with pinned database host and CA, root ownership, mode 0600 and a repeated identity/content observation after connection. Apply chooses a migration version only before any durable intent; reconciliation reuses the recorded version and exact package digests. Package drift is refused before execution. Existing native transaction locks, HELD lease checks, journal claims and unknown-outcome reconciliation remain authoritative.
+
+Twenty-five focused adapter and native executor tests pass using a generated package with the real verifier and native input validator, including exact metadata rejection, package drift, retained-version reconciliation and refusal before connection. Root build, lint and syntax/typecheck pass. Independent review and integrated production execution remain UNVERIFIED. No production mutation or push occurred.
+
 ## 2026-09-21 — composed activation repairs reviewed; production preparation retained
 
 Independent review approves candidate deployment `7d1e28f8dd510bf3f2e4869bde173ea68e29fcda`, collector-resume correction `89a6192155c5e4f8baf344edc11544432d3d1904`, commander history integration through `0073ea6`, and gateway unit preparation `cd199fc007803c46e99507324771f1cc0608d138`. The combined activation/history lane passes 29/29; gateway/activation/history integration passes 18/18. Independent whole-history inspection validates the real 51-row release and three-row n8n chains without changing bytes; old observations yield zero current outputs. The bounded compatibility path is now validated against actual preserved history, not deployed.

@@ -1993,3 +1993,7 @@ Added a narrow authenticated preparation guard that retains a shared release-adm
 ## 2026-09-21 — HELD writer binding publication implementation
 
 Added exact installed-manifest profile resolution, shared-lease HELD readiness verification, attempt-bound candidate/postmerge binding transaction and strict composed event validation. Prior postmerge bindings are retained by exact digest; publication interruptions observe without redispatch. Candidate orchestration and n8n continuity now require the explicit proof. Focused tests include real protected-file retirement and actual loopback HTTP; API preparation and postmerge hook are separate integration dependencies. No production mutation or push; independent review and integrated acceptance remain pending.
+
+## 2026-09-21 — native migration package input composition
+
+Repaired the production adapter's incompatible credential-path metadata requirement and missing native executor fields. It reads the exact verified bundle bytes, uses the fixed protected management configuration, and preserves the durable migration version during reconciliation. Added composed real-package/native-validator regressions and reused the disposable provider fixture. Twenty-five focused tests plus root build, lint and syntax/typecheck pass; production execution remains UNVERIFIED. No production mutation or push occurred.
