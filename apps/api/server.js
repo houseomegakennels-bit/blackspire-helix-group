@@ -1,4 +1,4 @@
-import { withReleaseAdmission,withHeldReceiverAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
+import { withReleaseAdmission,withHeldReceiverAdmission,withHeldReceiverReadAdmission,withHeldAcceptanceAdmission,withPremergeReadAdmission, releaseAdmissionStatus } from '../../packages/shared/release-admission.js';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -30,11 +30,13 @@ import { schedulerRuntimeStatus, workerRuntimeStatus } from '../../packages/task
 import { createBuyerWriterRuntime } from '../../packages/buyer-writer/runtime.js';
 import { createBuyerWriterApiLifecycle } from '../../packages/buyer-writer/api-lifecycle.js';
 import { serializeTaskWithCanonicalResult } from '../../packages/task-engine/canonical-result.js';
-import { consumeReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
+import {loadBuyerStoreApiClient} from '../../packages/buyer-store/api-client.js';
+import { consumeReceiverAuthority, assertConsumedReceiverAuthority } from '../../packages/capabilities/receiver-authority.js';
 
 let emergencyStopMemory = false;
 let lifecyclePhase = 'starting';
 let activeBuyerWriter = null;
+let activeBuyerStore = null;
 const writerClosures = new WeakMap();
 const serverWriters = new WeakMap();
 const serverShutdowns = new WeakMap();
@@ -95,26 +97,57 @@ function writeJson(res, status, body, headers = {}) {
   return json(res, status, body);
 }
 
-export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, env = process.env } = {}) {
+export async function consumeCapabilityAuthority(req, res, { consumer = consumeReceiverAuthority, verifier = assertConsumedReceiverAuthority, readBuyerData = activeBuyerStore?.readConsumedBuyerData, env = process.env } = {}) {
   if (String(req.headers['content-type'] || '').toLowerCase() !== 'application/json') return json(res, 404, { error: 'not found' });
   const expected = env.BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN?.trim() || '';
   const authorization = String(req.headers.authorization || '');
   const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
   const left = Buffer.from(expected), right = Buffer.from(supplied);
   if (expected.length < 32 || left.length !== right.length || !crypto.timingSafeEqual(left, right)) return json(res, 404, { error: 'not found' });
-  let size = 0, raw = '';
+  let size = 0;const chunks=[];
   try {
-    for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new Error('oversize'); raw += chunk.toString('utf8'); }
-    const body = JSON.parse(raw);
-    if (!body || Array.isArray(body) || Object.keys(body).join(',') !== 'authority') throw new Error('shape');
+    for await (const chunk of req) {const bytes=Buffer.from(chunk);size+=bytes.length;if(size>16384)throw new Error('oversize');chunks.push(bytes);}
+    const body = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));
+    if (!body || Array.isArray(body)) throw new Error('shape');
+    const ownedRead=Object.keys(body).join(',')==='authority,request';
+    if(!ownedRead&&Object.keys(body).join(',')!=='authority')throw new Error('shape');
+    if(ownedRead&&(typeof readBuyerData!=='function'
+      ||!['buyer.profiles.search','buyer.matches.search'].includes(body.authority?.capabilityId)
+      ||!body.request||typeof body.request!=='object'||Array.isArray(body.request)
+      ||crypto.createHash('sha256').update(JSON.stringify(body.request)).digest('hex')!==body.authority.bodySha256))throw new Error('shape');
+    const consume=()=>{
+      const consumed=consumer(body.authority);
+      if(!ownedRead)return consumed;
+      const verify=()=>{
+        const observed=verifier(body.authority);
+        if(observed?.ok!==true||observed.bindingDigest!==consumed.bindingDigest)throw new Error('binding');
+      };
+      verify();
+      return Promise.resolve().then(()=>readBuyerData({authority:body.authority,request:body.request,bindingDigest:consumed.bindingDigest}))
+        .then(buyerData=>{verify();return {ok:true,bindingDigest:consumed.bindingDigest,buyerData};});
+    };
     let entered=false,result;
-    try { result=withReleaseAdmission(()=>{entered=true;return consumer(body.authority);}); }
+    try { result=await withReleaseAdmission(()=>{entered=true;return consume();}); }
     catch(error){
       if(entered||error?.code!=='RELEASE_ADMISSION_HELD')throw error;
-      result=withHeldReceiverAdmission(body.authority,()=>consumer(body.authority));
+      result=await (ownedRead?withHeldReceiverReadAdmission:withHeldReceiverAdmission)(body.authority,consume);
     }
     return json(res, 200, result);
   } catch { return json(res, 404, { error: 'not found' }); }
+}
+
+export async function handleBuyerStoreRequest(req,res,{store=activeBuyerStore}={}){
+ try{
+  const match=/^\/api\/internal\/buyer-store\/v1\/([a-z]+(?:-[a-z]+)*)$/.exec(req.url??'');
+  if(!store||req.method!=='POST'||!match||String(req.headers['content-type']??'').toLowerCase()!=='application/json')throw new Error('shape');
+  const authorization=String(req.headers.authorization??'');
+  if(!authorization.startsWith('Bearer ')||authorization.length>8200)throw new Error('authentication');
+  const accessToken=authorization.slice(7);if(!accessToken||/[\s\x00-\x1f]/.test(accessToken))throw new Error('authentication');
+  let size=0;const chunks=[];for await(const chunk of req){const bytes=Buffer.from(chunk);size+=bytes.length;if(size>32768)throw new Error('size');chunks.push(bytes);}
+  const input=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('shape');
+  const result=await store.userRequest({operation:match[1],accessToken,input});
+  return json(res,200,result);
+ }catch{return json(res,404,{error:'not found'});}
 }
 
 async function route(req, res) {
@@ -140,6 +173,10 @@ async function route(req, res) {
 
 async function routeAdmitted(req, res) {
   setSecurityHeaders(req, res);
+  if((req.url||'').startsWith('/api/internal/buyer-store/v1/')){
+    const limit=checkLimit(req,'buyer-store',120,60000);if(!limit.allowed)return limited(res,limit);
+    return handleBuyerStoreRequest(req,res);
+  }
   if ((req.url || '').startsWith('/api/internal/buyer-writer/v1/')) {
     if (!activeBuyerWriter) return json(res, 404, { error: 'not found' });
     return activeBuyerWriter.handleRequest(req, res);
@@ -199,8 +236,11 @@ async function routeAdmitted(req, res) {
       const writer = activeBuyerWriter;
       let buyerWriterAvailable = false;
       try { buyerWriterAvailable = writer ? await writer.checkAvailability() === true : false; } catch {}
+      const store=activeBuyerStore;let buyerStoreAvailable=false;
+      try{buyerStoreAvailable=store?await store.checkAvailability()===true:false;}catch{}
       // A replaced or stopped component cannot lend its observation to another runtime.
-      const readiness = readinessSnapshot({ buyerWriterAvailable: writer === activeBuyerWriter && buyerWriterAvailable });
+      const readiness = readinessSnapshot({ buyerWriterAvailable: writer === activeBuyerWriter && buyerWriterAvailable,
+        buyerStoreAvailable:store===activeBuyerStore&&buyerStoreAvailable });
       return json(res, readiness.ok ? 200 : 503, readiness);
     }
     if (u.pathname === '/api/test-mode/telegram-input' && req.method === 'POST') return testTelegramInput(req, res);
@@ -636,15 +676,18 @@ function serve(res, file, type, cacheControl) {
 
 const IS_ENTRY_POINT = import.meta.url === `file://${process.argv[1]}`;
 
-export function start(port, host, { buyerWriter = null } = {}) {
-  try { return startWithBuyerWriter(port, host, buyerWriter); }
+export function start(port, host, { buyerWriter = null,buyerStore=null } = {}) {
+  try { return startWithBuyerWriter(port, host, buyerWriter,buyerStore); }
   catch (error) {
     if (buyerWriter) void closeBuyerWriter(buyerWriter).catch(() => { process.exitCode = 1; });
     throw error;
   }
 }
 
-function startWithBuyerWriter(port, host, buyerWriter) {
+function startWithBuyerWriter(port, host, buyerWriter,buyerStore) {
+  if((process.env.BUYER_STORE_MODE&&process.env.BUYER_STORE_MODE!=='owned-postgres-v1')
+    ||Boolean(process.env.BUYER_STORE_MODE)!==Boolean(buyerStore)
+    ||buyerStore&&['userRequest','readConsumedBuyerData','checkAvailability'].some(key=>typeof buyerStore[key]!=='function'))throw new Error('Buyer store API unavailable');
   if ((process.env.BUYER_WRITER_MODE && process.env.BUYER_WRITER_MODE !== 'scoped') ||(process.env.BUYER_WRITER_MODE === 'scoped') !== Boolean(buyerWriter)
     || (buyerWriter && ['handleRequest','handleClientError','stopAdmission','isDrained','isHealthy','checkAvailability','close'].some(key => typeof buyerWriter[key] !== 'function'))) {
     throw new Error('Buyer writer runtime unavailable');
@@ -687,6 +730,7 @@ function startWithBuyerWriter(port, host, buyerWriter) {
   }
   if (TEST_MODE.enabled) upsertWorkspace({ id: TEST_MODE.workspaceId, name: 'Unified Jarvis iPhone Test', description: 'Disposable read-only test workspace', githubRepository: 'local/iphone-test', defaultBranch: 'test', allowedPaths: [], buildCommands: [], providerPolicy: { preferred: ['mock'] }, riskLevel: 'low', budgetCents: 100, secretReferences: [], enabledTools: ['status'], lastHealthStatus: 'test', rootPath: TEST_MODE.workspaceRoot });
   activeBuyerWriter = buyerWriter;
+  activeBuyerStore = buyerStore;
   const server = http.createServer(route);
   if (buyerWriter) {
     // Shared ingress bounds unauthenticated/pre-header sockets too. Keep Node's
@@ -747,7 +791,7 @@ export function healthSnapshot({ includeBuyerWriter = true } = {}) {
   };
 }
 
-export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includeBuyerWriter = true, buyerWriterAvailable = false } = {}) {
+export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includeBuyerWriter = true, includeBuyerStore = true, buyerWriterAvailable = false,buyerStoreAvailable=false } = {}) {
   let database = 'compatible';
   try { schemaCheck(); } catch { database = 'unavailable_or_incompatible'; }
   let worker = { required: false, ok: false, state: 'unknown', heartbeatAgeMs: null, activeTask: false, restartDetected: false };
@@ -765,6 +809,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includ
     worker: worker.ok,
     scheduler: scheduler.ok,
     deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
+    ...(includeBuyerStore && activeBuyerStore ? {buyerStore:buyerStoreAvailable===true}:{}),
     ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth()?.ok === true && buyerWriterAvailable === true && healthSnapshot({ includeBuyerWriter: false }).emergencyStop === false } : {}),
   };
   return {
@@ -778,6 +823,16 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includ
     dependencies: { worker, scheduler, ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth() } : {}) },
     deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
+}
+
+// Writer availability excludes its own verdict, but retains a fresh independent
+// store observation. The captured component cannot attest a replacement runtime.
+export async function buyerWriterBaseReadinessSnapshot() {
+  const store = activeBuyerStore;
+  let available = false;
+  try { available = store ? await store.checkAvailability() === true : false; } catch {}
+  return readinessSnapshot({ includeBuyerWriter: false,
+    buyerStoreAvailable: store === activeBuyerStore && available });
 }
 
 export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
@@ -813,6 +868,7 @@ export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
 
 if (IS_ENTRY_POINT) {
   let shutdownRequested = false;
+  let startupBuyerStore = null;
   const lifecycle = createBuyerWriterApiLifecycle({
     initialize: async () => {
       if (!process.env.BUYER_WRITER_MODE) return null;
@@ -827,7 +883,12 @@ if (IS_ENTRY_POINT) {
         throw new Error('Buyer writer runtime unavailable');
       }
       assertSchemaCompatible();
+      if(process.env.BUYER_STORE_MODE){
+        if(process.env.BUYER_STORE_MODE!=='owned-postgres-v1')throw new Error('Buyer store API unavailable');
+        startupBuyerStore=loadBuyerStoreApiClient({releaseSha:identity.build.value});
+      }
       return createBuyerWriterRuntime({
+        ...(startupBuyerStore?{backendProfile:startupBuyerStore.backendProfile,profileDigest:startupBuyerStore.profileDigest}:{}),
         clientConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG,
         ingressConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG,
         signerConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG,
@@ -845,11 +906,16 @@ if (IS_ENTRY_POINT) {
           port: resolveBindTarget().port,
         },
         getHealth: () => healthSnapshot({ includeBuyerWriter: false }),
-        getReadiness: () => readinessSnapshot({ includeBuyerWriter: false }),
+        getReadiness: buyerWriterBaseReadinessSnapshot,
       });
     },
     listen: (buyerWriter) => {
-      const server = start(undefined, undefined, { buyerWriter });
+      let buyerStore=null;
+      if(process.env.BUYER_STORE_MODE){
+        if(process.env.BUYER_STORE_MODE!=='owned-postgres-v1'||process.env.NODE_ENV!=='production'||TEST_MODE.enabled)throw new Error('Buyer store API unavailable');
+        buyerStore=startupBuyerStore??loadBuyerStoreApiClient({releaseSha:deploymentIdentityProvider.get().build.value});
+      }
+      const server = start(undefined, undefined, { buyerWriter,buyerStore });
       server.once('error', () => { process.exitCode = 1; void shutdown(); });
       return server;
     },

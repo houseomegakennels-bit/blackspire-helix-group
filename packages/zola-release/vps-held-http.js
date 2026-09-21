@@ -19,10 +19,12 @@ function worker(value,expected,generationId){
   ||value.generationId!==generationId)reject();}
  else if(!['missing','stopped','stale','draining'].includes(value.state)||value.activeTask!==false)reject();
 }
-export function validateVpsHeldHttp({health,ready},{releaseSha,workerExpected,workerGeneration}){
+export function validateVpsHeldHttp({health,ready},{releaseSha,workerExpected,workerGeneration,backendProfile,profileDigest}){
  if(typeof releaseSha!=='string'||!/^[a-f0-9]{40}$/.test(releaseSha)||typeof workerExpected!=='boolean'
   ||workerExpected&&!generation(workerGeneration)||!workerExpected&&workerGeneration!==undefined)reject();
  if(health?.status!==200||ready?.status!==503)reject();
+ const owned=backendProfile==='owned-postgres-v1';
+ if((backendProfile!==undefined&&!owned)||(owned?!/^[a-f0-9]{64}$/.test(profileDigest??''):profileDigest!==undefined))reject();
  const h=health.value,r=ready.value;
  for(const body of [h,r]){
   if(body?.service!=='blackspire-command-api'||body.lifecycle!=='ready'||body.deploymentIdentity?.state!=='VERIFIED'
@@ -32,10 +34,11 @@ export function validateVpsHeldHttp({health,ready},{releaseSha,workerExpected,wo
   worker(body.dependencies.worker,workerExpected,workerGeneration);
  }
  if(h.ok!==workerExpected||h.database!=='available'||h.emergencyStop!==false||r.ok!==false||r.database!=='compatible'||r.productionConfig?.ok!==true)reject();
- const expected=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter'];
+ const expected=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter',...(owned?['buyerStore']:[])];
  if(!r.checks||Object.keys(r.checks).sort().join(',')!==expected.sort().join(',')||r.checks.releaseAdmission!==false
   ||r.checks.worker!==workerExpected||typeof r.checks.buyerWriter!=='boolean')reject();
  for(const key of ['lifecycle','database','productionConfig','scheduler','deploymentIdentity'])if(r.checks[key]!==true)reject();
+ if(owned&&r.checks.buyerStore!==workerExpected)reject();
  // Writer operation availability can remain false while HELD; its health must
  // still be true above. Admission and generation-bound acceptance authorize use.
  return true;

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {databaseTlsOptions} from '../packages/buyer-writer/database-profile.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -44,12 +45,12 @@ try{
     managementConfigFile,destinationFile]=args;
   if(!sha(releaseSha)||!uuid(operationId)||!uuid(attemptId)||operationId===attemptId
     ||![credentialSourceFile,destinationFile].every(protectedPath)
-    ||managementConfigFile!==managementConfig
+    ||![managementConfig,'/etc/blackspire/owned-postgres/management.json'].includes(managementConfigFile)
     ||new Set([credentialSourceFile,managementConfigFile,destinationFile]).size!==3)fail();
   exactRelease(releaseSha);
   const connect=async credential=>{
-    const client=new pg.Client({host:credential.host,port:5432,database:'postgres',user:'postgres',
-      password:credential.password,ssl:{rejectUnauthorized:true,ca:credential.ca},
+    const client=new pg.Client({host:credential.host,port:credential.port??5432,database:credential.database??'postgres',user:credential.user??'postgres',
+      password:credential.password,ssl:databaseTlsOptions(credential),
       application_name:'blackspire-buyer-writer-source-v1-catalog',
       connectionTimeoutMillis:5000,query_timeout:10000,
       options:'-c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});

@@ -88,7 +88,11 @@ export function receiverAuthorityBindingDigest(value){
 
 // Valid authority is consumed once with a final compare-and-swap. Every denial
 // performs reads only and leaves the attempt, task, grants and runtime untouched.
-export function consumeReceiverAuthority(value,{context=currentReleaseAdmissionContext,workerStatus=workerRuntimeStatus,now=Date.now}={}){
+export function consumeReceiverAuthority(value,options){return checkReceiverAuthority(value,options,true);}
+// Recheck a consumed authority around bounded reads without a second transition.
+// This internal assertion is not a replayable consumption endpoint.
+export function assertConsumedReceiverAuthority(value,options){return checkReceiverAuthority(value,options,false);}
+function checkReceiverAuthority(value,{context=currentReleaseAdmissionContext,workerStatus=workerRuntimeStatus,now=Date.now}={},consume){
  try{
   const authority=validateReceiverAuthority(value,{now}),release=context();
   if(release.role!=='api'||!['releaseSha','runId','apiGeneration','workerGeneration'].every((key,index)=>
@@ -114,9 +118,11 @@ export function consumeReceiverAuthority(value,{context=currentReleaseAdmissionC
     ||grant.version!==authority.grantVersion||grant.security_version!==authority.grantSecurityVersion
     ||!hasCurrentWorkspacePermission(principal,authority.workspaceId,authority.permission)
     ||!attempt||attempt.task_id!==authority.taskId||attempt.provider!=='blackspire-capability'||attempt.mode!==authority.capabilityId
-    ||attempt.status!=='dispatching'||!same(packet?.receiverAuthority,persisted)||getFlag('emergency_stop')==='active')fail();
-   const updated=run("UPDATE provider_attempts SET status='started' WHERE id=? AND status='dispatching'",[authority.attemptId]);
-   if(Number(updated.changes)!==1)fail();
+    ||attempt.status!==(consume?'dispatching':'started')||!same(packet?.receiverAuthority,persisted)||getFlag('emergency_stop')==='active')fail();
+   if(consume){
+    const updated=run("UPDATE provider_attempts SET status='started' WHERE id=? AND status='dispatching'",[authority.attemptId]);
+    if(Number(updated.changes)!==1)fail();
+   }
    return Object.freeze({ok:true,bindingDigest:hash(JSON.stringify(persisted))});
   });
  }catch{fail();}

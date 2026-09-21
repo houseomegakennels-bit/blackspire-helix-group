@@ -1,3 +1,4 @@
+import {readFixedWriterAcceptanceBackend} from './production-acl-writer.js';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
 import {MUTATING_STAGES,RELEASE_STAGES} from './commander-sequence.js';
@@ -141,8 +142,8 @@ export function createFixedProductionOperations(context,dependencies={}){
  const verifyRuntimeIsolation=dependencies.verifyRuntimeIsolation??(()=>observeBuyerWriterRuntimeIsolation({releaseSha:context.input.releaseSha,
   gatewayConfigurationFile:BUYER_WRITER_GATEWAY_CONFIG}));
  const isolationProof=dependencies.isolationProof??createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation});
- operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof});
- const writerHost={openAdmittedClient:bound=>openInstalledBuyerWriterAdmittedClient({
+ operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest});
+ const writerHost={resolveAcceptanceBackend:readFixedWriterAcceptanceBackend,openAdmittedClient:bound=>openInstalledBuyerWriterAdmittedClient({
   releaseSha:bound.releaseSha,workspace:bound.workspace}),...(dependencies.writerHost??{}),
   admissionJournal:context.journal.stream('release')};
  operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:binding=>inspectFixedWriterAcceptance(binding,writerHost),

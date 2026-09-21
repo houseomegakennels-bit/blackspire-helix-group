@@ -1,0 +1,40 @@
+[Unit]
+Description=Blackspire isolated Buyer repository
+After=network-online.target blackspire-owned-postgres.service
+Requires=blackspire-owned-postgres.service
+
+[Service]
+Type=simple
+User=blackspire-buyer-store
+Group=blackspire-buyer-store
+SupplementaryGroups=blackspire-buyer-store-client blackspire
+RootDirectory=/var/lib/blackspire-buyer-store/rootfs
+MountAPIVFS=yes
+WorkingDirectory=/opt/blackspire-command/current
+BindPaths=/run/blackspire-buyer-store
+ExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node /opt/blackspire-command/current/scripts/buyer-store-daemon.js
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=blackspire-buyer-store
+RuntimeDirectoryMode=0750
+UMask=0007
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/etc/blackspire-buyer-store
+ReadWritePaths=/run/blackspire-buyer-store
+LimitNOFILE=256
+TasksMax=64
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

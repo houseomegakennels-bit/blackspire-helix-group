@@ -1,3 +1,4 @@
+import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
@@ -2187,7 +2188,7 @@ async function createBuyerSearchJobWithFallback(input: {
       notes: "",
     }, authority);
   } catch (error) {
-    if (authority || scopedBuyerWriterEnabled() || !isBuyerSearchAuthBlock(error)) throw error;
+    if (authority || ownedBuyerStoreEnabled() || scopedBuyerWriterEnabled() || !isBuyerSearchAuthBlock(error)) throw error;
   }
 
   const supabase = getSupabaseAdmin();

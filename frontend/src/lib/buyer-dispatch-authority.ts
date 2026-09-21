@@ -1,4 +1,5 @@
 import "server-only";
+import {buyerStoreRequestWithToken} from "@/lib/buyer-store-client";
 
 import {
   createPublicSupabaseAuthClient,
@@ -13,6 +14,7 @@ type AdmittedBuyerPrincipal = {
 
 export type BuyerDispatchAuthority = Readonly<AdmittedBuyerPrincipal & {
   remainingMs(): number;
+  requestOwnedBuyerStore?<T>(operation:string,input:unknown):Promise<T>;
   assertCurrentOwner(job: { user_id: string }): Promise<void>;
 }>;
 
@@ -60,6 +62,10 @@ export async function captureBuyerDispatchAuthority(
       operatorId,
       role,
       remainingMs,
+      async requestOwnedBuyerStore<T>(operation:string,input:unknown):Promise<T> {
+        await revalidate();
+        return buyerStoreRequestWithToken<T>(operation,input,accessToken);
+      },
       async assertCurrentOwner(job: { user_id: string }) {
         if (job?.user_id !== operatorId) throw unavailable();
         await revalidate();

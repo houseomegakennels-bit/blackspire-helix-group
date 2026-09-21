@@ -2086,3 +2086,167 @@ Twenty-six focused tests pass, including actual API admission, worker/Hermes dis
 Independent review approves callback patch `eea6a7079d7a4ac12bcf37d7625d8b95b061d53d`, integrated as `e6db3af`. The exact authenticated callback first attempts ordinary admission, then permits only an explicit HELD refusal before consumer entry to enter its dedicated, bounded shared-lease scope. Current candidate/live read authority, exact persisted task, generation, grant, worker ownership, proof and single-use SQLite consumption remain enforced. Ordinary admission and public readiness stay closed.
 
 Root reran the integrated admission/authority/HTTP lane: 19/19 passed, including real candidate/live API-to-worker-to-frontend-validator-to-API callback and durable consumption. OS runtime identity is modeled in that composition; this is not production acceptance. Build, lint, syntax/typecheck, secret scan and the complete release-base whitespace range pass. Canonical history is preserved. The combined callback and formatting update is ready for exact-head PR151 CI; no additional production mutation occurred during integration.
+
+## 2026-09-21 — owned Buyer read callback boundary in development
+
+The approved separate-cluster implementation adds a dedicated asynchronous receiver-read lease for Buyer profile/match reads while preserving the synchronous legacy consumer contract. The new optional callback request must hash to the original issued authority before consumption. Consumed authority is revalidated before and after bounded reads against the current task, grant, worker, generation, expiry and started attempt; responses after revocation are refused. The asynchronous scope retains the shared release lease and tombstones its context on settlement, without granting ordinary task or writer admission.
+
+Focused admission, durable authority and HTTP boundary tests pass 21/21, including expiry, replay, request drift, absent storage and post-read revocation. The owned repository runtime is not yet connected; the new path refuses when unavailable. Separate cluster materialization, data migration, user/capability adapters, independent review and full release acceptance remain pending. No production changes occurred in this milestone.
+## 2026-09-21 — owned cluster bootstrap framework
+
+Implemented explicit owned descriptor, fresh-cluster SQL, bounded container/service configuration and non-executing protected packet preparation. Two focused tests and eight disposable PG17.6 checks pass, including actual boundary validation and unchanged installer refusal of PUBLIC sequence authority. Host materialization, production schema/auth migration and live acceptance remain unverified. No production changes.
+## 2026-09-21 — distinct owned PostgreSQL ACL evidence prepared
+
+The alternate backend now has a distinct read-only catalog proof bound to the protected cluster system identifier, management creator/database owner, exact PostgreSQL 17.6 primary and immutable release profile digest. It requires only the built-in plpgsql extension and zero net schemas, network/dblink routines, foreign wrappers, servers, tables and mappings. It composes the complete existing writer production verifier without changing its role, membership, routine, target relation, trigger/rule, column, sequence or privilege checks. Absent pg_net objects are reported as absent, never as twelve approved functions or a repaired Supabase provider ACL.
+
+The release ACL stage requires the explicit owned backend/profile digest in both immutable release input and operation configuration, then compares the actual protected profile and catalog evidence. Legacy input cannot accept owned evidence. Application transport/source isolation remains independently required. Nine focused tests pass, including adversarial cluster/catalog/writer evidence and unchanged legacy provider behavior. The existing acceptance fixture now supplies a disposable absent target instead of reading a production host target. The bootstrap agent reports the actual boundary SQL and validator passing in a disposable PostgreSQL 17.6 management session, alongside unchanged installer application/reapplication and PUBLIC-sequence rejection (eight checks). Full composed ACL SQL and integrated profile transport verification remain pending. No production mutation, migration, source-grant revocation or live acceptance is claimed; the original source-side Buyer and Nexus security migration remains a separate required contract.
+## 2026-09-21 — Buyer store daemon and client preparation
+
+Implemented bounded authenticated Unix socket transport, protected configuration loading, fixed-role PostgreSQL runtime composition and dedicated service template. Two focused transport tests passed with real socket calls. Dependencies, deployment binding and integrated runtime acceptance remain UNVERIFIED; no production changes.
+## 2026-09-21 — owned-cluster Buyer migration planner and executor framework
+
+A separate migration planner binds source snapshot/quiescence and rollback digests, distinct source/target cluster identities, complete reviewed schema inventory and per-table counts/data digests. Closure is exactly BuyerProfile, BuyerReport, CleanSale, RawSale, SearchJob and exports, with the five observed foreign keys (exports uses ON DELETE CASCADE), preserved id primary keys and the auth.uid function dependency. Unknown dependencies, incomplete closure, same-cluster targets and changed metadata refuse.
+
+The injected host executor requires both business writers disabled, a held snapshot/fence, durable intent before destination work, FK-safe copy order and an atomic target receipt. Drift rolls back before commit; uncertain outcomes only reconcile a matching retained receipt and never repeat copying. Six offline regression groups pass, covering closure, identity/quiescence drift, partial copy failure and lost commit acknowledgement. This is a tested orchestration framework, not a production migration driver or data-copy claim. Native catalog/snapshot collection, protected fence/profile integration and real PostgreSQL copy/restore rehearsal remain required. No production data was copied or changed.
+## 2026-09-21 — owned Buyer repository core
+
+Implemented fixed-operation user repository, independent fresh authentication, separate runtime roles and signed deal context. Four focused groups and actual disposable PostgreSQL repository/RLS checks pass; production remains unchanged and frontend integration is pending.
+
+## 2026-09-21 — owned Buyer schema and native copy rehearsed in isolation
+
+Read-only Supabase catalog collection captured the six-relation FK closure, all 81 columns, defaults, constraints, indexes, policies, ACLs, schema/default privileges and auth.uid definition. It found no user triggers and no auth.users FK. Protected metadata is retained under owned-buyer-metadata-20260921-4b880a2, file SHA256 4f4f4ae77ad08a2546580b1c4da61d4d5b4e5282d5a1356249de8e060253e1b5. No production rows or credentials were collected. A reviewed metadata-only source fixture now bounds schema generation: unknown catalog changes refuse, minimal auth.uid is reconstructed as an invoker function owned by postgres, and no provider administrative roles or credentials are cloned. Baseline table policies/ACLs are retained with NOLOGIN application roles; mandatory security hardening and transport isolation must precede activation.
+
+Native dedicated-session primitives hold SHARE locks on all six source relations under repeatable read, export a snapshot, and transfer bounded cursor batches as raw PostgreSQL JSON text with explicit columns/IDs. Values never pass through JavaScript numeric conversion. Per-table count/digest and column identity checks refuse drift. Twelve focused groups pass. An actual two-cluster PostgreSQL 17.6 rehearsal on an owned internal Docker bridge with zero published ports passes generated DDL/FKs/RLS, six-table exact copy, numeric/microsecond precision, source write-lock denial, owner/foreign RLS and exports cascade. Test environments contain synthetic rows only and were cleaned by exact ownership identity.
+
+A namespace-entry harness generation attempt was rejected by the remote tool; a safer contained transport completed the rehearsal. Protected production profile/fence/receipt integration and permanent source write-grant freeze remain required. Snapshot locks alone do not establish a permanent one-writer cutover. This is implementation and isolated evidence, not production migration or deployment; no production data was copied or changed.
+## 2026-09-21 — owned Buyer frontend and repository hardening
+
+Prepared authenticated owned-mode frontend routing, signed deal context, version-two read evidence, captured-session dispatch, owner-derived export metadata, restrictive RLS and exact timestamp formatting. Thirty-four focused tests, actual isolated PostgreSQL, frontend build/TypeScript and root gates pass. No production mutation; integration and live acceptance remain pending.
+
+## 2026-09-21 — Buyer daemon identity, attestation and provisioner
+
+Added IPC-only group isolation, fixed OS identity, exact installed artifact and actual process-generation checks, and protected retained-credential provisioning. Three focused tests and build/lint/syntax/security checks pass. Provisioner connected execution and release manifest publication remain UNVERIFIED pending integration. No production mutation.
+
+## 2026-09-21 — Buyer credential reconciliation and installed manifest tests
+
+Disposable PostgreSQL 17.6 SCRAM tests prove initial-password refusal and uncertain-commit reconciliation without repeat rotation. Added authenticated readiness and concrete retained installed-manifest publication/restoration. Four focused tests pass; the root-filesystem publisher test intentionally skips without root. Full production adapter execution remains UNVERIFIED. No production mutations.
+
+## 2026-09-21 — disconnected daemon work retains admission fence
+
+Added a daemon-owned release lease and strict OPEN user-operation gate. Actual socket disconnect and cross-process flock contention remain fenced until completion; HELD user refusal and generation checks pass. Six focused tests pass, with no production mutation.
+
+## 2026-09-21 — separate source security and write-freeze package prepared
+
+The owned migration path now has a separate source-side security package. It binds the original PostgreSQL system identifier, creator/database owner, release, operation, owned profile digest and exact unchanged provider catalog. It requires source writer roles/schema absent, retains the two reviewed Buyer/Nexus migration files byte-for-byte, and freezes relation/column writes on the six migrated source tables for anon, authenticated and service_role. Effective PUBLIC or inherited writes cause rollback rather than a provider ACL change. Anonymous/authenticated export reads are also revoked; the existing authenticated own-job SELECT policy and permitted service reads remain. All seven affected tables, including Nexus, are locked and exact row multisets preserved; unrelated/provider ACLs are preserved.
+
+The executor requires a durable dedicated intent before SQL, records its exact body in source migration history in the same transaction, and permits only read-only receipt/current-freeze reconciliation after uncertain outcomes. Its observer serializes with the source migration lock; the in-snapshot observer requires actual complete SHARE locks on all six copied tables. It does not edit legacy release history, provision the owned target, restore unsafe source grants or claim migration acceptance. Thirteen focused tests and four actual disposable PostgreSQL 17.6 groups pass, including inherited PUBLIC write refusal with full rollback, original Buyer/Nexus security, source write freeze, row/provider preservation, read-only/snapshot observations and reapplication. Native transport/durable host preparation and production execution remain UNVERIFIED. No production mutation occurred.
+## 2026-09-21 — backend beta mutation enforcement
+
+Added owner-serialized rolling creation budgets and verified-role enforcement, preserved exact-ID reconciliation, and aligned minimum-purchase bounds. Nine focused groups and actual concurrent PostgreSQL quota tests pass, as do root gates. No production mutation.
+
+## 2026-09-21 — owned Buyer API integration
+
+Connected the API to isolated user and consumed-capability read clients, fixed private supplementary-group credential reads, and bounded signed frontend deal lookups. Integrated API/authority/admission tests pass 24/24. Production deployment and complete service lifecycle remain pending; no production mutation.
+## 2026-09-21 — store namespace and HELD composition verification
+
+Replaced finite credential blacklists with an empty root and explicit read-only mounts. Actual isolated non-root filesystem denial and actual systemd observation tests pass. Fixed identity-only readiness under cutover exclusive locks and capability reads under established HELD null-generation state. No production service or configuration changed.
+
+## 2026-09-21 — concrete owned migration host and atomic receipt
+
+The root-only owned migration command binds clean release source, fixed protected management/profile inputs, actual distinct PostgreSQL system identifiers and pinned TLS (including the owned IP certificate check). It requires stopped API/worker/gateway, an inert target and the separately verified source security receipt. Source advisory authority is acquired before the repeatable-read snapshot; the source proof is rechecked under its six SHARE locks. Exact structural catalog and native data digests are retained in a protected operation manifest, intent and source-retention rollback descriptor. Schema, all copied rows and a private PostgreSQL receipt commit in one target transaction. Reconciliation revalidates that receipt and native rows without recopying. Source retention is not a claim of an independently restored backup; reverse migration is required after target writes begin.
+
+Actual two-cluster PostgreSQL host composition passes copy, atomic receipt, read-only reconciliation and tamper refusal with source grants actually frozen. Root files/profile, systemd and source security history/auth-owner observations are modeled in that composition; their separate real host integration remains required. This exposed JSONB key-order differences, now fixed by canonical object-key hashing and an explicit regression. Thirteen focused groups pass. The owned baseline service_role is NOLOGIN NOBYPASSRLS; no consumer requires its legacy bypass attribute. Test readiness now waits for TCP rather than the temporary initialization socket.
+
+No production migration or source freeze was executed by this patch. The source-security dependency and owned profile/TLS dependency must be integrated and reviewed before the new command can run. Dedicated owned acceptance-target preparation remains in progress; legacy target files are untouched.
+
+## 2026-09-21 — owned cluster materialization and TLS proxy
+
+Implemented source-bound protected phase journaling, empty-cluster initialization, retained private configuration and explicit internal-network loopback proxy materialization. Actual disposable proxy/TLS/SQL succeeds and wrong CA/IP fail; five focused tests and ten PostgreSQL checks pass. Production helper execution and independent final review remain pending. No production changes.
+
+## 2026-09-21 — owned materializer pre-start review corrections
+
+Moved complete database unit/TLS/container/network checks before service start and added exact mount/tmpfs/network validation. Six focused tests and actual disposable Docker metadata positives/negative variants pass. No production effects; final independent re-review pending.
+
+## 2026-09-21 — refuse foreign stopped Buyer store rootfs contents
+
+Fixed the independently observed namespace inventory gap. Exact empty mount scaffolding and release symlink remain accepted; foreign content refuses before preparation. Three focused tests pass; no production effects.
+## 2026-09-21 — owned migration quiescence review repair
+
+Corrected the API unit identity, added strict four-service quiescence and absent-store process proof, and held the global release guard across native migration. Three focused regressions pass; acceptance fixtures also pass with the corrected guard. Production execution remains pending independent review.
+
+## 2026-09-21 — verify owned Buyer HTTP to native database composition
+
+Added a disposable actual HTTP/Unix IPC/PostgreSQL/SQLite-authority composition. Owner isolation, signed Deal callback, HELD refusal/permission, tamper/replay/revocation denial and disconnect drain pass. External records and host identity are modeled; production deployment remains unverified. No production credentials, data or mutations.
+## 2026-09-21 — owned acceptance target and loader integration
+
+Added separate owned target preparation with original Auth owner lock, descriptor-bound target transaction and exact retry. Fixed backend selection in gateway and admitted writer callers. Actual dual-cluster rehearsal and 64 focused loader/admission groups pass; metadata reader regression also passes. Production execution and combined installation-order rehearsal remain pending.
+
+## 2026-09-21 — owned lifecycle release binding and rollback
+
+Added explicit owned candidate/VPS history versions, protected configuration and namespace rebinding, generation-bound manifest publication before store startup, and exact stopped rollback without data rewind. Thirty-two focused tests, including actual root-filesystem recovery and adversarial drift, plus build/lint/syntax pass. Production transitions and complete root hook composition remain UNVERIFIED; no production effects.
+
+## 2026-09-21 — owned lifecycle native review corrections
+
+Corrected root private-group resolution and exact empty artifact mountpoint rebinding discovered by independent review. Eight focused transition tests pass, including realistic systemd remnants and refusal to remove content. No production effects.
+
+## 2026-09-21 — exact blocked-operation retirement preparation
+
+Implemented explicit terminal retirement with preserved historical mutation evidence and strict successor identity. Four focused tests plus the existing sequence lane pass. Read-only original PostgreSQL and host checks confirm roles absent, services stopped and unchanged blocked state. No release-journal event, provider privilege, source-data or production configuration was changed.
+
+### 2026-09-21 — Retirement independent review repairs
+
+Retirement now reuses the strict owned migration host quiescence observer (required loaded/inactive/dead services; absent optional store requires process-identity scan). Protected retirement proof creation validates ancestor ownership and ACLs, fsyncs the parent directory, and revalidates/fsyncs the exact retained inode on retry before journal append. A successor selector guard requires the terminal event’s exact owned backend and profile digest; activation history independently cross-checks this binding. Seven focused tests pass, including real disposable protected-file durability and wrong-profile/legacy refusal. No production retirement or other production mutation was executed.
+
+## 2026-09-21 — owned HELD wiring and integrated regression repairs
+
+Connected explicit owned candidate startup and versioned collectors. Integrated reviewed lifecycle/namespace/retirement changes and repaired legacy fixtures and exact source-audit entries. Initial full contained run had 21 failures; repaired focused lanes pass, including 36 combined lifecycle/acceptance tests. Complete updated-source CI and actual production acceptance remain pending. No production mutation.
+## 2026-09-21 — initial owned Buyer configuration and routing helper
+
+Implemented separately staged frontend/API configuration and exact eight-operation Nginx routing with protected retained plans, dedicated deal credentials, strict consumer equality and fail-closed ambiguous-create handling. Ten focused tests, actual protected filesystem checks and disposable Nginx HTTP transport checks passed. No production or Vercel settings were changed; independent review and integrated final validation remain required.
+## 2026-09-21 — source-security CLI and retained host configuration
+
+Added fixed-path source-security preparation, apply and reconcile wrapper with global exclusion, protected retained configuration/version and dedicated hash journal. Ten focused tests and four existing actual PostgreSQL SQL checks pass; build/lint/syntax pass. Full native host composition and production execution remain UNVERIFIED. No production actions.
+
+## 2026-09-21 — source configuration replay durability repair
+
+Independent review identified missing replay synchronization after an uncertain directory sync. Existing configuration and directory paths now synchronize before successful return; seven host tests pass including the exact rename/sync interruption. No production effects.
+## 2026-09-21 — acceptance target authority and durability review
+
+Repaired owned target BYPASSRLS/owner/FORCE checks and retained-file retry fsync. Nine focused tests and actual separate-cluster role/RLS drift checks pass; production execution remains pending review.
+
+### 2026-09-21 — Initial owned repository preparation implemented
+
+A fixed root preparer now installs the isolated repository OS identity/groups, reviewed service unit and API-only IPC supplementary group, verifies the original-source operator witness and public verifier key, and installs the exact repository role/policy SQL with a transaction-bound receipt. The original owned profile, completed source/copy/hardening proof and sealed release bind setup. A global commander guard and repeated stopped-service/credential fences cover setup and password provisioning. Unknown SQL or password outcomes reconcile through exact database receipts or retained-password authentication without repeated DDL or rotation. Durable protected-file replay repairs inode/parent synchronization; manifest publication now holds a persistent protected flock and refuses legacy transient lock files. Disposable PostgreSQL 17.6 tests ran as the actual non-superuser postgres management shape and proved schema/password commit-acknowledgement recovery, catalog drift refusal, and no repeated mutations. Six focused setup/manifest tests passed. No production preparation, credentials change, unit install, or database mutation was executed. Final integration must include the target-hardening host observer and separately staged connector-sourced public key.
+## 2026-09-21 — repository imported export policy grant
+
+Added only the repository user execution grant needed by imported auth.uid owner policies. Actual PostgreSQL owner/foreign export and capability denial checks pass together with existing budgets and role boundaries. No production effects.
+
+## 2026-09-21 — integrated validation, credential renewal and repository readiness
+
+Recorded the passing contained 2,395-test suite and credential-free frontend build/contracts. Repaired API base readiness to await independent store health and forward the validated protected backend/profile to writer initialization; nine focused tests and static gates pass. Matching writer availability integration and final-source gates remain pending. Existing deployment refresh authorization and the reviewed protected token replacement succeeded, with retained recovery records; public verifier input and original-owner fallback were independently verified. No production database, service, pointer or deployment change occurred.
+
+### 2026-09-21 — Repository receipt authentication dependency pinned
+
+The repository setup receipt now binds the auth namespace owner/ACL and every auth.uid overload’s identity, owner, grants, security mode, configuration, return type and function-body digest. Native PostgreSQL 17.6 tests against the exact reviewed auth.uid grant SQL prove that changing either function EXECUTE or schema USAGE grants makes reconciliation fail without repeating DDL. Synthetic fixture setup supplies a minimal auth.uid function for the reviewed repository grant; the production schema remains owned by its separate reviewed commit. No production change was performed.
+
+## 2026-09-21 — complete owned database installation-order rehearsal
+
+Composed native source freeze/receipt, locked copy/receipt/reconcile, target hardening, writer and repository installation with real identity and owner-scope queries. Found and reproduced the inherited exports auth.uid permission gap; the exact narrow repository-role repair now passes in the final native rehearsal without test-only grants. Production connections and mutations: none.
+
+## 2026-09-21 — copied export repository operations composed
+
+Extended the native full-order rehearsal through repository.execute exports-list and export-create. Copied owner export returned; foreign list empty; owner creation/retry succeeded exactly once; foreign job reference and reused ID refused. Actual writer identity and retained hardening checks still pass after repository mutations. Only synthetic disposable data changed.
+## 2026-09-21 — guarded public command route implementation
+
+Prepared a separate exact-byte maintenance-to-API transition for the canonical command hostname under accepted final-main HELD authority. Existing scoped routes and TLS/header configuration are preserved; protected intent precedes publication, retained candidates reconcile without foreign overwrite, and stopped HELD restoration retains the original bytes. Twelve focused tests and actual disposable Nginx HTTP positive/negative probes pass. Exact production TLS, authenticated public login and final OPEN smoke remain UNVERIFIED; no production mutation occurred.
+
+## 2026-09-21 — public routing recovery review corrections
+
+Independent review identified retained-result durability repair and interrupted-restoration barriers; both now refuse invalid prefixes and preserve exact protected evidence. Eighteen focused tests pass, including real staged-file promotion/re-synchronization, accepted HELD generation states and composed routing-failure/reconcile ordering before OPEN. Fresh gateway isolation and signed store readiness are required under the exclusive lease; the command accepts the explicit owned profile digest. Build, lint, syntax, security, memory and whitespace validation are recorded with the follow-up. Production public routing and authenticated smoke remain UNVERIFIED; no production action occurred.
+## 2026-09-21 — native copy host guards
+
+Added exact retained receipt catalog and bounded manager checks before reads, with protected input stability across apply and reconciliation. Shared receipt SQL preserves hardening guards. Seventeen focused tests, native copy-host and full installation PostgreSQL fixtures pass; production execution remains UNVERIFIED. No production changes.
+
+## 2026-09-21 — final owned preparation integration and first remote CI
+
+Published draft PR152 at e5f95e7 without changing the shared push guard. Frontend preview passed; remote and local full suites exposed only the missing exact synthetic fixture source-audit entry, now repaired with the focused audit passing. Integrated reviewed schema2/config6/7 operation binding, target cutover retention, public routing recovery/identity and async emergency-stop readiness. Root combined focused lanes and static/security gates pass; native copy-host guard repair is independently approved with seventeen focused tests and actual full-order PostgreSQL verification. Final exact-source CI, release merge and all database/service/cutover/live acceptance actions remain pending.

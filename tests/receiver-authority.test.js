@@ -16,7 +16,7 @@ const {createUnifiedInput}=await import('../packages/unified-input/unified.js');
 const {getTask,setFlag,prepareCapabilityDispatch,capabilityAttemptId}=await import('../packages/task-engine/tasks.js');
 const {resolveAdminBearer}=await import('../packages/shared/authorization.js');
 const {sellerOpportunityCapability}=await import('../packages/capabilities/seller-opportunities.js');
-const {issueReceiverAuthority,consumeReceiverAuthority,receiverRequest}=await import('../packages/capabilities/receiver-authority.js');
+const {issueReceiverAuthority,consumeReceiverAuthority,assertConsumedReceiverAuthority,receiverRequest}=await import('../packages/capabilities/receiver-authority.js');
 
 const now=Date.now(), release={releaseSha:'a'.repeat(40),runId:'11111111-1111-4111-8111-111111111111',apiGeneration:'b'.repeat(32),workerGeneration:'c'.repeat(32)};
 upsertWorkspace({id:'authority-ws',name:'authority-ws',githubRepository:'owner/repo',rootPath:'.',providerPolicy:{preferred:['mock']},budgetCents:1});
@@ -49,7 +49,12 @@ function deniedWithoutMutation(issued,attemptId,options={}){
 
 test('receiver authority is bound, single-use, and consumed before dispatch',()=>{
  const {attemptId,issued}=fixture();
+ assert.throws(()=>assertConsumedReceiverAuthority(issued.envelope,{context:apiContext,workerStatus}),/Receiver authority refused/);
  const result=consumeReceiverAuthority(issued.envelope,{context:apiContext,workerStatus});
+ const beforeReadCheck=JSON.stringify(all('SELECT * FROM provider_attempts'));
+ assert.deepEqual(assertConsumedReceiverAuthority(issued.envelope,{context:apiContext,workerStatus}),result);
+ assert.equal(JSON.stringify(all('SELECT * FROM provider_attempts')),beforeReadCheck);
+ assert.throws(()=>assertConsumedReceiverAuthority(issued.envelope,{context:apiContext,workerStatus,now:()=>issued.envelope.expiresAt}),/Receiver authority refused/);
  assert.equal(result.ok,true);assert.match(result.bindingDigest,/^[a-f0-9]{64}$/);
  assert.equal(get('SELECT status FROM provider_attempts WHERE id=?',[attemptId]).status,'started');
  assert.throws(()=>consumeReceiverAuthority(issued.envelope,{context:apiContext,workerStatus}),/Receiver authority refused/);

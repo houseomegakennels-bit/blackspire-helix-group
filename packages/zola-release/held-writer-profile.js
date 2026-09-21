@@ -1,3 +1,4 @@
+import {readOwnedDatabaseProfile,databaseProfileDigest} from '../buyer-writer/database-profile.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -15,7 +16,7 @@ const exact=(v,k)=>v&&Object.keys(v).sort().join(',')===[...k].sort().join(',');
 const options={encoding:'utf8',timeout:2000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'},stdio:['ignore','pipe','pipe']};
 // All credentials remain private to this call. Only digests enter journal plans.
 export async function collectInstalledHeldWriterProfile(releaseSha,{io=fs,run=execFileSync,readSnapshot=readRootOwnedJsonDigestSnapshot,
- resolveIdentity=lookupBuyerWriterIdentity,capture=captureBuyerWriterServiceProcesses,inspectFactory=createBuyerWriterRuntimeInspector,
+ readDatabaseProfile=readOwnedDatabaseProfile,resolveIdentity=lookupBuyerWriterIdentity,capture=captureBuyerWriterServiceProcesses,inspectFactory=createBuyerWriterRuntimeInspector,
  configDirectory='/etc/blackspire',gatewayDirectory='/etc/blackspire-buyer-writer-gateway',unitDirectory='/etc/systemd/system'}={}){
  try{
  if(process.getuid()!==0||!/^[a-f0-9]{40}$/.test(releaseSha??''))fail();
@@ -33,6 +34,8 @@ export async function collectInstalledHeldWriterProfile(releaseSha,{io=fs,run=ex
  const values={};for(const key of ['clientConfig','ingressConfig','signerConfig','gatewayConfig']){const ref=manifest[key],s=read(ref.path,key==='gatewayConfig'?Number(group[2]):identity.credentialGroupId);if(s.digest!==ref.digest)fail();values[key]=s.value;}
  const client=validateBuyerWriterClientConfiguration(values.clientConfig,{workspace:manifest.workspace,environment:'production'}),ingress=values.ingressConfig,signing=values.signerConfig;
  const gateway=validateBuyerWriterGatewayServiceConfiguration(values.gatewayConfig);
+ const backend=gateway.runtime.backendProfile==='owned-postgres-v1'?{backendProfile:'owned-postgres-v1',profileDigest:gateway.runtime.profileDigest}:{};
+ if(backend.backendProfile&&databaseProfileDigest(readDatabaseProfile())!==backend.profileDigest)fail();
  if(client.authority.releaseSha!==releaseSha||JSON.stringify(client.authority)!==JSON.stringify(gateway.authority)||gateway.workspace!==manifest.workspace)fail();
  const opaque=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
  if(!exact(ingress,['version','workspace','bindingFile','writerCredential','issuerCredential'])||ingress.version!==1||ingress.workspace!==manifest.workspace||ingress.bindingFile!==path.join(configDirectory,'buyer-writer-binding.json')
@@ -50,6 +53,7 @@ export async function collectInstalledHeldWriterProfile(releaseSha,{io=fs,run=ex
  const runtime=await inspectFactory(context)();context.apiGeneration=runtime.api.invocationId;
  for(const s of snapshots)if(JSON.stringify(s.snapshot)!==JSON.stringify(readSnapshot(s.file,{groupId:s.groupId,maxBytes:s.maxBytes})))fail();
  if(!io.readFileSync(manifest.serviceDropin.path).equals(dropin))fail();
- return {context,artifactDigest:manifest.artifactDigest,workerGeneration:runtime.worker.invocationId,configurationDigest:hash(snapshots.map(s=>({file:s.file,digest:s.snapshot.digest}))),preparationCredential:ingress.issuerCredential};
+ if(backend.backendProfile&&databaseProfileDigest(readDatabaseProfile())!==backend.profileDigest)fail();
+ return {...backend,context,artifactDigest:manifest.artifactDigest,workerGeneration:runtime.worker.invocationId,configurationDigest:hash(snapshots.map(s=>({file:s.file,digest:s.snapshot.digest}))),preparationCredential:ingress.issuerCredential};
  }catch{fail();}
 }

@@ -1,3 +1,4 @@
+import {databaseTlsOptions,ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.js';
 
 // Explicit credentials only. No environment, credential file, database URL or
@@ -252,8 +253,10 @@ from checked`;
 };
 
 function configuration(value,kind) {
+  const keys=['host','port','database','password','ca',...(ownedDatabaseConnection(value)?['backendProfile','profileDigest']:[])];
+  if(ownedDatabaseConnection(value))validateOwnedConnectionShape(value);
   if(!value||typeof value!=='object'||Array.isArray(value)
-    ||Object.keys(value).some(k=>!['host','port','database','password','ca'].includes(k))
+    ||Object.keys(value).some(k=>!keys.includes(k))
     ||typeof value.host!=='string'||value.host.length>253||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value.host)
     ||!Number.isInteger(value.port)||value.port<1||value.port>65535
     ||typeof value.database!=='string'||!/^[a-zA-Z0-9_-]{1,63}$/.test(value.database)
@@ -261,7 +264,7 @@ function configuration(value,kind) {
     ||(value.ca!==undefined&&(typeof value.ca!=='string'||value.ca.length>65536||!value.ca.includes('-----BEGIN CERTIFICATE-----'))))throw unavailable();
   return {
     host:value.host,port:value.port,database:value.database,password:value.password,
-    user:`buyer_writer_${kind}`,ssl:{rejectUnauthorized:true,...(value.ca===undefined?{}:{ca:value.ca})},
+    user:`buyer_writer_${kind}`,ssl:databaseTlsOptions(value),
     application_name:`blackspire-buyer-writer-${kind}`,client_encoding:'UTF8',
     options:'-c statement_timeout=10000 -c lock_timeout=5000 -c search_path=pg_catalog -c idle_in_transaction_session_timeout=10000',
     connectionTimeoutMillis:2000,query_timeout:11000,idleTimeoutMillis:10000,
@@ -273,7 +276,8 @@ export async function createBuyerWriterPostgres({runtime,issuer,creatorOid,Pool}
   const configs={runtime:configuration(runtime,'runtime'),issuer:configuration(issuer,'issuer')};
   if(!Number.isInteger(creatorOid)||creatorOid<1||creatorOid>4294967295
     ||runtime.password===issuer.password||runtime.host.toLowerCase()!==issuer.host.toLowerCase()
-    ||runtime.port!==issuer.port||runtime.database!==issuer.database)throw unavailable();
+    ||runtime.port!==issuer.port||runtime.database!==issuer.database
+    ||runtime.backendProfile!==issuer.backendProfile||runtime.profileDigest!==issuer.profileDigest)throw unavailable();
   const pools={};const counts={runtime:0,issuer:0};const clients=new Set();
   let closed=false,healthy=true,closing;
   const close=()=>{

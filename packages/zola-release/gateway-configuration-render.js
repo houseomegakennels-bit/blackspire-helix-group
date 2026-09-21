@@ -24,6 +24,7 @@ export function renderZolaGatewayConfigurations(value,{workspace='blackspire-com
         user:'buyer_writer_admission_login',
         password:config.admissionCredential,
         ca:config.runtime.ca,
+        ...(config.runtime.backendProfile?{backendProfile:config.runtime.backendProfile,profileDigest:config.runtime.profileDigest}:{}),
       }),
       operationPermitConfiguration:config.operationPermitConfiguration,
       verificationConfiguration:config.operationPermitVerificationConfiguration,

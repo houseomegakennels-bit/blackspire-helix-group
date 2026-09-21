@@ -1,3 +1,5 @@
+import {ownedReleaseOperationId} from './owned-release-input-preparation.js';
+import {assertRetiredReleaseSuccessor} from './retired-release-history.js';
 import {hash} from './commander-journal.js';
 import {MUTATING_STAGES,RELEASE_STAGES,runReleaseSequence} from './commander-sequence.js';
 import {createFixedProductionOperations} from './production-adapters.js';
@@ -13,8 +15,10 @@ const RELEASE_INPUT_KEYS=Object.freeze(['schema','kind','releaseSha','previousMa
 function sequenceInput(loadedInput){
  if(!exact(loadedInput,['value','inputDigest','source'])||!digest(loadedInput.inputDigest))reject();
  const value=loadedInput.value;
- if(!exact(value,RELEASE_INPUT_KEYS)||value.schema!==1||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
+ if(!exact(value,[...RELEASE_INPUT_KEYS,...(value.schema===2?['backendProfile','profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile']:[])])||![1,2].includes(value.schema)
+  ||(value.schema===2&&(value.backendProfile!=='owned-postgres-v1'||!digest(value.profileDigest)||!['sourceSecurityConfigurationFile','ownedMigrationConfigurationFile'].every(key=>typeof value[key]==='string'&&value[key].startsWith('/var/lib/blackspire-operator/')&&!value[key].split('/').includes('..'))))||value.kind!=='zola_production_release'||![value.releaseSha,value.previousMainSha,value.recoverySha].every(sha)
   ||typeof value.workspace!=='string'||typeof value.principal!=='string')reject();
+ ownedReleaseOperationId(value);
  const input={releaseSha:value.releaseSha,previousMainSha:value.previousMainSha,recoverySha:value.recoverySha,
   protectedInputDigest:loadedInput.inputDigest,workspace:value.workspace,principal:value.principal};
  return Object.freeze({...input,inputDigest:hash(input)});
@@ -37,6 +41,7 @@ function bind(stage,operation){
 export function buildProductionAdapters({loadedInput,journal},{operations=createFixedProductionOperations}={}){
  if(!journal?.stream||typeof operations!=='function')reject();
  const input=sequenceInput(loadedInput);
+ assertRetiredReleaseSuccessor(journal.stream('release').events(),loadedInput.value);
  const fixed=operations(Object.freeze({release:loadedInput.value,input,source:loadedInput.source,journal}));
  if(!fixed||typeof fixed!=='object'||Array.isArray(fixed)
   ||Object.keys(fixed).sort().join(',')!==[...RELEASE_STAGES].sort().join(','))reject();
@@ -85,7 +90,7 @@ export async function runProductionRelease({loadedInput,journal},dependencies={}
  try{
   const input=sequenceInput(loadedInput);
   const adapters=buildProductionAdapters({loadedInput,journal},dependencies);
-  return await (dependencies.sequence??runReleaseSequence)({input,journal,adapters});
+  return await (dependencies.sequence??runReleaseSequence)({input,journal,adapters,...(loadedInput.value.schema===2?{requestedOperationId:ownedReleaseOperationId(loadedInput.value)}:{})});
  }catch{
   return{status:'STOPPED',releaseState:'FAIL_CLOSED',reason:'PRODUCTION_COMPOSITION_REJECTED',
    releaseReady:false,mutationSent:null,reconciliationRequired:true,resumeReady:true};

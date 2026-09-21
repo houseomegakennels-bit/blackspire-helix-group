@@ -11,6 +11,7 @@ function fixture() {
     .replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
   const capture=vm.runInNewContext(`${stripTypeScriptTypes(source)}\ncaptureBuyerDispatchAuthority`,{
     AbortController,setTimeout,clearTimeout,performance,
+    buyerStoreRequestWithToken:async(operation,input,supplied)=>{assert.equal(supplied,"synthetic-request-token");return {operation,input};},
     getAuthTokensFromCookies:async()=>{cookieReads++;return{accessToken:token};},
     createPublicSupabaseAuthClient:()=>({auth:{getUser:async supplied=>{authReads++;assert.equal(supplied,'synthetic-request-token');return{data:{user:operatorId?{id:operatorId,app_metadata:appMetadata}:null},error:authError};}}}),
     listAuthUsers:async()=>{if(users instanceof Error)throw users;return users;},
@@ -22,8 +23,9 @@ test('dispatch authority retains only the guarded principal and privately revali
   const authority=await f.capture(gate);gate.operatorId='owner-b';f.setToken('changed-after-request');
   assert.equal(authority.operatorId,'owner-a');assert.equal(Object.isFrozen(authority),true);
   assert.equal(JSON.stringify(authority).includes('synthetic-request-token'),false);
+  assert.equal((await authority.requestOwnedBuyerStore('job-get',{id:'fixture'})).operation,'job-get');
   await authority.assertCurrentOwner({user_id:'owner-a'});
-  assert.deepEqual(f.counts(),{cookieReads:1,authReads:2});
+  assert.deepEqual(f.counts(),{cookieReads:1,authReads:3});
   await assert.rejects(()=>authority.assertCurrentOwner({user_id:'owner-b'}),/authorization unavailable/);
 });
 test('revoked identity, changed role or unavailable role lookup cannot issue after acquisition',async()=>{
@@ -67,7 +69,7 @@ test('scoped job creation and lookup use the captured owner without default-user
   let payload,selectedOwner;
   const query={insert:value=>{payload=value;return query;},select:()=>query,eq:(key,value)=>{if(key==='user_id')selectedOwner=value;return query;},
     limit:()=>query,single:async()=>({data:{id:'job',user_id:payload.user_id},error:null}),maybeSingle:async()=>({data:{id:'job',user_id:selectedOwner},error:null})};
-  const dependencies={getEnvState:()=>({enabled:true}),scopedBuyerWriterEnabled:()=>true,getSupabaseAdmin:()=>({from:()=>query}),
+  const dependencies={ownedBuyerStoreEnabled:()=>false,getEnvState:()=>({enabled:true}),scopedBuyerWriterEnabled:()=>true,getSupabaseAdmin:()=>({from:()=>query}),
     getOperatorScope:async()=>({operatorId:'default-owner',requiresAuth:false}),toIsoDate:value=>value};
   const load=(name,next)=>{
     const start=source.indexOf(`export async function ${name}(`),end=source.indexOf(next,start);

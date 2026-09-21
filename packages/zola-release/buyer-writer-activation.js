@@ -1,3 +1,5 @@
+import {partitionRetiredReleaseHistory,assertRetiredReleaseSuccessor} from './retired-release-history.js';
+import {readOwnedDatabaseProfile,databaseProfileDigest,OWNED_DATABASE_MANAGEMENT} from '../buyer-writer/database-profile.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {hash} from './commander-journal.js';
 import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
-import {BUYER_WRITER_PROVISIONING_JOURNAL_FILE} from '../buyer-writer/production-provisioning-journal.js';
+import {BUYER_WRITER_PROVISIONING_JOURNAL_FILE,OWNED_BUYER_WRITER_PROVISIONING_JOURNAL_ROOT} from '../buyer-writer/production-provisioning-journal.js';
 import {BUYER_WRITER_GATEWAY_CONFIG_FILE,BUYER_WRITER_GATEWAY_UPGRADE_STATE}
  from '../buyer-writer/gateway-configuration-upgrade-files.js';
 import {buyerWriterGatewayV4IntentPath} from '../buyer-writer/gateway-v4-preparation.js';
@@ -25,14 +27,18 @@ export const BUYER_WRITER_ACTIVATION_PATHS=Object.freeze({
  configJournal:operationId=>`${PREPARATION}/zola-config-${operationId}.journal.jsonl`,
  artifactRoot:releaseSha=>`/opt/blackspire-command/releases/${releaseSha}`,
 });
+export const OWNED_BUYER_WRITER_ACTIVATION_PATHS=Object.freeze({
+ credentialSource:`${PREPARATION}/owned-gateway-provisioning.json`,source:`${PREPARATION}/owned-source-v1.json`,
+ candidate:releaseSha=>`${PREPARATION}/owned-buyer-writer-v4-${releaseSha}.json`,management:OWNED_DATABASE_MANAGEMENT,
+});
 const reject=()=>{throw new Error('Buyer writer pre-HELD activation rejected');};
 function exact(value,keys){return value&&typeof value==='object'&&!Array.isArray(value)
  &&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));}
 function binding(input){
- if(!exact(input,['releaseSha','operationId','attemptId','inputDigest','checkOutputDigest'])
+ if(!exact(input,['releaseSha','operationId','attemptId','inputDigest','checkOutputDigest',...(input?.backendProfile==='owned-postgres-v1'?['backendProfile','profileDigest']:[])])
   ||!SHA.test(input.releaseSha??'')||!UUID.test(input.operationId??'')||!UUID.test(input.attemptId??'')
   ||input.operationId===input.attemptId||!DIGEST.test(input.inputDigest??'')
-  ||!DIGEST.test(input.checkOutputDigest??''))reject();
+  ||!DIGEST.test(input.checkOutputDigest??'')||(input.backendProfile==='owned-postgres-v1'&&!DIGEST.test(input.profileDigest??'')))reject();
  return Object.freeze({...input});
 }
 function defaultRun(script,args){
@@ -50,6 +56,12 @@ function defaultReloadSystemd(){
  return Object.freeze({status:'SYSTEMD_RELOADED'});
 }
 function history(events,bound){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  inspectBuyerWriterActivationHistory(partition.prefix);
+  assertRetiredReleaseSuccessor(events,bound);
+  return history(partition.current,bound);
+ }
  const rows=events.filter(row=>row?.type==='buyer_writer_activation_intent'
   ||row?.type==='buyer_writer_activation_result');
  if(rows.length===0)return {intent:null,completed:new Map()};
@@ -66,6 +78,14 @@ function history(events,bound){
  return {intent,completed};
 }
 export function inspectBuyerWriterActivationHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  const prior=inspectBuyerWriterActivationHistory(partition.prefix);
+  if(prior.completed.size!==3)reject();
+  const active=partition.current.find(row=>row?.type==='buyer_writer_activation_intent');
+  if(active)assertRetiredReleaseSuccessor(events,active.binding);
+  return inspectBuyerWriterActivationHistory(partition.current);
+ }
  const rows=events.filter(row=>['buyer_writer_activation_intent','buyer_writer_activation_result'].includes(row?.type));
  if(!rows.length)return {intent:null,completed:new Map()};
  const bound=binding(rows[0].binding);
@@ -88,10 +108,11 @@ function requireStatus(result,allowed){
  if(!allowed.includes(result?.status))reject();return result;
 }
 function provisioningMode(bound,io,readJson){
+ const owned=bound.backendProfile==='owned-postgres-v1',filename=owned?`${OWNED_BUYER_WRITER_PROVISIONING_JOURNAL_ROOT}/state.json`:BUYER_WRITER_PROVISIONING_JOURNAL_FILE;
  try{
-  io.lstatSync(BUYER_WRITER_PROVISIONING_JOURNAL_FILE);
-  const value=readJson(BUYER_WRITER_PROVISIONING_JOURNAL_FILE,{groupId:0,maxBytes:4096});
-  if(value.version!==2||value.releaseSha!==bound.releaseSha||value.operationId!==bound.operationId
+  io.lstatSync(filename);
+  const value=readJson(filename,{groupId:0,maxBytes:4096});
+  if(value.version!==(owned?3:2)||(owned&&(value.backendProfile!==bound.backendProfile||value.profileDigest!==bound.profileDigest))||value.releaseSha!==bound.releaseSha||value.operationId!==bound.operationId
    ||value.attemptId!==bound.attemptId)reject();
   return '--reconcile';
  }catch(error){if(error?.code==='ENOENT')return '--apply';throw error;}
@@ -172,9 +193,12 @@ async function gatewayUnitPhase(bound,run,paths,io){
 
 export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRun,io=fs,
  inspectArtifact=inspectSealedBuyerWriterArtifact,readJson=readRootOwnedJson,
- reloadSystemd=defaultReloadSystemd,paths:overrides={}}={}){
+ reloadSystemd=defaultReloadSystemd,paths:overrides={},readProfile=readOwnedDatabaseProfile}={}){
  const bound=binding(input);if(!journal?.stream)reject();
- const paths={...BUYER_WRITER_ACTIVATION_PATHS,...overrides};
+ const owned=bound.backendProfile==='owned-postgres-v1';
+ const assertProfile=()=>{if(owned&&databaseProfileDigest(readProfile())!==bound.profileDigest)reject();};
+ assertProfile();
+ const paths={...BUYER_WRITER_ACTIVATION_PATHS,...(owned?OWNED_BUYER_WRITER_ACTIVATION_PATHS:{}),...overrides};
  paths.candidate=typeof paths.candidate==='function'?paths.candidate(bound.releaseSha):paths.candidate;
  paths.configJournal=typeof paths.configJournal==='function'?paths.configJournal(bound.operationId):paths.configJournal;
  paths.artifactRoot=typeof paths.artifactRoot==='function'?paths.artifactRoot(bound.releaseSha):paths.artifactRoot;
@@ -189,11 +213,12 @@ export async function activateBuyerWriterBeforeHeld(input,{journal,run=defaultRu
   configuration_install:()=>configPhase(bound,run,paths,reloadSystemd),gateway_unit:()=>gatewayUnitPhase(bound,run,paths,io)};
  for(const phase of PHASES){
   if(observed.completed.has(phase))continue;
-  const result=await actions[phase]();
+  assertProfile();const result=await actions[phase]();assertProfile();
   const row={schema:1,type:'buyer_writer_activation_result',phase,bindingDigest,
    status:result.status,evidenceDigest:hash(result)};
   stream.append(row);observed.completed.set(phase,row);
  }
+ assertProfile();
  const evidence={releaseSha:bound.releaseSha,operationId:bound.operationId,
   attemptId:bound.attemptId,bindingDigest,completed:[...PHASES]};
  return Object.freeze({status:'BUYER_WRITER_PRE_HELD_READY',...evidence,

@@ -13,7 +13,7 @@ process.env.COMMAND_ADMIN_TOKEN='isolated-writer-api-token';
 process.env.SESSION_SECRET='isolated-writer-api-session-secret-not-production';
 const {prepareDisposableDatabase}=await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
-const {start,healthSnapshot,readinessSnapshot,beginGracefulShutdown}=await import('../apps/api/server.js');
+const {start,healthSnapshot,readinessSnapshot,buyerWriterBaseReadinessSnapshot,beginGracefulShutdown}=await import('../apps/api/server.js');
 const {setFlag}=await import('../packages/task-engine/tasks.js');
 const {getDb,closeDb}=await import('../packages/task-engine/db.js');
 const credential=randomBytes(32).toString('base64url'),permit=randomBytes(32).toString('base64url');
@@ -83,4 +83,22 @@ test('direct listener closure and repeated graceful shutdown close the writer ex
   await new Promise(resolve=>server.close(resolve));
   await Promise.all([beginGracefulShutdown(server),beginGracefulShutdown(server)]);server=null;
   assert.equal(stopped,true);assert.equal(closed,1);
+});
+
+test('writer base readiness awaits independent store health and never invokes writer availability',async()=>{
+  process.env.BUYER_STORE_MODE='owned-postgres-v1';
+  let storeAvailable=true,storeCalls=0,writerCalls=0;
+  const writer={handleRequest(){},handleClientError(){},stopAdmission(){},isDrained:()=>true,isHealthy:()=>true,
+    checkAvailability:async()=>{writerCalls++;throw Error('circular writer probe');},close:async()=>{}};
+  const store={userRequest:async()=>{},readConsumedBuyerData:async()=>{},checkAvailability:async()=>{storeCalls++;await Promise.resolve();return storeAvailable;}};
+  server=trackedStart(0,'127.0.0.1',{buyerWriter:writer,buyerStore:store});
+  await new Promise(resolve=>server.once('listening',resolve));
+  assert.equal(readinessSnapshot({includeBuyerWriter:false}).checks.buyerStore,false);
+  assert.equal((await buyerWriterBaseReadinessSnapshot()).checks.buyerStore,true);
+  storeAvailable=false;
+  assert.equal((await buyerWriterBaseReadinessSnapshot()).checks.buyerStore,false);
+  store.checkAvailability=async()=>{throw Error('private store failure');};
+  assert.equal((await buyerWriterBaseReadinessSnapshot()).checks.buyerStore,false);
+  assert.equal(writerCalls,0);assert.equal(storeCalls,2);
+  await beginGracefulShutdown(server);server=null;
 });

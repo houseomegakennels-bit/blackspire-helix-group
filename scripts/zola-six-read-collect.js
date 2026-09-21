@@ -32,7 +32,7 @@ try {
         livePass: false, remainingGates: ['Authoritative division mutation delta', 'Process-wide egress observation', 'Supabase row-owner denial'] })}\n`);
       process.stderr.write('Six-read plan validated; no network, credentials, database, or journal opened. Live acceptance remains unverified.\n');
     } else {
-      if(mode==='--premerge-held'){if(config.version!==4)throw new Error('PREMERGE_CONFIGURATION_REQUIRED');}
+      if(mode==='--premerge-held'){if(![4,6].includes(config.version))throw new Error('PREMERGE_CONFIGURATION_REQUIRED');}
       else requireProductionCollectorConfig(config);
       const { openCollectorJournal, createProductionCollectorHost } = await import('../packages/zola-six-reads/collector-host.js');
       journal = openCollectorJournal(config.journalDirectory, config.runId);

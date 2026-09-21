@@ -1,3 +1,5 @@
+import { ownedBuyerStoreEnabled,buyerStoreRequest } from "@/lib/buyer-store-client";
+import type { BuyerProfileRow } from "@/lib/buyer-engine-server";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { guardAdminApi } from "@/lib/operator-access";
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
   const [properties, deals, buyers, owners, contacts] = await Promise.all([
     supabase.from("properties").select("id, property_address, city, county, parcel_id").or(`property_address.ilike.${like},parcel_id.ilike.${like}`).limit(6),
     supabase.from("deal_leads").select("id, property_address, owner_name, county").or(`property_address.ilike.${like},owner_name.ilike.${like}`).limit(6),
-    supabase.from("BuyerProfile").select("id, buyer_name, county, purchase_count").ilike("buyer_name", like).order("purchase_count", { ascending: false, nullsFirst: false }).limit(6),
+    ownedBuyerStoreEnabled() ? buyerStoreRequest<{rows:BuyerProfileRow[]}>("profiles-list",{county:null,state:null,buyerName:q,propertyType:null,cashBuyer:null,llcBuyer:null,limit:6}).then(value=>({data:value.rows})) : supabase.from("BuyerProfile").select("id, buyer_name, county, purchase_count").ilike("buyer_name", like).order("purchase_count", { ascending: false, nullsFirst: false }).limit(6),
     supabase.from("owners").select("id, name, mailing_city, mailing_state").ilike("name", like).limit(5),
     supabase
       .from("nexus_contacts")

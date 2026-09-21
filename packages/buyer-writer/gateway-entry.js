@@ -1,3 +1,4 @@
+import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -16,6 +17,7 @@ const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).
 const secret=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value)
   &&Buffer.from(value,'base64url').length===32&&Buffer.from(value,'base64url').toString('base64url')===value;
 const databaseCredential=(value,keys)=>{
+  if(ownedDatabaseConnection(value)){validateOwnedConnectionShape(value);keys=[...keys,'backendProfile','profileDigest'];}
   if(!exact(value,keys)||typeof value.host!=='string'||value.host.length>253||!/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(value.host)
     ||!Number.isInteger(value.port)||value.port<1||value.port>65535||typeof value.database!=='string'
     ||!/^[a-zA-Z0-9_-]{1,63}$/.test(value.database)||!secret(value.password)||typeof value.ca!=='string'
@@ -82,6 +84,8 @@ export function validateBuyerWriterGatewayServiceConfiguration(value){
       ||value.runtime.port!==value.issuer.port||value.runtime.port!==admissionConnection.port
       ||value.runtime.database!==value.issuer.database||value.runtime.database!==admissionConnection.database
       ||value.runtime.ca!==value.issuer.ca||value.runtime.ca!==admissionConnection.ca
+      ||value.runtime.backendProfile!==value.issuer.backendProfile||value.runtime.backendProfile!==admissionConnection.backendProfile
+      ||value.runtime.profileDigest!==value.issuer.profileDigest||value.runtime.profileDigest!==admissionConnection.profileDigest
       ||new Set([value.gatewayCapability,value.runtime.password,value.issuer.password,admissionConnection.password]).size!==4)fail();
     if(typeof admission.operationPermitConfiguration!=='string'||admission.operationPermitConfiguration.length<2
       ||admission.operationPermitConfiguration.length>4096||Buffer.byteLength(admission.operationPermitConfiguration)>4096)fail();

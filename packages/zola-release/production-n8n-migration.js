@@ -1,3 +1,4 @@
+import {observeOwnedMigrationPrerequisites} from '../buyer-writer/owned-target-hardening-host.js';
 import {verifyHeldCanonicalWriter} from './held-writer-binding.js';
 import {createHash} from 'node:crypto';
 import pg from 'pg';
@@ -186,7 +187,26 @@ function fixedMigrations(context,dependencies={}){
  return{migration_preflight:preflight,production_migrations:migrations,migration_postconditions:postconditions};
 }
 
+
+function fixedOwnedMigrations(context,dependencies={}){
+ const release=context.release;
+ if(release.schema!==2||release.backendProfile!=='owned-postgres-v1'||!digest(release.profileDigest))reject();
+ const inspect=async(stage,args,attempt=false)=>{
+  const bound=binding(context,args,{attempt});
+  const proof=await(dependencies.observeOwned??observeOwnedMigrationPrerequisites)({releaseSha:release.releaseSha,operationId:bound.operationId,profileDigest:release.profileDigest,
+   sourceSecurityConfigurationFile:release.sourceSecurityConfigurationFile,ownedMigrationConfigurationFile:release.ownedMigrationConfigurationFile});
+  if(proof?.status!=='OWNED_MIGRATION_PREREQUISITES_VERIFIED'||proof.releaseSha!==release.releaseSha||proof.operationId!==bound.operationId||proof.profileDigest!==release.profileDigest
+   ||proof.sourceWritesDenied!==true||proof.targetBrowserSecurityVerified!==true||proof.originalSourceMigrationsReapplied!==false
+   ||!['sourceSecurityManifestDigest','copyManifestDigest','targetHardeningBodySha256'].every(k=>digest(proof[k])))reject();
+  const {status:verifiedStatus,...evidence}=proof;return Object.freeze({status:'PASS',evidence:Object.freeze({stage,...bound,...evidence,verificationStatus:verifiedStatus})});
+ };
+ const readonly=stage=>Object.freeze({check:args=>inspect(stage,args),observe:args=>inspect(stage,args)});
+ return {migration_preflight:readonly('migration_preflight'),production_migrations:Object.freeze({check:args=>inspect('production_migrations',args),
+ execute:args=>inspect('production_migrations',args,true),reconcile:args=>inspect('production_migrations',args,true),observe:args=>inspect('production_migrations',args,true)}),
+ migration_postconditions:readonly('migration_postconditions')};
+}
+
 export function createN8nMigrationProductionOperations(context,dependencies={}){
  if(!context?.release||context.release.releaseSha!==context.input?.releaseSha||typeof context.journal?.stream!=='function')reject();
- return Object.freeze({...fixedN8n(context,dependencies.n8n),...fixedMigrations(context,dependencies.migration)});
+ return Object.freeze({...fixedN8n(context,dependencies.n8n),...(context.release.schema===2?fixedOwnedMigrations(context,dependencies.migration):fixedMigrations(context,dependencies.migration))});
 }

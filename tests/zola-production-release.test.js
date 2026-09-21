@@ -42,3 +42,31 @@ test('runner passes only normalized sequence input and the composed map',async()
 });
 
 function hashSequenceInput(input){const {inputDigest:_,...identity}=input;return createHash('sha256').update(JSON.stringify(identity)).digest('hex');}
+
+
+test('owned composition retains protected selector and proof paths without changing sequence identity',()=>{
+ const owned={...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'e'.repeat(64),
+  sourceSecurityConfigurationFile:'/var/lib/blackspire-operator/owned-source-security/11111111-1111-4111-8111-111111111111/configuration.json',
+  ownedMigrationConfigurationFile:'/var/lib/blackspire-operator/owned-buyer-migration/11111111-1111-4111-8111-111111111111/manifest.json'};
+ const seen=[];buildProductionAdapters({loadedInput:{...loadedInput,value:owned},journal},{operations:operations(seen)});
+ assert.equal(seen[0].release,owned);assert.equal(seen[0].input.protectedInputDigest,protectedDigest);
+ for(const key of ['profileDigest','sourceSecurityConfigurationFile','ownedMigrationConfigurationFile']){
+  const invalid={...owned};delete invalid[key];
+  assert.throws(()=>buildProductionAdapters({loadedInput:{...loadedInput,value:invalid},journal},{operations:operations([])}));
+ }
+});
+
+test('retirement history is validated before constructing any production operations or starting a sequence',async()=>{
+ let constructed=0,started=0;
+ const malformed={stream:()=>({events:()=>[{type:'sequence_retired'}]})};
+ const result=await runProductionRelease({loadedInput,journal:malformed},{operations:()=>{constructed++;},sequence:()=>{started++;}});
+ assert.equal(result.reason,'PRODUCTION_COMPOSITION_REJECTED');assert.equal(constructed,0);assert.equal(started,0);
+});
+
+
+test('production binds the prepared operation only from matching protected owned prerequisite paths',async()=>{
+ const op='11111111-1111-4111-8111-111111111111',owned={...value,schema:2,backendProfile:'owned-postgres-v1',profileDigest:'e'.repeat(64),sourceSecurityConfigurationFile:`/var/lib/blackspire-operator/owned-source-security/${op}/configuration.json`,ownedMigrationConfigurationFile:`/var/lib/blackspire-operator/owned-buyer-migration/${op}/manifest.json`};
+ let received;await runProductionRelease({loadedInput:{...loadedInput,value:owned},journal},{operations:operations([]),sequence:args=>{received=args;return{status:'STOPPED'};}});assert.equal(received.requestedOperationId,op);
+ let called=false;const invalid={...owned,ownedMigrationConfigurationFile:owned.ownedMigrationConfigurationFile.replace(op,'22222222-2222-4222-8222-222222222222')};
+ const result=await runProductionRelease({loadedInput:{...loadedInput,value:invalid},journal},{operations:()=>{called=true;},sequence:()=>{called=true;}});assert.equal(result.reason,'PRODUCTION_COMPOSITION_REJECTED');assert.equal(called,false);
+});

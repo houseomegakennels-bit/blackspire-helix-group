@@ -57,3 +57,23 @@ test('collector rejects identity, server, recovery, target and management drift'
   /catalog collection failed/);
   assert.equal(f.queries.length,0);
 });
+
+test('owned catalog evidence proves fresh descriptor identity with a distinct protocol',async()=>{
+ const {createHash}=await import('node:crypto');
+ const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
+ const {OWNED_DATABASE_IDENTITY_SQL}=await import('../packages/buyer-writer/database-profile.js');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:16401,systemIdentifier:'123456789',caSha256:createHash('sha256').update(ca).digest('hex')};
+ const profileDigest=ownedPostgresProfileDigest(profile),ownedTarget={host:profile.host,port:profile.port,database:'postgres',ca,backendProfile:'owned-postgres-v1',profileDigest};
+ const credential={host:profile.host,password:'owned-only',ca,backendProfile:'owned-postgres-v1',profileDigest};
+ const identity={systemIdentifier:profile.systemIdentifier,database:'postgres',actor:'postgres',creatorOid:profile.creatorOid,version:170006,recovery:false};
+ const ownedRow={...row,creatorOid:profile.creatorOid,currentUserOid:profile.creatorOid,sessionUserOid:profile.creatorOid};
+ let ended=0,queries=[];
+ const run=async(patch={})=>collectBuyerWriterSourceV1Catalog({releaseSha,artifactDigest,credentialSourceDigest,creatorOid:profile.creatorOid,target:ownedTarget,managementConfiguration:credential},{readProfile:()=>profile,connect:async connection=>{
+  assert.equal(connection.port,55432);assert.equal(connection.user,'postgres');
+  return {query:async text=>{queries.push(text);return {rows:text===OWNED_DATABASE_IDENTITY_SQL?[{...identity,...patch}]:text===SOURCE_V1_CATALOG_SQL?[ownedRow]:[]};},end:async()=>{ended++;}};
+ }});
+ const result=await run();assert.equal(result.version,2);assert.equal(result.target.profileDigest,profileDigest);assert.equal(result.target.systemIdentifier,profile.systemIdentifier);
+ assert.ok(queries.includes(OWNED_DATABASE_IDENTITY_SQL));assert.equal(ended,1);
+ queries=[];await assert.rejects(()=>run({systemIdentifier:'987654321'}),/catalog collection failed/);
+ assert.equal(queries.includes(SOURCE_V1_CATALOG_SQL),false);assert.equal(ended,2);
+});

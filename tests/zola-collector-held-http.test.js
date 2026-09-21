@@ -16,6 +16,10 @@ test('collector composes bounded real HTTP with strict HELD health and readiness
   const config={version:5,releaseSha,port:server.address().port};
   await observeCollectorHttpGeneration(config,workerGeneration);assert.deepEqual(paths,['/health','/ready']);
   await observeCollectorHttpGeneration({...config,version:4},workerGeneration);
+  responses.ready.data.checks.buyerStore=true;
+  for(const version of [6,7])await observeCollectorHttpGeneration({...config,version,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)},workerGeneration);
+  responses.ready.data.checks.buyerStore=false;await assert.rejects(observeCollectorHttpGeneration({...config,version:6,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)},workerGeneration));
+  responses=fixture();
   for(const mutate of [x=>x.ready.status=200,x=>x.ready.data.checks.releaseAdmission=true,x=>x.ready.data.checks.database=false,x=>x.ready.data.checks.unknown=false,x=>x.health.data.dependencies.worker.generationId='c'.repeat(32),x=>x.health.data.deploymentIdentity.build.value='d'.repeat(40),x=>x.health.data.emergencyStop=true,x=>x.ready.data.dependencies.buyerWriter.ok=false]){
    responses=fixture();mutate(responses);await assert.rejects(observeCollectorHttpGeneration(config,workerGeneration),/RUNTIME_HEALTH_PAIRING_MISMATCH/);
   }

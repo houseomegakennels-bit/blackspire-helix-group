@@ -42,3 +42,19 @@ test('native transport fixes loopback port and refuses redirects, bad media, ove
   await assert.rejects(requestVpsHeldJson('/health',{fetchImpl:async()=>response}));
  await assert.rejects(requestVpsHeldJson('/other',{fetchImpl}));
 });
+
+test('owned readiness requires its explicit healthy Buyer store check without widening legacy keys',()=>{
+ const f=fixture(true),binding={releaseSha,workerExpected:true,workerGeneration,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)};
+ assert.throws(()=>validateVpsHeldHttp(f,binding));f.ready.value.checks.buyerStore=true;
+ assert.equal(validateVpsHeldHttp(f,binding),true);
+ assert.throws(()=>validateVpsHeldHttp(f,{releaseSha,workerExpected:true,workerGeneration}));
+ f.ready.value.checks.buyerStore=false;assert.throws(()=>validateVpsHeldHttp(f,binding));
+ f.ready.value.checks.buyerStore=true;assert.throws(()=>validateVpsHeldHttp(f,{...binding,profileDigest:undefined}));
+});
+
+test('owned API-first phase requires unpublished store manifest, then healthy store after worker start',()=>{
+ const binding={releaseSha,workerExpected:false,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64)},f=fixture(false);
+ f.ready.value.checks.buyerStore=false;assert.equal(validateVpsHeldHttp(f,binding),true);
+ f.ready.value.checks.buyerStore=true;assert.throws(()=>validateVpsHeldHttp(f,binding));
+ delete f.ready.value.checks.buyerStore;assert.throws(()=>validateVpsHeldHttp(f,binding));
+});

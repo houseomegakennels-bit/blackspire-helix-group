@@ -1,9 +1,16 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {inspectHeldAcceptanceHistory} from './held-acceptance-authority.js';
 const reject=()=>{throw new Error('Production stage history rejected');};
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 export function inspectCandidateSixReadsHistory(events){
+ const partition=partitionRetiredReleaseHistory(events);
+ if(partition.retired){
+  const prior=inspectCandidateSixReadsHistory(partition.prefix);
+  if(prior.result?.status!=='PASS')reject();
+  return inspectCandidateSixReadsHistory(partition.current);
+ }
  let intent=null,result=null;
  for(let index=0;index<events.length;index++){
   const row=events[index];if(!['candidate_six_reads_intent','candidate_six_reads_result'].includes(row?.type))continue;

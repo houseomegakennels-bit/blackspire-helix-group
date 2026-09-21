@@ -77,7 +77,8 @@ function history(journal){
  const runs=new Map();
  for(const row of events){
   if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
-  if([3,4,5].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
+  if([3,4,5,6].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
+  if(row?.schema===2&&String(row.type).startsWith('candidate_deployment_'))continue;
   if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
    'premerge_reads_intent','premerge_reads_active','premerge_reads_result','premerge_reads_retired',
    'buyer_writer_activation_intent','buyer_writer_activation_result',
@@ -114,10 +115,11 @@ export function inspectReleaseCommander(journal){
  const events=history(journal);
  const migration=inspectReleaseMigrationState(events);
  const lifecycle=inspectHeldLifecycleHistory(events),sequence=inspectReleaseSequenceHistory(events);
- return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration.intent||lifecycle?null:sequence.mutationState,
+ return{status:'OBSERVED',eventCount:events.length,releaseReady:false,mutationSent:migration.intent||lifecycle||sequence.mutationState===null?null:sequence.retired?true:sequence.mutationState,
   lifecycleReconciliationRequired:Boolean(lifecycle),
   migrationAttempted:Boolean(migration.intent),migrationStatus:migration.lastStatus,
   migrationReconciliationRequired:migration.reconciliationRequired,
+  retiredRelease:sequence.retired?{operationId:sequence.retired.operationId,status:sequence.retired.status,historicalMutationState:true}:null,
   remainingGates:[...UNWIRED_RELEASE_GATES]};
 }
 
@@ -180,8 +182,10 @@ export async function runReleasePreflight({input,journal},{
   if(JSON.stringify(ciProof(await verifyCi(releaseSha),releaseSha))!==JSON.stringify(ci))reject();
   passed(ci);
   stage='unwired_release_gates';record('preflight_stopped',{stage});
+  const sequence=inspectReleaseSequenceHistory(journal.stream('release').events());
   return{status:'STOPPED',reason:'RELEASE_GATES_UNWIRED',preflightCompleted:true,releaseSha,runId,
-   releaseReady:false,mutationSent:false,remainingGates:[...UNWIRED_RELEASE_GATES]};
+   releaseReady:false,mutationSent:sequence.retired?true:false,retiredRelease:sequence.retired?{operationId:sequence.retired.operationId,status:sequence.retired.status,historicalMutationState:true}:null,
+  remainingGates:[...UNWIRED_RELEASE_GATES]};
  }catch{
   if(runId)try{record('preflight_stopped',{stage});}catch{/* Original durable prefix remains authoritative. */}
   return{status:'STOPPED',reason:'PREFLIGHT_REJECTED',stage,preflightCompleted:false,

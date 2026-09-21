@@ -128,3 +128,19 @@ test('package metadata contradiction or drift refuses before opening a managemen
  }
  assert.equal(connections,0);
 });
+
+test('owned release migration stages verify immutable dual-database prerequisites without legacy SQL execution',async()=>{
+ const f=fixture();Object.assign(f.release,{schema:2,backendProfile:'owned-postgres-v1',profileDigest:'6'.repeat(64),
+ sourceSecurityConfigurationFile:`/var/lib/blackspire-operator/owned-source-security/${f.state.context.operationId}/configuration.json`,
+ ownedMigrationConfigurationFile:`/var/lib/blackspire-operator/owned-buyer-migration/${f.state.context.operationId}/manifest.json`});
+ let calls=0;const observed=[];
+ const proof={status:'OWNED_MIGRATION_PREREQUISITES_VERIFIED',releaseSha,operationId:f.state.context.operationId,profileDigest:f.release.profileDigest,
+ sourceSecurityManifestDigest:'7'.repeat(64),copyManifestDigest:'8'.repeat(64),targetHardeningBodySha256:'9'.repeat(64),sourceWritesDenied:true,targetBrowserSecurityVerified:true,originalSourceMigrationsReapplied:false};
+ const operations=createN8nMigrationProductionOperations(f.context,{migration:{observeOwned:async input=>{calls++;observed.push(input);return proof;},
+ readMetadata:()=>assert.fail('legacy migration input'),execute:()=>assert.fail('legacy SQL'),connect:()=>assert.fail('legacy migration connection')}});
+ for(const stage of ['migration_preflight','production_migrations','migration_postconditions'])for(const method of Object.keys(operations[stage])){
+ const result=await operations[stage][method](f.args);assert.equal(result.status,'PASS');assert.equal(result.evidence.originalSourceMigrationsReapplied,false);
+ }
+ assert.equal(calls,8);assert.equal(observed[0].ownedMigrationConfigurationFile,f.release.ownedMigrationConfigurationFile);assert.equal(f.streams.size,0);
+ proof.sourceWritesDenied=false;await assert.rejects(operations.production_migrations.execute(f.args));
+});

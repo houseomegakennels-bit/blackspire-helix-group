@@ -42,8 +42,10 @@ function readStatus(host,port,pathname,issuerCredential){
 // Read-only loopback prerequisite check. Before publication all base checks must
 // pass and only writer approval is false; after publication full readiness must
 // pass. Kernel socket ownership is checked on both sides of HTTP observation.
-export async function checkBuyerWriterActivationReadiness({host,port,apiPid,releaseSha,environment,workerGeneration,requireWriterReady,requirePreparation=false,preparationCredential,inspectListener=ownsListener}) {
+export async function checkBuyerWriterActivationReadiness({host,port,apiPid,releaseSha,environment,workerGeneration,requireWriterReady,requirePreparation=false,preparationCredential,backendProfile,profileDigest,inspectListener=ownsListener}) {
   try {
+    const owned=backendProfile==='owned-postgres-v1';
+    if((backendProfile!==undefined&&!owned)||(owned?!/^[a-f0-9]{64}$/.test(profileDigest??''):profileDigest!==undefined))throw failure();
     const started=performance.now();
     if(!['127.0.0.1','::1'].includes(host)||!Number.isInteger(port)||port<1||port>65535||!Number.isInteger(apiPid)||apiPid<1||apiPid>4294967294
       ||!/^[a-f0-9]{40}$/.test(releaseSha??'')||!/^[a-f0-9]{32}$/.test(workerGeneration??'')||typeof requireWriterReady!=='boolean'
@@ -65,7 +67,7 @@ export async function checkBuyerWriterActivationReadiness({host,port,apiPid,rele
       if(worker?.required!==true||worker.ok!==true||!['idle','working'].includes(worker.state)||worker.generationId!==workerGeneration
         ||!Number.isFinite(worker.heartbeatAgeMs)||worker.heartbeatAgeMs<0||worker.heartbeatAgeMs>30000)throw failure();
     }
-    const keys=['lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter'];
+    const keys=['lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter',...(owned?['buyerStore']:[])];
     if(Object.hasOwn(ready.checks??{},'releaseAdmission'))keys.push('releaseAdmission');
     if(!ready.checks||Object.keys(ready.checks).length!==keys.length||Object.keys(ready.checks).some(key=>!keys.includes(key))
       ||keys.some(key=>ready.checks[key]!==(key==='buyerWriter'?requireWriterReady:true)))throw failure();
@@ -76,12 +78,14 @@ export async function checkBuyerWriterActivationReadiness({host,port,apiPid,rele
 
 // Explicit HELD observation only. It never changes public readiness or writer
 // admission. The caller must retain and revalidate its actual admission lease.
-export async function checkBuyerWriterHeldReadiness({host,port,apiPid,releaseSha,environment,workerGeneration,requirePreparation=false,preparationCredential,verifyHeld,inspectListener=ownsListener}){
+export async function checkBuyerWriterHeldReadiness({host,port,apiPid,releaseSha,environment,workerGeneration,requirePreparation=false,preparationCredential,verifyHeld,backendProfile,profileDigest,inspectListener=ownsListener}){
  try{
   if(typeof verifyHeld!=='function'||!['127.0.0.1','::1'].includes(host)||!Number.isInteger(port)||port<1||port>65535||!Number.isInteger(apiPid)||apiPid<1
    ||!/^[a-f0-9]{40}$/.test(releaseSha??'')||!/^[a-f0-9]{32}$/.test(workerGeneration??'')||environment!=='production'||typeof requirePreparation!=='boolean'
    ||requirePreparation&&(typeof preparationCredential!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(preparationCredential)))throw failure();
-  const started=performance.now();await verifyHeld();if(await inspectListener({host,port,apiPid})!==true)throw failure();
+  const owned=backendProfile==='owned-postgres-v1';
+    if((backendProfile!==undefined&&!owned)||(owned?!/^[a-f0-9]{64}$/.test(profileDigest??''):profileDigest!==undefined))throw failure();
+    const started=performance.now();await verifyHeld();if(await inspectListener({host,port,apiPid})!==true)throw failure();
   const [h,r,p]=await Promise.all([readStatus(host,port,'/health'),readStatus(host,port,'/ready'),requirePreparation?readStatus(host,port,'/api/internal/buyer-writer/v1/preparation',preparationCredential):null]);
   if(h.status!==200||h.body.ok!==true||h.body.database!=='available'||h.body.emergencyStop!==false||r.status!==503||r.body.ok!==false)throw failure();
   if(requirePreparation&&(p.status!==200||p.body.ok!==true||p.body.prepared!==true||Object.keys(p.body).length!==2))throw failure();
@@ -89,7 +93,7 @@ export async function checkBuyerWriterHeldReadiness({host,port,apiPid,releaseSha
    if(value.service!=='blackspire-command-api'||value.lifecycle!=='ready'||value.deploymentIdentity?.state!=='VERIFIED'||value.deploymentIdentity.build?.value!==releaseSha||value.deploymentIdentity.environment?.value!==environment
     ||value.dependencies?.buyerWriter?.enabled!==true||value.dependencies.buyerWriter.ok!==true||worker?.required!==true||worker.ok!==true||!['idle','working'].includes(worker.state)
     ||worker.generationId!==workerGeneration||!Number.isFinite(worker.heartbeatAgeMs)||worker.heartbeatAgeMs<0||worker.heartbeatAgeMs>30000)throw failure();}
-  const keys=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter'];
+  const keys=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerWriter',...(owned?['buyerStore']:[])];
   if(!r.body.checks||Object.keys(r.body.checks).sort().join(',')!==keys.sort().join(',')||keys.some(k=>r.body.checks[k]!==(!['releaseAdmission','buyerWriter'].includes(k))))throw failure();
   await verifyHeld();if(await inspectListener({host,port,apiPid})!==true||performance.now()-started>3600)throw failure();
   return Object.freeze({verified:true,workerGeneration});

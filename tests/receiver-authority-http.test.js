@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 
 process.env.BLACKSPIRE_RUNTIME_MODE = 'test';
@@ -20,9 +21,9 @@ function response() {
     end(body) { this.body = body; },
   };
 }
-async function invoke(req, consumer = () => ({ ok: true, bindingDigest: 'a'.repeat(64) }), env = { BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: token }) {
+async function invoke(req, consumer = () => ({ ok: true, bindingDigest: 'a'.repeat(64) }), env = { BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN: token }, options = {}) {
   const res = response();
-  await consumeCapabilityAuthority(req, res, { consumer, env });
+  await consumeCapabilityAuthority(req, res, { consumer, env, ...options });
   return { status: res.status, headers: res.headers, body: JSON.parse(res.body) };
 }
 
@@ -67,4 +68,34 @@ test('durable consumer refusal and replay are sanitized at the HTTP boundary', a
     assert.deepEqual(result.body, { error: 'not found' });
     assert.equal(JSON.stringify(result).includes(reason), false);
   }
+});
+
+function ownedRequest(){
+  const input={workspaceId:'test',limit:5};
+  const authority={capabilityId:'buyer.profiles.search',bodySha256:crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex')};
+  return {authority,request:input};
+}
+test('owned callback binds exact request before consumption and rechecks after bounded read',async()=>{
+  const body=ownedRequest(),calls=[];
+  const result=await invoke(request(JSON.stringify(body)),()=>{calls.push('consume');return{ok:true,bindingDigest:'a'.repeat(64)};},undefined,{
+    verifier:()=>{calls.push('verify');return{ok:true,bindingDigest:'a'.repeat(64)};},
+    readBuyerData:async value=>{calls.push('read');assert.deepEqual(value.request,body.request);return{profiles:[],count:0};},
+  });
+  assert.equal(result.status,200);assert.deepEqual(calls,['consume','verify','read','verify']);
+  assert.deepEqual(result.body.buyerData,{profiles:[],count:0});
+});
+test('owned callback rejects unbound requests, unavailable storage and nonbuyer authority before consume',async()=>{
+  for(const change of [b=>({...b,request:{...b.request,limit:6}}),b=>({...b,authority:{...b.authority,capabilityId:'seller.opportunities.search'}}),b=>({...b,extra:1})]){
+    let calls=0;const result=await invoke(request(JSON.stringify(change(ownedRequest()))),()=>{calls++;},undefined,{readBuyerData:async()=>({})});
+    assert.equal(result.status,404);assert.equal(calls,0);
+  }
+  let calls=0;assert.equal((await invoke(request(JSON.stringify(ownedRequest())),()=>{calls++;})).status,404);assert.equal(calls,0);
+});
+test('owned callback cannot return data after grant or binding revocation',async()=>{
+  let checks=0;
+  const result=await invoke(request(JSON.stringify(ownedRequest())),()=>({ok:true,bindingDigest:'a'.repeat(64)}),undefined,{
+    verifier:()=>{if(++checks===2)throw new Error('revoked');return{ok:true,bindingDigest:'a'.repeat(64)};},
+    readBuyerData:async()=>({sensitive:'must not return'}),
+  });
+  assert.equal(result.status,404);assert.deepEqual(result.body,{error:'not found'});assert.equal(checks,2);
 });

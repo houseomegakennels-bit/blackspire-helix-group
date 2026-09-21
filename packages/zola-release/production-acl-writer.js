@@ -1,4 +1,7 @@
+import {matchesAcceptanceTargetBackend,verifyAcceptanceTargetProfile} from '../buyer-writer/acceptance-target-backend.js';
 import {createHash} from 'node:crypto';
+import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential,databaseTlsOptions} from '../buyer-writer/database-profile.js';
+import {OWNED_DATABASE_ACL_SQL,ownedDatabaseAclParameters,verifyOwnedDatabaseAclResult} from '../buyer-writer/owned-database-evidence.js';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
 import {createBoundedWriterAdmissionJournal} from './bounded-writer-admission-journal.js';
@@ -50,7 +53,7 @@ function apiGroupId(){
 // Operator-only catalog observer. The canonical root:writer 0640 gateway file
 // is deliberately unreadable by API/worker identities. Only these two exact
 // catalog statements are reachable, and both run inside a read-only transaction.
-export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,lookup=execFileSync,readSnapshot=readRootOwnedJsonSnapshot}={}){
+export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,lookup=execFileSync,readSnapshot=readRootOwnedJsonSnapshot,readOwnedProfile=readOwnedDatabaseProfile}={}){
  let pool,client;
  try{
   if(configurationFile!==BUYER_WRITER_GATEWAY_CONFIG||![PROVIDER_ACL_CHECK_SQL,APPLICATION_FUNCTION_PG_NET_SQL].includes(sql)
@@ -59,6 +62,27 @@ export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,l
   const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value),runtime=config.runtime;
   if(snapshot.identity.uid!==0||snapshot.identity.gid!==groupId||(snapshot.identity.mode&0o7777)!==0o640
    ||config.workspace!=='blackspire-command'||config.authority.gatewayIdentity!=='blackspire-writer')reject();
+  if(runtime?.backendProfile==='owned-postgres-v1'){
+   const profile=readOwnedProfile(),profileDigest=databaseProfileDigest(profile);
+   const managementFile='/etc/blackspire/owned-postgres/management.json';
+   const management=readSnapshot(managementFile,{groupId:0,maxBytes:65536});
+   if(management.identity.uid!==0||management.identity.gid!==0||(management.identity.mode&0o7777)!==0o600
+    ||runtime.profileDigest!==profileDigest||runtime.host!==profile.host||runtime.port!==profile.port||runtime.database!==profile.database)reject();
+   const connection=validateManagementCredential(management.value,{ownedProfile:profile});
+   const DriverPool=Pool??(await import('pg')).Pool;
+   pool=new DriverPool({...connection,ssl:databaseTlsOptions(connection),application_name:'zola-owned-acl-observer',max:1,
+    connectionTimeoutMillis:2000,query_timeout:8000,idleTimeoutMillis:1000,
+    options:'-c default_transaction_read_only=on -c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});
+   client=await pool.connect();await client.query('begin isolation level repeatable read read only');
+   const observation=await client.query(OWNED_DATABASE_ACL_SQL,ownedDatabaseAclParameters(profile));
+   const evidence=verifyOwnedDatabaseAclResult(observation,profile);
+   const result=sql===PROVIDER_ACL_CHECK_SQL?{backendProfile:'owned-postgres-v1',profile,profileDigest,observation,evidence}:await client.query(sql,values);
+   await client.query('rollback');
+   if(JSON.stringify(snapshot)!==JSON.stringify(readSnapshot(configurationFile,{groupId,maxBytes:65536}))
+    ||JSON.stringify(management)!==JSON.stringify(readSnapshot(managementFile,{groupId:0,maxBytes:65536}))
+    ||databaseProfileDigest(readOwnedProfile())!==profileDigest)reject();
+   return result;
+  }
   if(runtime.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||runtime.port!==5432||runtime.database!=='postgres')reject();
   if(!runtime||typeof runtime.password!=='string'||runtime.password.length<1||runtime.password.length>1024
    ||Object.keys(runtime).some(key=>!['host','port','database','password','ca'].includes(key)))reject();
@@ -132,19 +156,29 @@ function completeIsolationEvidence(value){
   &&digest(value.sourceScanDigest)&&digest(value.functionBodyDigest);
 }
 
-export function createProviderAclCheckOperation({query,isolationProof}){
- if(typeof query!=='function')reject();
+export function createProviderAclCheckOperation({query,isolationProof,backendProfile,profileDigest}){
+ if(typeof query!=='function'||(backendProfile===undefined?profileDigest!==undefined:backendProfile!=='owned-postgres-v1'||!digest(profileDigest)))reject();
  const observe=async args=>{
   const bound=binding(args);
+  if(args.input.backendProfile!==backendProfile||args.input.profileDigest!==profileDigest)reject();
   try{
-   const provider=aclEvidence(await query(PROVIDER_ACL_CHECK_SQL,[]),bound);
+   const result=await query(PROVIDER_ACL_CHECK_SQL,[]);
+   let provider;
+   if(result?.backendProfile!==backendProfile)reject();
+   if(result?.backendProfile==='owned-postgres-v1'){
+    if(result.profileDigest!==profileDigest||!exact(result,['backendProfile','profile','profileDigest','observation','evidence'])||result.profileDigest!==databaseProfileDigest(result.profile))reject();
+    const evidence=verifyOwnedDatabaseAclResult(result.observation,result.profile);
+    if(JSON.stringify(evidence)!==JSON.stringify(result.evidence))reject();
+    provider=Object.freeze({...bound,...evidence,backendProfile:result.backendProfile,backendProfileDigest:result.profileDigest,
+     providerAclObserved:false,ownedBackendObserved:true,publicExecuteCount:0});
+   }else provider=aclEvidence(result,bound);
    if(provider===null||typeof isolationProof!=='function')return blocked();
    const isolation=await isolationProof();
    if(isolation?.status!=='PASS'||!completeIsolationEvidence(isolation.evidence))return blocked();
    const {applicationDbCredentialsAbsent,...isolationEvidence}=isolation.evidence;
    return Object.freeze({status:'PASS',evidence:Object.freeze({...provider,...isolationEvidence,
     applicationDatabaseIsolationVerified:applicationDbCredentialsAbsent,
-    providerAcl:provider.publicExecuteCount===0,providerRiskRecorded:provider.publicExecuteCount>0})});
+    providerAcl:provider.ownedBackendObserved?false:provider.publicExecuteCount===0,providerRiskRecorded:provider.publicExecuteCount>0})});
   }catch(error){
    if(error?.message==='Fixed production ACL/writer operation rejected')throw error;
    return blocked();
@@ -195,10 +229,16 @@ function acceptanceInspection(bound,state){
  return Object.freeze({schema:1,kind:'zola_bounded_writer_acceptance',...bound,capability:WRITER_CAPABILITY,mutationId:mutationUuid(bound),state,
   businessRowsChanged:0,paidProviderCalls:0,receiptDigest:null,compensationComplete:false,outcomeUnknown:false});
 }
-function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot){
+export async function readFixedWriterAcceptanceBackend(){
+ const groupId=writerGroupId(),snapshot=readRootOwnedJsonSnapshot(BUYER_WRITER_GATEWAY_CONFIG,{groupId,maxBytes:65536});
+ if(snapshot.identity.uid!==0||snapshot.identity.gid!==groupId||(snapshot.identity.mode&0o7777)!==0o640)reject();
+ const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
+ return verifyAcceptanceTargetProfile(config.runtime);
+}
+function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot,selection={file:WRITER_ACCEPTANCE_TARGET_FILE,kind:'zola_bounded_writer_acceptance_target'}){
  const snapshot=readSnapshot(file,{groupId,maxBytes:32768}),value=snapshot.value;
- if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt'])
-  ||value.schema!==1||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==bound.releaseSha
+ if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt',...(selection.backendProfile?['backendProfile','profileDigest']:[])])
+  ||value.schema!==1||!matchesAcceptanceTargetBackend(value,selection)||value.releaseSha!==bound.releaseSha
   ||value.workspace!==WRITER_WORKSPACE||value.principal!==bound.principal||value.capability!==WRITER_CAPABILITY
   ||!uuid(value.jobId)||!uuid(value.ownerId))reject();
  let captured;
@@ -206,19 +246,22 @@ function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJson
  return{snapshot,target:Object.freeze({jobId:value.jobId,ownerId:value.ownerId,criteria:captured.criteria,updatedAt:captured.updatedAt})};
 }
 async function withFixedWriter(bound,work,{groupId,readAcceptanceSnapshot=readRootOwnedJsonSnapshot,
- acceptanceFile=WRITER_ACCEPTANCE_TARGET_FILE,openAdmittedClient}={}){
+ acceptanceFile,openAdmittedClient,resolveAcceptanceBackend}={}){
  let database;
  try{
-  if(typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function'
+  const selection=resolveAcceptanceBackend?await resolveAcceptanceBackend(bound):{file:WRITER_ACCEPTANCE_TARGET_FILE,kind:'zola_bounded_writer_acceptance_target'};
+  acceptanceFile??=selection.file;
+  if(acceptanceFile!==selection.file||![WRITER_ACCEPTANCE_TARGET_FILE,'/var/lib/blackspire-operator/owned-writer-acceptance.json'].includes(acceptanceFile)||typeof work!=='function'
    ||typeof openAdmittedClient!=='function')reject();
-  const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot,selection);
   // The release journal is scoped to zola-production; the installed gateway,
   // protected acceptance job and database permits use the fixed writer tenant.
   // Preserve all release/attempt/principal bindings while selecting that tenant.
   database=await openAdmittedClient(Object.freeze({...bound,workspace:WRITER_WORKSPACE}));
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
   const result=await work(database,acceptance.target);
-  const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  if(resolveAcceptanceBackend&&JSON.stringify(await resolveAcceptanceBackend(bound))!==JSON.stringify(selection))reject();
+  const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot,selection);
   if(JSON.stringify(acceptance.snapshot)!==JSON.stringify(acceptanceAfter.snapshot)||database.isHealthy()!==true)reject();
   return result;
  }finally{try{await database?.close();}catch{}}

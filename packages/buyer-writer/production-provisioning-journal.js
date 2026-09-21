@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export const BUYER_WRITER_PROVISIONING_JOURNAL_ROOT='/var/lib/blackspire-operator/buyer-writer-provisioning';
+export const OWNED_BUYER_WRITER_PROVISIONING_JOURNAL_ROOT='/var/lib/blackspire-operator/owned-buyer-writer-provisioning';
 export const BUYER_WRITER_PROVISIONING_JOURNAL_FILE=`${BUYER_WRITER_PROVISIONING_JOURNAL_ROOT}/state.json`;
 
 const SHA=/^[a-f0-9]{40}$/;
@@ -20,12 +21,13 @@ const fail=()=>{throw new Error('Buyer writer provisioning journal rejected');};
 // authoritative when reconciling an interrupted attempt.
 export function encodeBuyerWriterProvisioningJournal(value){
  try{
-  const fields=value?.version===2
-    ?['version','kind','releaseSha','operationId','attemptId','installerSha256','mode','phase','status','updatedAt']
+  const fields=[2,3].includes(value?.version)
+    ?['version','kind','releaseSha','operationId','attemptId','installerSha256','mode','phase','status','updatedAt',...(value.version===3?['backendProfile','profileDigest']:[])]
     :['version','kind','operationId','installerSha256','mode','phase','status','updatedAt'];
-  if(!exact(value,fields)||![1,2].includes(value.version)||value.kind!=='buyer_writer_production_provisioning'
-   ||!UUID.test(value.operationId??'')||(value.version===2&&(!SHA.test(value.releaseSha??'')
+  if(!exact(value,fields)||![1,2,3].includes(value.version)||value.kind!=='buyer_writer_production_provisioning'
+   ||!UUID.test(value.operationId??'')||([2,3].includes(value.version)&&(!SHA.test(value.releaseSha??'')
     ||!UUID.test(value.attemptId??'')||value.attemptId===value.operationId))
+   ||(value.version===3&&(value.backendProfile!=='owned-postgres-v1'||!SHA256.test(value.profileDigest??'')))
    ||!SHA256.test(value.installerSha256??'')||!modes.has(value.mode)||!phases.has(value.phase)
    ||!statuses.has(value.status)||typeof value.updatedAt!=='string'||new Date(value.updatedAt).toISOString()!==value.updatedAt)fail();
   if(value.status==='IN_PROGRESS'&&!['started','roles-disabled','installer-committed','credential-transaction-started'].includes(value.phase)
@@ -61,7 +63,7 @@ function safeExisting(filename,io){
  }catch(error){if(error?.code!=='ENOENT')throw error;}
 }
 
-export function writeBuyerWriterProvisioningJournal(value,{root=BUYER_WRITER_PROVISIONING_JOURNAL_ROOT,io=fs,uid=process.getuid?.()}={}){
+export function writeBuyerWriterProvisioningJournal(value,{root=value?.version===3?OWNED_BUYER_WRITER_PROVISIONING_JOURNAL_ROOT:BUYER_WRITER_PROVISIONING_JOURNAL_ROOT,io=fs,uid=process.getuid?.()}={}){
  if(uid!==0)fail();
  const bytes=Buffer.from(encodeBuyerWriterProvisioningJournal(value));
  let fd,identity,renamed=false,temp;

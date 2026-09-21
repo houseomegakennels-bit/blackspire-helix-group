@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import http from 'node:http';
 import {createBuyerWriterHttpServer} from '../packages/buyer-writer/http.js';
-import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,withHeldReceiverAdmission,heldReceiverContext,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withPremergeReadAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
+import {acquireReleaseAdmissionLock,createReleaseAdmissionGuard,withHeldReceiverAdmission,withHeldReceiverReadAdmission,heldReceiverContext,heldAcceptanceContext,HELD_ACCEPTANCE_ACTIVE_FILE,RELEASE_ADMISSION_LOCK,releaseAdmissionRequired,withHeldAcceptanceAdmission,withPremergeReadAdmission,withReleaseAdmission} from '../packages/shared/release-admission.js';
 import {engageReleaseAdmissionHold,reconcileReleaseAdmissionHold,inspectAdmissionHoldHistory} from '../packages/zola-release/admission-hold.js';
 import {executeRegisteredCapability} from '../packages/capabilities/execute.js';
 
@@ -185,6 +185,26 @@ test('candidate read permit stays distinct from live acceptance and public OPEN 
   let inherited;
   withHeldReceiverAdmission(authority,()=>{inherited=Promise.resolve().then(()=>heldReceiverContext());},deps('api'));
   assert.equal(await inherited,null);
+  const buyerAuthority={...authority,capabilityId:claims.reads[1].capability,permission:claims.reads[1].permission};
+  assert.throws(()=>withHeldReceiverReadAdmission(authority,()=>0,deps('api')),/held/);
+  assert.throws(()=>withHeldReceiverAdmission(buyerAuthority,async()=>0,deps('api')),/held/);
+  let finishRead,detachedRead;
+  const pendingRead=withHeldReceiverReadAdmission(buyerAuthority,async()=>{
+    await new Promise(resolve=>{finishRead=resolve;});
+    assert.equal(heldReceiverContext().permitId,claims.permitId);
+    assert.equal(heldAcceptanceContext(),null);
+    detachedRead=()=>heldReceiverContext();
+    return 12;
+  },deps('api'));
+  assert.throws(()=>f.acquire({exclusive:true}),/held/);
+  finishRead();assert.equal(await pendingRead,12);
+  assert.equal(detachedRead(),null);f.acquire({exclusive:true}).close();
+  let clock=1500;
+  await assert.rejects(withHeldReceiverReadAdmission(buyerAuthority,async()=>{clock=2000;return 4;},
+    {...deps('api'),now:()=>clock}),/held/);
+  assert.equal(heldReceiverContext(),null);f.acquire({exclusive:true}).close();
+  await assert.rejects(withHeldReceiverReadAdmission(buyerAuthority,async()=>{throw new Error('read unavailable');},deps('api')),/read unavailable/);
+  f.acquire({exclusive:true}).close();
 
   assert.throws(()=>f.guard.run(()=>0),/held/);
   await assert.rejects(withPremergeReadAdmission({role:'worker'},()=>executeRegisteredCapability({idempotency_key:`unified:jarvis:zola-six:${epoch}:0`,request:'unclassified acceptance request'},{}),deps('worker')),/held/);

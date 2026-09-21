@@ -39,3 +39,21 @@ test('binding mismatch, observation errors and expired observation budgets fail 
   let time=0;const late=fixture();late.options.now=()=>time;late.options.observeBinding=async()=>{time=2001;return late.proof;};
   assert.equal(await createBuyerWriterAvailability(late.options)(),false);
 });
+
+
+test('async base readiness is observed before and after binding, and a later failed dependency denies',async()=>{
+ const f=fixture();let reads=0;f.options.getReadiness=async()=>{await Promise.resolve();reads++;return f.readiness;};
+ assert.equal(await createBuyerWriterAvailability(f.options)(),true);assert.equal(reads,2);
+ f.options.observeBinding=async()=>{f.readiness.ok=false;return f.proof;};assert.equal(await createBuyerWriterAvailability(f.options)(),false);
+});
+test('a stalled async base snapshot stays within the availability deadline and never observes binding afterward',async()=>{
+ const f=fixture();let finish,calls=0;f.options.getReadiness=()=>new Promise(resolve=>{finish=resolve;});f.options.observeBinding=async()=>{calls++;return f.proof;};
+ assert.equal(await createBuyerWriterAvailability(f.options)(),false);finish(f.readiness);await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,0);
+});
+
+
+test('emergency stop during the final asynchronous store probe uses fresh health and denies',async()=>{
+ const f=fixture();let reads=0;f.options.getHealth=()=>structuredClone(f.health);
+ f.options.getReadiness=async()=>{await Promise.resolve();if(++reads===2)f.health.emergencyStop=true;return structuredClone(f.readiness);};
+ assert.equal(await createBuyerWriterAvailability(f.options)(),false);assert.equal(reads,2);
+});
