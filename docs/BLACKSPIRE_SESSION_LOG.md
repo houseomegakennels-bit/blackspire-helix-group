@@ -2029,3 +2029,9 @@ A separate protected candidate-read permit kind admits only the six exact reques
 ## 2026-09-21 — collector HELD and exact-source execution repair
 
 Implemented distinct candidate/postmerge protected permit handling, strict HELD readiness observation, and sealed artifact subprocess collection from fixed configuration paths. Thirty-seven focused tests and static/living-memory gates pass. Candidate permit orchestration requires separate integration; production acceptance remains UNVERIFIED. No production actions or push occurred.
+
+## 2026-09-21 — journaled candidate six-read permit
+
+The premerge six-read stage now publishes a distinct candidate permit under the exclusive admission lease, releases that lease before the exact sealed collector executes, and retires the active permit after bounded evidence is durably recorded. Its strict journal grammar binds the pending stage, attempt, candidate SHA, fixed runtime identity, configuration digest and retained HELD epoch. An uncertain collection is never redispatched; a retained valid result may reconcile retirement after lock contention or interruption without collecting again. Public readiness and ordinary admission remain closed, and candidate admission does not publish postmerge generations or alter live acceptance authority.
+
+Thirty-two focused tests pass, including real API HTTP and worker claim paths, candidate/live header isolation, exact task selection, publication interruptions, and retained-result retirement reconciliation. Full integrated validation, independent exact-commit review and production acceptance remain UNVERIFIED. No production state changed.

@@ -104,12 +104,12 @@ test('mint maps fixed runtime identity without substituting release journal auth
 test('resumed six-read intents revalidate fixed identity, version, release and live epoch before collection',{skip:process.getuid()!==0},async t=>{
  for(const stage of ['six_reads','six_live_reads']){
   const f=fixture(t),live=stage==='six_live_reads',context={input,release:{},journal:f.journal};
-  const good={version:live?5:4,workspace:'blackspire-command',principal:'blackspire-operator',releaseSha:live?merged:candidate,
+  const good={runId:epochRunId,version:live?5:4,workspace:'blackspire-command',principal:'blackspire-operator',releaseSha:live?merged:candidate,
    ...(live?{releaseRunId:epochRunId}:{})};
   let config=good,collections=0;
-  const operation=createHeldProductionOperations(context,{premergeConfig:()=>config,liveConfig:()=>config,
+  const operation=createHeldProductionOperations(context,{premergeConfig:()=>config,liveConfig:()=>config,premergeReadPermit:async({collect})=>collect(),
    collect:async observed=>{collections++;assert.deepEqual(observed,good);throw new Error('collector reached');}})[stage];
-  const call={...f.call,state:{...f.call.state,pending:{stage,attemptId:f.call.attemptId}}};
+  const call={...f.call,state:{...f.call.state,outputs:{...f.call.state.outputs,admission_lease:{epochRunId}},pending:{stage,attemptId:f.call.attemptId}}};
   assert.equal(operation.check({...call,attemptId:null}).status,'PASS');
   operation.execute(call);
   const mutations=[{workspace:input.workspace},{principal:input.principal},{version:live?4:5},{releaseSha:'9'.repeat(40)},

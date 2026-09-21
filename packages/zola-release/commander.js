@@ -1,4 +1,5 @@
 import {inspectHeldWriterBindingHistory} from './held-writer-binding.js';
+import {inspectPremergeReadHistory} from './premerge-read-permit.js';
 import {inspectCandidateSixReadsHistory,inspectSequencedHeldAcceptanceHistory} from './production-stage-history.js';
 import {inspectBuyerWriterActivationHistory} from './buyer-writer-activation.js';
 import {inspectRollbackProbeHistory} from './production-rollback-operations.js';
@@ -51,6 +52,7 @@ function history(journal){
  const events=journal.stream('release').events();
  inspectReleaseSequenceHistory(events);
  inspectCandidateSixReadsHistory(events);
+ inspectPremergeReadHistory(events);
  inspectBuyerWriterActivationHistory(events);
  inspectRollbackProbeHistory(events);
  inspectFinalReleaseRecordHistory(events);
@@ -77,6 +79,7 @@ function history(journal){
   if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
   if([3,4,5].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
   if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
+   'premerge_reads_intent','premerge_reads_active','premerge_reads_result','premerge_reads_retired',
    'buyer_writer_activation_intent','buyer_writer_activation_result',
    'candidate_deployment_intent','candidate_deployment_step_intent','candidate_deployment_step_result','candidate_deployment_result',
    'held_writer_binding_intent','held_writer_binding_step_intent','held_writer_binding_step_result','held_writer_binding_result',

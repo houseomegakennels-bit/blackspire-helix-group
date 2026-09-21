@@ -1,4 +1,5 @@
 import {ensureHeldWriterBinding} from './held-writer-binding.js';
+import {runPremergeReadPermit} from './premerge-read-permit.js';
 import {isProductionAcceptanceIdentity,PRODUCTION_ACCEPTANCE_WORKSPACE,PRODUCTION_ACCEPTANCE_PRINCIPAL} from './production-runtime-identity.js';
 
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
@@ -61,7 +62,7 @@ function admissionOptions(context,root=RELEASE_ADMISSION_ROOT){
 }
 function matchesCollectorBinding(config,{version,releaseSha,epochRunId}){
  return config?.version===version&&config.releaseSha===releaseSha&&isProductionAcceptanceIdentity(config)
-  &&(version!==5||config.releaseRunId===epochRunId);
+  &&(version===4?uuid(epochRunId)&&config.runId===epochRunId:version!==5||config.releaseRunId===epochRunId);
 }
 function protectedConfig(filename){return validateCollectorConfig(readRootOwnedJson(filename,{groupId:0,maxBytes:16384}));}
 async function collectFixed(config){
@@ -161,7 +162,7 @@ export function wrapHeldAcceptanceOperations(context,operations,overrides={}){
 }
 
 export function createHeldProductionOperations(context,overrides={}){
- const deps={ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
+ const deps={premergeReadPermit:runPremergeReadPermit,ensureWriterBinding:input=>import('./held-writer-binding.js').then(module=>module.ensureHeldWriterBinding(input)),observePostMerge:observeFixedPostMergeHeld,lifecycle:observeHeldLifecycle,mint:mintHeldAcceptancePermit,
   options:()=>admissionOptions(context),premergeConfig:()=>protectedConfig(FIXED_PREMERGE_SIX_READ_CONFIGURATION),
   liveConfig:()=>protectedConfig(FIXED_LIVE_SIX_READ_CONFIGURATION),collect:collectFixed,now:()=>new Date().toISOString(),inspectRecord:inspectFinalReleaseRecord,
   writeAccepted:writeAcceptedHeldReleaseRecord,writeOpen:writeOpenReleaseRecord,prepareOpen:prepareGuardedOpen,publishOpen:publishGuardedOpen,
@@ -190,12 +191,12 @@ export function createHeldProductionOperations(context,overrides={}){
    return pass({stage:'generation_revalidation',releaseSha:context.input.releaseSha,epochRunId:prior.epochRunId,apiGeneration:prior.apiGeneration,workerGeneration:prior.workerGeneration,
     artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return revalidation.check(call);}};
  const premergeReads={check(call){invocation(context,call,'six_reads');let config;try{config=deps.premergeConfig();}catch{return blocked();}
-   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha}))return blocked();
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha,epochRunId:call.state.outputs.admission_lease?.epochRunId}))return blocked();
    return pass({stage:'six_reads',fixedCollector:true});},execute(call){invocation(context,call,'six_reads',{attempt:true});},
   async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{const config=deps.premergeConfig();
-   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha}))return blocked();
-   report=await deps.collect(config);}catch{return blocked();}
-   const evidence=safeCollector(report,false,context.input.releaseSha);return pass({stage:'six_reads',...evidence});},observe(){reject();}};
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha,epochRunId:call.state.outputs.admission_lease?.epochRunId}))return blocked();
+   report=await deps.premergeReadPermit({context,call,config,collect:async()=>safeCollector(await deps.collect(config),false,context.input.releaseSha)});}catch{return blocked();}
+   return pass({stage:'six_reads',...report});},observe(){reject();}};
  const bindPostmerge=async call=>{
   const ids=invocation(context,call,'post_merge_held_epoch',{attempt:true}),held=deps.observePostMerge(context,call);
   if(held.status!=='PASS'||held.evidence.newMainSha!==merged(call)||!uuid(held.evidence.epochRunId))reject();
