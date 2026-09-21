@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — demo invitation review findings repaired
+
+Independent review of the main delta through `2775fd5043ad422418a4177f686671961e9a9738` found that invitation claims granted demo authority before the exclusive claim, and that missing or malformed demo expiry failed open. The local correction creates an unconfirmed client-only account, claims only an unexpired unused invitation, then confirms and promotes that account. Failed cleanup of a losing claim cannot leave demo authority. Missing, malformed and elapsed demo expiry now denies access. Successful promotion survives subsequent sign-in failure. Six focused behavioral tests pass; integrated frontend build and full validation remain pending. Main still contains the reviewed defects until this correction is deployed; no clean-review or live-acceptance claim is made for main.
+
+Both release compatibility repairs have independent approval: historical parser `eb6cdcb95e4343e1dff59824d74df7eb66a9bd72` runtime/test diff digest `c6322077779efca88743220e7103acb59c66d66ab23b0ba7271dce2cbe9bd0d4`, and writer workspace repair `5d5dd6cd88ed4e9f4358c71bcc6b7b1a097c6b86` diff digest `d7c2b53b47c14b64f9c13b9674f872892370e911f4cf9a37796d41a5adc748d4`. The exact recovery artifact `2c0b600c268faa0571f08322e16d7f81f37789be` passes sealed verification with its required digest; it has no deployment record and is not the current production pointer. An integrated recovery rehearsal from this new checkout failed before dependency installation and is not passing evidence. No production journal, role, configuration, service or pointer changed.
+
 ## 2026-09-21 — production release authority expanded and final reconciliation
 
 The user explicitly authorizes all releases, release changes and deployments needed to bring Zola live, including production configuration, database role provisioning and the reviewed history-preserving journal transition. This supersedes the earlier separate production-change approval boundary for this task. Validation, independent review, recovery safeguards and the prohibition on live trading or funds movement remain unchanged.
