@@ -10,6 +10,10 @@ The recorded implementation anchor now identifies independently reviewed main `2
 
 The contained suite for `b00754d` passes 2,193 total / 2,116 passed / 77 intended skips / zero failures, all 224 files complete, zero tree mutation and zero surviving descendants. The frontend Webpack build and TypeScript pass. After deterministic dependency installation, the integrated fixed recovery HTTP rehearsal passes with the required `2c0b600c268faa0571f08322e16d7f81f37789be` artifact digest; it explicitly does not establish production acceptance. Later runtime-identity, denial-principal and candidate-lifecycle changes require fresh integrated validation. A read-only provider catalog capture validates 17 fixed objects and creator OID 16388 without database mutation.
 
+## 2026-09-21 — sealed recovery package verification
+
+Rollback acceptance and verification now inspect the pinned recovery package as a sealed artifact, without requiring a deployment record for a package that has not been deployed. Exact recovery SHA/digest, repeated artifact observations, protected backup checks and live HELD generation observation remain enforced. Twelve focused rollback and artifact tests pass, including the separation between sealed evidence and deployed runtime evidence. This correction does not claim a deployment or production acceptance and does not change any production record.
+
 ## 2026-09-21 — read-only bounded-writer history inspection
 
 A pure bounded-writer history inspector validates each persisted handle against its original pending sequence prefix, exact binding, digest and operation order. It can inspect those retained handles after the outer stage is confirmed without permitting new appends or replay. Ten focused journal tests pass, including confirmed-stage history, late-handle refusal, tampering and unchanged input bytes. Integration into strict commander event validation is separate work; no production journal changed.

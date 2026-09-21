@@ -2,7 +2,7 @@ import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {RECOVERY_ARTIFACT,RECOVERY_SHA} from '../zola-rollback/intake.js';
 import {validateIntegratedRecoveryReport} from '../zola-rollback/integrated-report.js';
 import {hash} from './commander-journal.js';
@@ -89,13 +89,14 @@ function append(context,event){context.journal.stream('release').append(event);}
 async function artifactAndBackup(context,binding){
  const artifactRoot=path.join(RELEASE_ROOT,binding.rollbackSha);
  if(!fs.existsSync(artifactRoot)||!fs.existsSync(context.release.backupManifestFile))return{status:'BLOCKED_EXTERNAL'};
- const artifact=await inspectBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
+ // Recoverability verifies the immutable package; live generations are observed separately.
+ const artifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
  if(artifact.releaseSha!==binding.rollbackSha||artifact.environment!=='production'||!digest(artifact.artifactDigest)
   ||binding.rollbackSha!==RECOVERY_SHA||artifact.artifactDigest!==RECOVERY_ARTIFACT)reject();
  const backup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
  if(backup.status!=='PROTECTED_BACKUP_VERIFIED'||backup.releaseSha!==binding.releaseSha
   ||!digest(backup.snapshotSha256)||!digest(backup.manifestSha256)||backup.sourceIdentityBound!==true)reject();
- const secondArtifact=await inspectBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
+ const secondArtifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
  const secondBackup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
  if(!same(artifact,secondArtifact)||!same(backup,secondBackup))reject();
  return{status:'PASS',artifactDigest:artifact.artifactDigest,backupManifestDigest:backup.manifestSha256,
