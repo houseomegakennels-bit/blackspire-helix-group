@@ -169,7 +169,7 @@ test('owned source derives the fresh creator only from matching descriptor and v
  for(const patch of [{ownedProfile:undefined},{catalogEvidence:{...catalog,version:1}},{catalogEvidence:{...catalog,target:{...catalog.target,systemIdentifier:'987'}}},{credentialSource:{...source,creatorOid:16388}}])assert.throws(()=>buildBuyerWriterSourceV1({...input,...patch}),/preparation failed/);
 });
 
-test('fresh owned credential publication recovers exact retained random material after interrupted link',async()=>{
+test('fresh owned credential publication recovers exact retained random material after interrupted link',{skip:process.getuid?.()!==0},async()=>{
  const {prepareOwnedBuyerWriterCredentialSource}=await import('../packages/buyer-writer/source-v1-preparation.js');
  const {OWNED_POSTGRES_TARGET,ownedPostgresProfileDigest}=await import('../packages/buyer-writer/owned-postgres.js');
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'owned-source-')),translate=name=>root+name;
