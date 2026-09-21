@@ -1,4 +1,4 @@
-import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {retainOwnedN8nResponse} from '../packages/zola-release/owned-n8n-response-receipt.js';
 import {assertOwnedN8nRecoveryAuthority,createOwnedN8nRecoveryContinuation} from '../packages/zola-release/owned-n8n-recovery-authority.js';
 import {reassertOwnedN8nWriter,validateOwnedN8nReassertionProof} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
@@ -27,7 +27,7 @@ const fail=()=>{throw new Error('Owned n8n operator stopped');};
 let journal;
 try{
  const [mode,inputFile]=process.argv.slice(2);
- if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||!['--release','--reassert-credential','--release-cloud-proof','--release-cloud-proof-attempt2'].includes(mode)||process.argv.length!==4)fail();
+ if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||!['--release','--reassert-credential','--release-cloud-proof','--release-cloud-proof-attempt2','--release-cloud-proof-attempt3'].includes(mode)||process.argv.length!==4)fail();
  // Both the operator worktree and canonical runtime source must remain clean.
  const operatorRoot=fileURLToPath(new URL('../',import.meta.url));
  const git=(root,args)=>execFileSync('/usr/bin/git',['-C',root,...args],{encoding:'utf8',timeout:5000,maxBuffer:65536}).trim();
@@ -116,20 +116,21 @@ try{
  };
  // Both gate callbacks only observe the distinct acknowledged recovery proof.
  const cloudProof=async b=>{
-  const readers=await import('../packages/zola-release/owned-n8n-cloud-host.js');
-  const readComplete=mode==='--release-cloud-proof-attempt2'?readers.readCompletedOwnedN8nCloudProofAttempt2:readers.readCompletedOwnedN8nCloudProof;
+  const readers=await import(mode==='--release-cloud-proof-attempt3'?'../packages/zola-release/owned-n8n-cloud-attempt3-host.js':'../packages/zola-release/owned-n8n-cloud-host.js');
+  const readComplete=mode==='--release-cloud-proof-attempt3'?readers.readCompletedOwnedN8nCloudProofAttempt3:mode==='--release-cloud-proof-attempt2'?readers.readCompletedOwnedN8nCloudProofAttempt2:readers.readCompletedOwnedN8nCloudProof;
   const complete=await readComplete({releaseSha:b.releaseSha,operationId:b.operationId,stageAttemptId:b.stageAttemptId});
   const store=recoveryStore(b),history=validateOwnedN8nCloudHistory({authority:retained(b),originalIntent:records(b).value('intent',true),originalResult:records(b).value('result',true),source:v,plan:complete.plan,
    reassertion:{intent:store.value('intent',true),httpAck:store.value('http-ack',true),result:store.value('result',true),headers:store.value('transport-headers',true),body:store.value('transport-body',true)}});
   const identity=await lookupBuyerWriterIdentity(),snapshot=protectedSnapshot(b,heldRecord(b),identity);
-  if(mode==='--release-cloud-proof-attempt2')validateOwnedN8nCloudAttempt2Continuation({complete,currentOperatorSha:operatorSha});
+  if(mode==='--release-cloud-proof-attempt3')validateOwnedN8nCloudAttempt3Continuation({complete,currentOperatorSha:operatorSha});
+  else if(mode==='--release-cloud-proof-attempt2')validateOwnedN8nCloudAttempt2Continuation({complete,currentOperatorSha:operatorSha});
   else assertOwnedN8nCloudContinuationOperator({plan:complete.plan,workflowCreated:complete.workflowCreated,adoption:complete.adoption,currentOperatorSha:operatorSha});
   if(complete.plan.ingressDigest!==snapshot.ingress.digest||!same(complete.initialClosure,history.initialClosure))fail();
   return {after:complete.credentialMetadata,initialClosure:complete.initialClosure,history,receiptDigest:complete.receiptDigest,plan:complete.plan};
  };
  const metadata=()=>createOwnedN8nCredentialTransport(key)('GET','/api/v1/credentials/RzOyDmXYmx58yZHi');
  const closure=(b,initialClosure)=>observeOwnedN8nContinuationClosure({request:reassertRequest,tokenSubject:JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString('utf8')).sub,plan,events:scopedJournal.stream('n8n').events(),initialClosure});
- const {assertConfigured,synchronize}=['--release-cloud-proof','--release-cloud-proof-attempt2'].includes(mode)
+ const {assertConfigured,synchronize}=['--release-cloud-proof','--release-cloud-proof-attempt2','--release-cloud-proof-attempt3'].includes(mode)
   ?createOwnedN8nCloudContinuation({withFence:withRecoveryFence,proof:cloudProof,metadata,closure})
   :createOwnedN8nRecoveryContinuation({withFence:withRecoveryFence,proof:recoveryProof,metadata:async()=>{const b=currentBinding();await closure(b,recoveryStore(b).value('intent',true)?.closure);return metadata();}});
  const reassertRequest=async(method,route,body)=>{

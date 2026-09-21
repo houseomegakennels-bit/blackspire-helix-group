@@ -1,3 +1,4 @@
+import {validateInterruptedOwnedN8nAbandonment} from './owned-n8n-cloud-interrupted.js';
 import {validateOwnedN8nCloudWorkflowAdoption} from './owned-n8n-cloud-workflow.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from './owned-n8n-credential-reassertion.js';
 const fixed={releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137'};
@@ -47,9 +48,18 @@ export function assertOwnedN8nCloudContinuationOperator({plan,workflowCreated,ad
  validateOwnedN8nCloudWorkflowAdoption(plan,workflowCreated,adoption,currentOperatorSha);return true;
 }
 
-export function validateOwnedN8nCloudAttempt2Continuation({complete,currentOperatorSha}){
+export const validateOwnedN8nCloudAttempt2Continuation=input=>validateNumberedContinuation(input,2);
+export function validateOwnedN8nCloudAttempt3Continuation(input){
+ const {complete}=input,p=complete?.plan,i=complete?.interrupted;
+ const result=validateInterruptedOwnedN8nAbandonment(i?.records,i??{});
+ if(p?.predecessorInterruptionDigest!==hash(result)||p.challenge===i.records.plan.challenge||p.receiptId===i.records.plan.receiptId||p.path===i.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])if(p[key]!==i.records.plan[key])fail();
+ if(!same(p.credentialMetadata,i.records.plan.credentialMetadata))fail();
+ return {...validateNumberedContinuation(input,3),predecessorInterruptionDigest:hash(result),priorAttempt2Outcome:'INTERRUPTED_BEFORE_READY'};
+}
+function validateNumberedContinuation({complete,currentOperatorSha},attempt){
  const p=complete?.plan,old=complete?.predecessor?.plan,result=complete?.predecessor?.result;
- if(p?.attempt!==2||!(/^[a-f0-9]{40}$/).test(currentOperatorSha??'')||p.operatorSha!==currentOperatorSha||complete.adoption!=null
+ if(p?.attempt!==attempt||!(/^[a-f0-9]{40}$/).test(currentOperatorSha??'')||p.operatorSha!==currentOperatorSha||complete.adoption!=null
   ||old?.operatorSha!=='4a1a329a35e10691af2eadbf4088c8bb306d505f'||old.attempt!==undefined
   ||!exact(result,'version,kind,binding,intentDigest,failedExecutionDigest,workflowDeleted,positiveProof,executionGraphAcceptance,originalOutcome,administrativeReassertionStatus')
   ||result.version!==1||result.kind!=='owned-n8n-failed-workflow-cleanup-result'||result.workflowDeleted!==true||result.positiveProof!==false
@@ -62,5 +72,5 @@ export function validateOwnedN8nCloudAttempt2Continuation({complete,currentOpera
  const before=old.credentialMetadata,after=p.credentialMetadata;
  if(!before||!after||after.updatedAt!=='2026-09-21T22:55:51.254Z'||!same({...before,updatedAt:null},{...after,updatedAt:null})||!same(after,complete.credentialMetadata)
   ||!Number.isFinite(Date.parse(before.updatedAt))||!Number.isFinite(Date.parse(after.updatedAt))||Date.parse(after.updatedAt)<=Date.parse(before.updatedAt))fail();
- return Object.freeze({attempt:2,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
+ return Object.freeze({attempt,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
 }

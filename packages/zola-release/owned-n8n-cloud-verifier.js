@@ -31,13 +31,15 @@ export async function restoreOwnedN8nCloudProxy({plan,before,candidate},{read,re
  const result={version:1,planDigest,proxyRestored:true,listenerClosed:true};record('cleanup-result',result);return result;
 }
 
-export function createOwnedN8nCloudVerifierAttempt2({plan,key,record,rejectRecord,fence,now=Date.now,complete}){
- if(plan.attempt!==2||typeof rejectRecord!=='function'||typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key)||plan.path!=='/__zola_credential_proof/'+plan.challenge||!/^[a-f0-9]{64}$/.test(plan.challenge??''))throw Error('Attempt2 verifier refused');
+export const createOwnedN8nCloudVerifierAttempt2=options=>createNumberedOwnedN8nCloudVerifier(options,2);
+export const createOwnedN8nCloudVerifierAttempt3=options=>createNumberedOwnedN8nCloudVerifier(options,3);
+function createNumberedOwnedN8nCloudVerifier({plan,key,record,rejectRecord,fence,now=Date.now,complete},attempt){
+ if(plan.attempt!==attempt||typeof rejectRecord!=='function'||typeof key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(key)||plan.path!=='/__zola_credential_proof/'+plan.challenge||!/^[a-f0-9]{64}$/.test(plan.challenge??''))throw Error('Attempt2 verifier refused');
  const expected=Buffer.from(key);let consumed=false;
  return async(req,res)=>{
   if(consumed){res.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});res.end('{"ok":false}');return;}
   consumed=true;
-  const reject=code=>{rejectRecord({version:1,kind:'owned-n8n-cloud-rejection',attempt:2,planDigest:cloudProofHash(plan),code,receivedAt:new Date(now()).toISOString()});res.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});res.end('{"ok":false}',()=>complete());};
+  const reject=code=>{rejectRecord({version:1,kind:'owned-n8n-cloud-rejection',attempt,planDigest:cloudProofHash(plan),code,receivedAt:new Date(now()).toISOString()});res.writeHead(404,{'content-type':'application/json','cache-control':'no-store'});res.end('{"ok":false}',()=>complete());};
   try{
    if(now()>=Date.parse(plan.expiresAt))return reject('EXPIRED');
    if(req.method!=='GET')return reject('METHOD');if(req.url!==plan.path)return reject('PATH');if(req.headers.host!=='jarvis.blackspirehelix.com')return reject('HOST');

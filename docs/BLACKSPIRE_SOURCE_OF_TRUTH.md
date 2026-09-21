@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — interrupted diagnostic attempt and supervised successor
+
+A separate abandonment lane preserves attempt-two records and accepts only the exact inactive workflow/version, zero authenticated execution inventory, original proxy bytes, absent temporary/listener, and existing successful proxy cleanup. It records deletion intent and adopts only authenticated absence after an uncertain DELETE; no repeat deletion or workflow execution is sent. Fresh attempt three has its own protected root, nonce, receipt, workflow name and explicit continuation mode while retaining original UNKNOWN and administrative HTTP405 history. A bounded detached systemd supervisor binds launch receipts, exact execution settings, invocation/PID identity and durable READY before manual execution; final proof requires successful supervisor exit and cleanup. Forty-five focused tests pass, including real HTTP one-use checks; actual attempt-two protected records pass the pure classifier. Native abandonment, supervisor launch and cloud proof remain UNVERIFIED and were not executed.
+
 ## 2026-09-21 — observed diagnostic workflow adoption
 
 The original cloud proof operator created exactly one inactive diagnostic workflow, but strict serialized JSON comparison rejected the provider response because property order differed. Authenticated GET observations found the exact intended graph and settings unchanged. A separate repair compares structures without changing expected canonical bytes and adopts only that fixed observed workflow using GET requests. It preserves the original plan operator SHA and expiry, records distinct repair provenance, and cannot POST another workflow. Server, finalization and continuation require that adoption proof; no original plan or creation intent is rewritten. Actual key-possession execution remains pending.

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {INTERRUPTED_NAMES,INTERRUPTED_OPERATOR,INTERRUPTED_WORKFLOW} from '../../packages/zola-release/owned-n8n-cloud-interrupted.js';
+import {cloudProofDigest as hash,buildOwnedN8nCloudWorkflow} from '../../packages/zola-release/owned-n8n-cloud-workflow.js';
+import {cloudProofHash,renderOwnedN8nCloudProxy} from '../../packages/zola-release/owned-n8n-cloud-verifier.js';
+export function interruptedFixture(){
+ const p={version:1,attempt:2,kind:'owned-n8n-cloud-proof-plan',releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137',operatorSha:INTERRUPTED_OPERATOR,credentialId:'RzOyDmXYmx58yZHi',challenge:'c'.repeat(64),receiptId:'11111111-1111-4111-8111-111111111111',origin:'https://jarvis.blackspirehelix.com',path:'/__zola_credential_proof/'+'c'.repeat(64),createdAt:'2026-09-21T23:00:00.000Z',expiresAt:'2026-09-21T23:15:00.000Z',credentialMetadata:{id:'RzOyDmXYmx58yZHi',updatedAt:'2026-09-21T22:55:51.254Z'}};
+ for(const k of ['authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','proxyBeforeDigest','proxyCandidateDigest','predecessorFailureDigest'])p[k]='d'.repeat(64);
+ const before='server {\n    location ~ /\\. { deny all; }\n}\n';p.proxyBeforeDigest=cloudProofHash(before);const candidate=renderOwnedN8nCloudProxy(before,p);p.proxyCandidateDigest=cloudProofHash(candidate);
+ const w={id:INTERRUPTED_WORKFLOW,versionId:'exact-version',...buildOwnedN8nCloudWorkflow(p),active:false},records=Object.fromEntries(INTERRUPTED_NAMES.map(n=>[n,null]));
+ Object.assign(records,{plan:p,'proxy-bytes':{version:1,before,candidate},'workflow-intent':{version:1,planDigest:hash(p),workflow:buildOwnedN8nCloudWorkflow(p)},'workflow-create-ack':{version:1,planDigest:hash(p),status:200,responseDigest:hash(w),body:w},'workflow-created':{version:1,planDigest:hash(p),workflow:w},'serve-intent':{version:1,planDigest:hash(p)},'cleanup-intent':{version:1,planDigest:hash(p)},'cleanup-result':{version:1,planDigest:hash(p),proxyRestored:true,listenerClosed:true}});
+ let exists=true,lost=false,inventory=[],workflow=structuredClone(w),local={proxy:before,listenerAbsent:true,temporaryAbsent:true};const retained=new Map(),calls=[];
+ const store={value:n=>retained.get(n)??null,record:(n,v)=>{if(retained.has(n))assert.deepEqual(retained.get(n),v);retained.set(n,structuredClone(v));}};
+ const request=async(m,path)=>{calls.push([m,path]);if(path.includes('/executions?'))return {status:200,body:{data:inventory,nextCursor:null}};if(m==='GET')return exists?{status:200,body:structuredClone(workflow)}:{status:404};assert.equal(m,'DELETE');exists=false;if(lost)throw Error('lost ACK');return {status:204};};
+ return {records,store,retained,calls,request,fence:async()=>{},observeLocal:async()=>local,setLocal:v=>local={...local,...v},setInventory:v=>inventory=v,setWorkflow:v=>workflow=v,setLost:()=>lost=true};
+}
