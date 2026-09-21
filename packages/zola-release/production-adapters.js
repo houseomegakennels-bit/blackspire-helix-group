@@ -13,6 +13,7 @@ import {createDeploymentProductionOperations} from './production-deployment-oper
 import {createN8nMigrationProductionOperations} from './production-n8n-migration.js';
 import {createHeldProductionOperations,wrapHeldAcceptanceOperations} from './production-held-operations.js';
 import {createCiSecurityProductionOperation} from './production-ci-security.js';
+import {openInstalledBuyerWriterAdmittedClient} from './installed-buyer-writer.js';
 
 const REPOSITORY='houseomegakennels-bit/blackspire-helix-group';
 const BRANCH='release/zola-production-live';
@@ -141,7 +142,9 @@ export function createFixedProductionOperations(context,dependencies={}){
   gatewayConfigurationFile:BUYER_WRITER_GATEWAY_CONFIG}));
  const isolationProof=dependencies.isolationProof??createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation});
  operations.provider_acl_check=createProviderAclCheckOperation({query:providerQuery,isolationProof});
- const writerHost={...(dependencies.writerHost??{}),configurationFile:context.release.activationConfigurationFile};
+ const writerHost={openAdmittedClient:bound=>openInstalledBuyerWriterAdmittedClient({
+  releaseSha:bound.releaseSha,workspace:bound.workspace}),...(dependencies.writerHost??{}),
+  admissionJournal:context.journal.stream('release')};
  operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:binding=>inspectFixedWriterAcceptance(binding,writerHost),
   runAcceptance:request=>runFixedWriterAcceptance(request,writerHost)});
  Object.assign(operations,createRollbackProductionOperations(context,dependencies.rollback));

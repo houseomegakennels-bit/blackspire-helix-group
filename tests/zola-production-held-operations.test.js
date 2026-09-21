@@ -54,3 +54,22 @@ test('premerge and HELD collectors use distinct immutable protected configuratio
  assert.deepEqual(Object.keys(createHeldProductionOperations(context)).sort(),['admission_lease','candidate_six_reads','final_release_record','generation_fence',
   'generation_revalidation','guarded_held_to_open','mint_acceptance_permit','post_merge_held_epoch','six_live_reads','six_reads','worker_readiness'].sort());
 });
+
+test('admission activates the exact buyer writer attempt before any HELD service start',async()=>{
+ const events=[],journal={stream:()=>({events:()=>structuredClone(events),append:event=>events.push(structuredClone(event))})};
+ const context={input,release:{activationConfigurationFile:'/protected/activation.json'},journal};
+ const attemptId='33333333-3333-4333-8333-333333333333',state={context:{operationId,
+  releaseSha:candidate,workspace:input.workspace,principal:input.principal},outputs:{},
+  pending:{stage:'admission_lease',attemptId}};
+ const call={input,state,ordinal:1,attemptId,inputDigest:'4'.repeat(64),checkOutputDigest:'5'.repeat(64)};
+ const order=[];
+ const operations=createHeldProductionOperations(context,{
+  async activate(binding){order.push('activate');assert.deepEqual(binding,{releaseSha:candidate,
+   operationId,attemptId,inputDigest:call.inputDigest,checkOutputDigest:call.checkOutputDigest});
+   return {status:'BUYER_WRITER_PRE_HELD_READY'};},
+  async establishHeld(){order.push('held');return {status:'HELD_LIFECYCLE_OBSERVED',releaseSha:candidate,
+   runId:epochRunId,proof:{artifactDigest:'6'.repeat(64),api:{generation:apiGeneration},worker:{generation:workerGeneration}}};},
+ });
+ await operations.admission_lease.execute(call);
+ assert.deepEqual(order,['activate','held']);
+});

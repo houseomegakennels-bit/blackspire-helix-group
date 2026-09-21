@@ -7,6 +7,7 @@ import {encodeBuyerWriterProvisioningJournal,writeBuyerWriterProvisioningJournal
 
 const base={version:1,kind:'buyer_writer_production_provisioning',operationId:'01234567-89ab-cdef-0123-456789abcdef',
  installerSha256:'a'.repeat(64),mode:'apply',phase:'started',status:'IN_PROGRESS',updatedAt:'2026-09-14T06:00:00.000Z'};
+const bound={...base,version:2,releaseSha:'b'.repeat(40),attemptId:'11234567-89ab-cdef-0123-456789abcdef'};
 
 test('provisioning journal has a closed sanitized schema',()=>{
  assert.equal(JSON.parse(encodeBuyerWriterProvisioningJournal(base)).phase,'started');
@@ -15,6 +16,10 @@ test('provisioning journal has a closed sanitized schema',()=>{
   assert.throws(()=>encodeBuyerWriterProvisioningJournal(bad),/journal rejected/);
  assert.equal(JSON.parse(encodeBuyerWriterProvisioningJournal({...base,mode:'reconcile'})).mode,'reconcile');
  assert.equal(JSON.parse(encodeBuyerWriterProvisioningJournal({...base,mode:'verify'})).mode,'verify');
+ assert.deepEqual(JSON.parse(encodeBuyerWriterProvisioningJournal(bound)),bound);
+ for(const bad of [{...bound,releaseSha:'bad'},{...bound,attemptId:bound.operationId},
+  {...bound,attemptId:'bad'},{...bound,releaseSha:undefined}])
+  assert.throws(()=>encodeBuyerWriterProvisioningJournal(bad),/journal rejected/);
 });
 
 test('provisioning journal is atomically replaced as a private root file',{

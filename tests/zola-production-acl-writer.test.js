@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {PROVIDER_ACL_CHECK_SQL,PROVIDER_ACL_FUNCTIONS,WRITER_ACCEPTANCE_TARGET_FILE,createProviderAclCheckOperation,createBoundedWriterE2eOperation}
+import {PROVIDER_ACL_CHECK_SQL,PROVIDER_ACL_FUNCTIONS,createProviderAclCheckOperation,createBoundedWriterE2eOperation}
  from '../packages/zola-release/production-acl-writer.js';
 import {createFixedProductionOperations} from '../packages/zola-release/production-adapters.js';
 
@@ -23,6 +23,8 @@ test('provider ACL operation performs one fixed read-only exact-twelve catalog c
  },isolationProof});
  const result=await operation.check(base);
  assert.equal(result.status,'PASS');assert.equal(result.evidence.functionCount,12);assert.equal(result.evidence.operationId,operationId);
+ assert.equal(result.evidence.applicationDatabaseIsolationVerified,true);
+ assert.equal(Object.hasOwn(result.evidence,'applicationDbCredentialsAbsent'),false);
  assert.match(result.evidence.catalogDigest,/^[a-f0-9]{64}$/);assert.equal(calls,1);
 });
 
@@ -30,6 +32,13 @@ test('provider ACL operation blocks on unavailable provider state or missing iso
  assert.deepEqual(await createProviderAclCheckOperation({query:async()=>{throw new Error('offline');},isolationProof}).observe(base),{status:'BLOCKED_EXTERNAL'});
  const publicRows=aclRows();publicRows[0].publicExecute=true;
  assert.deepEqual(await createProviderAclCheckOperation({query:async()=>({rows:publicRows})}).check(base),{status:'BLOCKED_EXTERNAL'});
+ for(const value of [false,'true',undefined]){
+  const invalidIsolation=await isolationProof();
+  invalidIsolation.evidence.applicationDbCredentialsAbsent=value;
+  assert.deepEqual(await createProviderAclCheckOperation({
+   query:async()=>({rows:aclRows()}),isolationProof:async()=>invalidIsolation,
+  }).check(base),{status:'BLOCKED_EXTERNAL'});
+ }
  const lost=aclRows();lost[0].serviceRoleExecute=false;
  await assert.rejects(()=>createProviderAclCheckOperation({query:async()=>({rows:lost}),isolationProof}).check(base),/operation rejected/);
  const duplicate=aclRows();duplicate[1].functionName=duplicate[0].functionName;
@@ -48,9 +57,8 @@ test('bounded writer operation binds release, operation, attempt, workspace, pri
  assert.deepEqual({...request},{...attempt.input,operationId,attemptId,inputDigest:attempt.inputDigest,checkOutputDigest:attempt.checkOutputDigest,
   capability:'buyer.writer.acceptance',mutationId:expectedMutation({...attempt.input,operationId,attemptId,inputDigest:attempt.inputDigest,checkOutputDigest:attempt.checkOutputDigest}),
   operation:'fail',failureCode:'INVALID_SOURCE_DATA',maximumBusinessRows:0,paidProviderAllowed:false});
- const reconciled=await operation.reconcile(attempt);
- assert.equal(reconciled.status,'PASS');assert.equal(reconciled.evidence.receiptDigest,d('receipt'));
- assert.equal(reconciled.evidence.businessRowsChanged,0);assert.equal(reconciled.evidence.compensationComplete,true);
+ await assert.rejects(()=>operation.reconcile(attempt),/operation rejected/,
+  'ordinary business receipt is insufficient without correlated admitted evidence');
 });
 
 test('bounded writer operation blocks unavailable evidence and fails closed on unknown or unintended mutation',async()=>{
@@ -66,75 +74,19 @@ test('bounded writer operation blocks unavailable evidence and fails closed on u
  await assert.rejects(()=>unknown.reconcile(attempt),/operation rejected/);
 });
 
-test('fixed production composition uses the real buyer-writer host protocol and reconciles response loss',async()=>{
- const secrets=[1,2,3,4].map(byte=>Buffer.alloc(32,byte).toString('base64url'));
-const config={version:1,workspace:'blackspire-command',bindingFile:'/etc/blackspire/buyer-writer-binding.json',
-  writerCredential:secrets[0],issuerCredential:secrets[1],creatorOid:16384,
-  runtime:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[2]},
-  issuer:{host:'db.kchtrvfcixnimvxxctkj.supabase.co',port:5432,database:'postgres',password:secrets[3]}};
- const snapshot=Object.freeze({value:config,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:1,ino:1,mtimeMs:1,ctimeMs:1})});
- const target={schema:1,kind:'zola_bounded_writer_acceptance_target',releaseSha:a,workspace:base.input.workspace,principal:base.input.principal,
-  capability:'buyer.writer.acceptance',jobId:'33333333-3333-4333-8333-333333333333',ownerId:'44444444-4444-4444-8444-444444444444',
-  criteria:{state:'GA',county:'Fulton',property_type:'all',date_range_start:'2000-01-01',date_range_end:'2000-01-01',min_purchases:1,
-   cash_buyers_only:false,llc_buyers_only:false},updatedAt:'2026-09-11T12:34:56.123456Z'};
- const targetSnapshot=Object.freeze({value:target,identity:Object.freeze({uid:0,gid:0,mode:33152,nlink:1,size:1,dev:2,ino:2,mtimeMs:2,ctimeMs:2})});
- let dispatchId,generation=7,state='absent',applyCalls=0,reconcileCalls=0,closed=0;
- const openDatabase=async options=>{assert.equal(options.creatorOid,config.creatorOid);return {isHealthy:()=>true,close:async()=>{closed++;},
-  issuerQuery:async(sql,values)=>{
-   if(sql.includes('.issue(')){
-    assert.equal(values[0],target.jobId);assert.equal(values[1],target.ownerId);assert.equal(values[6],target.updatedAt);
-    assert.deepEqual(JSON.parse(values[5]),target.criteria);dispatchId=values[7];state='pending';return{rows:[{result:{dispatchId,generation}}]};
-   }
-   assert.ok(sql.includes('.reconcile('));reconcileCalls++;
-   assert.equal(values[0],target.jobId);assert.equal(values[1],target.ownerId);assert.equal(values[4],target.updatedAt);
-   if(state==='pending')state='cancelled';
-   return{rows:[{result:{dispatchId:values[3],generation:state==='absent'?null:generation,state}}]};
-  },
-  runtimeQuery:async(sql,values)=>{
-   if(sql.includes('.apply(')){applyCalls++;state='failed';return{rows:[{result:{ok:true,operation:'fail',chunkIndex:0}}]};}
-   assert.ok(sql.includes('.receipt('));assert.equal(values[5],'fail');
-   return{rows:[{result:{found:true,receipt:{ok:true,operation:'fail',chunkIndex:0}}}]};
-  }};};
- const input={...base.input,previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),protectedInputDigest:d('protected'),inputDigest:d('sequence')};
- const stateFor=(pending=false)=>({context:{operationId,releaseSha:a,workspace:input.workspace,principal:input.principal},...(pending?{pending:{attemptId,inputDigest:d('input'),checkOutputDigest:d('check')}}:{})});
- const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},journal:{stream:()=>({events:()=>[],append(){}})}};
- const writerHost={groupId:0,readSnapshot:()=>snapshot,readAcceptanceSnapshot:file=>{
-  assert.equal(file,WRITER_ACCEPTANCE_TARGET_FILE);return targetSnapshot;
- },openDatabase};
+test('fixed production composition uses installed opener and refuses legacy database transport',async()=>{
+ let opened=0;
+ const input={...base.input,previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),
+  protectedInputDigest:d('protected'),inputDigest:d('sequence')};
+ const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},
+  journal:{stream:()=>({events:()=>[],append(){throw Error('unexpected journal write');}})}};
+ const writerHost={openDatabase:async()=>{opened++;throw Error('legacy transport reached');}};
  const operation=createFixedProductionOperations(context,{writerHost}).bounded_writer_e2e;
- const checked=await operation.check({input,state:stateFor(),ordinal:9});
- assert.equal(checked.status,'PASS');assert.equal(checked.evidence.writerPrepared,true);
- const call={input,state:stateFor(true),ordinal:9,attemptId,inputDigest:d('input'),checkOutputDigest:d('check')};
- await operation.execute(call);
- const observed=await operation.reconcile(call);
- assert.equal(observed.status,'PASS');assert.equal(observed.evidence.businessRowsChanged,0);assert.equal(observed.evidence.paidProviderCalls,0);
- assert.equal(observed.evidence.compensationComplete,true);assert.match(observed.evidence.receiptDigest,/^[a-f0-9]{64}$/);
- assert.equal(applyCalls,1);assert.equal(reconcileCalls,1);assert.equal(closed,3);
-
- state='absent';dispatchId=undefined;generation=8;applyCalls=0;reconcileCalls=0;
- const lossyDatabase=async()=>({...(await openDatabase({creatorOid:config.creatorOid})),runtimeQuery:async(sql)=>{
-  if(sql.includes('.apply(')){applyCalls++;throw new Error('response lost');}
-  throw new Error('receipt must not be queried for cancellation');
- }});
- const lossy=createFixedProductionOperations(context,{writerHost:{...writerHost,openDatabase:lossyDatabase}}).bounded_writer_e2e;
- await lossy.execute(call);
- const compensated=await lossy.reconcile(call);
- assert.equal(compensated.status,'PASS');assert.equal(compensated.evidence.compensationComplete,true);
- assert.equal(applyCalls,1);assert.equal(reconcileCalls,2);
-
- state='absent';dispatchId=undefined;applyCalls=0;reconcileCalls=0;
- const missingDatabase=async()=>{
-  const database=await openDatabase({creatorOid:config.creatorOid});
-  return{...database,issuerQuery:async(sql,values)=>{
-   if(sql.includes('.issue('))throw new Error('acceptance job missing');
-   assert.ok(sql.includes('.reconcile('));reconcileCalls++;
-   return{rows:[{result:{dispatchId:values[3],generation:null,state:'absent'}}]};
-  }};
- };
- const missing=createFixedProductionOperations(context,{writerHost:{...writerHost,openDatabase:missingDatabase}}).bounded_writer_e2e;
- await assert.rejects(()=>missing.execute(call),/outcome unknown/);
- assert.deepEqual(await missing.reconcile(call),{status:'BLOCKED_EXTERNAL'});
- assert.equal(applyCalls,0);assert.equal(reconcileCalls,2);
+ const call={...attempt,input};
+ assert.deepEqual(await operation.check(call),{status:'BLOCKED_EXTERNAL'});
+ await assert.rejects(()=>operation.execute(call));
+ assert.deepEqual(await operation.reconcile(call),{status:'BLOCKED_EXTERNAL'});
+ assert.equal(opened,0);
 });
 
 function expectedMutation(bound){

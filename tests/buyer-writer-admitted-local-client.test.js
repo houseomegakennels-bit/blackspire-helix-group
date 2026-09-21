@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createBuyerWriterAdmittedLocalClient}
+import {buyerWriterAdmissionHandleDigest,createBuyerWriterAdmittedLocalClient}
   from '../packages/buyer-writer/admitted-local-client.js';
 import {BUYER_WRITER_LOCAL_STATEMENTS as SQL}
   from '../packages/buyer-writer/local-gateway-server.js';
@@ -101,6 +101,86 @@ test('unknown statements, signer failures and malformed success fail closed',asy
   await assert.rejects(broken.adapter.runtimeQuery(SQL.apply,['b'.repeat(64),
     'isolated',JSON.stringify({})]),
     error=>error.message==='Buyer writer admitted client unavailable'&&!error.cause);
+});
+
+const outerAttemptId='00000000-0000-4000-8000-000000000090';
+const applyValues=['b'.repeat(64),'isolated',JSON.stringify({jobId:ids.job,version:1,
+  dispatchId:ids.operation,generation:1,operation:'start',chunkIndex:0,chunkCount:1,payload:{}})];
+const recoveryBody=handle=>({ok:true,operation:'start',chunkIndex:0,recovered:true,
+  automaticRetry:false,admissionCorrelation:{issuer:handle.authority.issuer,jti:handle.jti,
+    requestId:handle.requestId,bodyDigest:handle.bodyDigest,operation:handle.operation,
+    requestCorrelated:true}});
+
+test('durable handle persistence completes before dispatch and contains no replay capability',async()=>{
+  const f=fixture();let saved,release;
+  const gate=new Promise(resolve=>{release=resolve;});
+  const pending=f.adapter.runtimeQuery(SQL.apply,applyValues,{outerAttemptId,
+    persistHandle:async(handle,digest)=>{saved={handle,digest};await gate;}});
+  assert.equal(f.admitted.length,0);
+  assert.equal(saved.handle.outerAttemptId,outerAttemptId);
+  assert.notEqual(saved.handle.outerAttemptId,saved.handle.authority.attemptId);
+  assert.equal(saved.digest,buyerWriterAdmissionHandleDigest(saved.handle));
+  assert.equal(saved.handle.jti,ids.jti);assert.equal(saved.handle.requestId,ids.request);
+  assert.equal(Object.isFrozen(saved.handle),true);
+  assert.equal(Object.isFrozen(saved.handle.authority),true);
+  assert.doesNotMatch(JSON.stringify(saved),/signed-token|Bearer|privateKey|parameters|payload/);
+  release();await pending;assert.equal(f.admitted.length,1);
+});
+
+test('persistence rejection prevents all transport dispatch',async()=>{
+  const f=fixture();
+  await assert.rejects(f.adapter.runtimeQuery(SQL.apply,applyValues,{outerAttemptId,
+    persistHandle:async()=>{throw new Error('PRIVATE journal failure');}}),
+    /^Error: Buyer writer admitted client unavailable$/);
+  assert.equal(f.admitted.length,0);
+});
+
+test('lost response is recovered by a fresh client with durable identity and no business replay',async()=>{
+  const f=fixture();let saved,dispatches=0;
+  f.client.admittedRequest=async()=>{dispatches++;throw new Error('lost response');};
+  await assert.rejects(f.adapter.runtimeQuery(SQL.apply,applyValues,{outerAttemptId,
+    persistHandle:async(handle,digest)=>{saved=JSON.parse(JSON.stringify({handle,digest}));}}));
+  await f.adapter.close();assert.equal(dispatches,1);
+  const fresh=fixture({uuids:[ids.job,ids.owner]});
+  fresh.setResponse({status:200,body:recoveryBody(saved.handle)});
+  assert.deepEqual(await fresh.adapter.recoverHandle(saved.handle,{outerAttemptId,
+    expectedHandleDigest:saved.digest}),{result:{ok:true,operation:'start',chunkIndex:0},
+      requestCorrelated:true,handleDigest:saved.digest});
+  assert.deepEqual(fresh.signed.map(item=>item.operation),['recover']);
+  assert.deepEqual(fresh.admitted.map(item=>item.path),['/rest/v1/rpc/recover']);
+  assert.equal(fresh.signed[0].parameters.p_original_digest,saved.handle.bodyDigest);
+  assert.notEqual(fresh.signed[0].jti,saved.handle.jti);
+});
+
+test('wrong journal attempt, digest, handle content, and installed authority deny before dispatch',async()=>{
+  const f=fixture();let saved;
+  await f.adapter.runtimeQuery(SQL.apply,applyValues,{outerAttemptId,
+    persistHandle:async(handle,digest)=>{saved={handle,digest};}});
+  const changedAuthority={...saved.handle,authority:{...configuration,releaseSha:'c'.repeat(40)}};
+  for(const [handle,options] of [
+    [saved.handle,{outerAttemptId:ids.job,expectedHandleDigest:saved.digest}],
+    [saved.handle,{outerAttemptId,expectedHandleDigest:'e'.repeat(64)}],
+    [{...saved.handle,bodyDigest:'e'.repeat(64)},{outerAttemptId,expectedHandleDigest:saved.digest}],
+    [changedAuthority,{outerAttemptId,expectedHandleDigest:buyerWriterAdmissionHandleDigest(changedAuthority)}],
+  ]){
+    const fresh=fixture();await assert.rejects(fresh.adapter.recoverHandle(handle,options));
+    assert.equal(fresh.signed.length,0);assert.equal(fresh.admitted.length,0);
+  }
+});
+
+test('ordinary success and uncorrelated or mismatched recovery never prove admission',async()=>{
+  const f=fixture();let saved;
+  await f.adapter.runtimeQuery(SQL.apply,applyValues,{outerAttemptId,
+    persistHandle:async(handle,digest)=>{saved={handle,digest};}});
+  const valid=recoveryBody(saved.handle);
+  for(const body of [{ok:true,operation:'start',chunkIndex:0,automaticRetry:false},
+    {...valid,admissionCorrelation:{...valid.admissionCorrelation,requestCorrelated:false}},
+    {...valid,admissionCorrelation:{...valid.admissionCorrelation,bodyDigest:'e'.repeat(64)}}]){
+    const fresh=fixture();fresh.setResponse({status:200,body});
+    await assert.rejects(fresh.adapter.recoverHandle(saved.handle,{outerAttemptId,
+      expectedHandleDigest:saved.digest}));
+    assert.deepEqual(fresh.signed.map(item=>item.operation),['recover']);
+  }
 });
 
 test('health, availability and closure remain delegated once',async()=>{

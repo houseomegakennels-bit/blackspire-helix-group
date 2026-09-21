@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {prepareBuyerWriterGatewayV4} from '../packages/buyer-writer/gateway-v4-preparation.js';
+import {inspectBuyerWriterGatewayV4Preparation,prepareBuyerWriterGatewayV4,
+  reconcileBuyerWriterGatewayV4Preparation,retireBuyerWriterGatewayV4Preparation,
+} from '../packages/buyer-writer/gateway-v4-preparation.js';
 
 const repositoryRoot=fileURLToPath(new URL('../',import.meta.url));
 const preparationRoot='/var/lib/blackspire-operator/preparation';
@@ -50,8 +52,8 @@ function sanitizedResult(value,{releaseSha,operationId,attemptId,candidatePath})
   const keys=['status','releaseSha','operationId','attemptId','keyId','candidatePath',
     'keyPath','candidateDigest','publicKeyDigest'];
   if(!value||typeof value!=='object'||Array.isArray(value)
-    ||Object.keys(value).sort().join(',')!==[...keys].sort().join(',')
-    ||value.status!=='BUYER_WRITER_GATEWAY_V4_PREPARED'
+    ||!['BUYER_WRITER_GATEWAY_V4_PREPARED','COMPLETE','PARTIAL','ABSENT',
+      'ABSENT_RETRY_NOT_AUTHORIZED','PARTIAL_REMOVED_RETRY_NOT_AUTHORIZED'].includes(value.status)
     ||value.releaseSha!==releaseSha||value.operationId!==operationId
     ||value.attemptId!==attemptId||value.candidatePath!==candidatePath
     ||typeof value.keyId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(value.keyId)
@@ -59,22 +61,38 @@ function sanitizedResult(value,{releaseSha,operationId,attemptId,candidatePath})
     ||!digest(value.candidateDigest)||!digest(value.publicKeyDigest))fail();
   return Object.fromEntries(keys.map(key=>[key,value[key]]));
 }
+function sanitizedRetirement(value,{releaseSha,operationId,attemptId,nextAttemptId,candidatePath}){
+  const keys=['status','releaseSha','operationId','attemptId','nextAttemptId','candidatePath'];
+  if(!value||typeof value!=='object'||Array.isArray(value)
+    ||value.status!=='RETIRED_RETRY_AUTHORIZED'||value.releaseSha!==releaseSha
+    ||value.operationId!==operationId||value.attemptId!==attemptId
+    ||value.nextAttemptId!==nextAttemptId||value.candidatePath!==candidatePath)fail();
+  return Object.fromEntries(keys.map(key=>[key,value[key]]));
+}
 try{
   const args=process.argv.slice(2);
+  const mode=args[0],retiring=mode==='--retire';
   if(process.versions.node!=='22.23.1'||process.getuid?.()!==0
-    ||process.geteuid?.()!==0||args.length!==6||args[0]!=='--prepare')fail();
-  const [,releaseSha,operationId,attemptId,sourceConfigurationFile,candidatePath]=args;
+    ||process.geteuid?.()!==0||args.length!==(retiring?7:6)
+    ||!['--prepare','--inspect','--reconcile','--retire'].includes(mode))fail();
+  const [,releaseSha,operationId,attemptId,sourceConfigurationFile,candidatePath,
+    nextAttemptId]=args;
   if(!sha(releaseSha)||!uuid(operationId)||!uuid(attemptId)
     ||operationId===attemptId||!protectedPath(sourceConfigurationFile)
-    ||!protectedPath(candidatePath)||sourceConfigurationFile===candidatePath)fail();
+    ||!protectedPath(candidatePath)||sourceConfigurationFile===candidatePath
+    ||(retiring&&(!uuid(nextAttemptId)||nextAttemptId===attemptId
+      ||nextAttemptId===operationId)))fail();
   assertExactReleaseSource(releaseSha);
-  const result=await prepareBuyerWriterGatewayV4({
-    releaseSha,operationId,attemptId,sourceConfigurationFile,candidatePath,
-    artifactRoot:path.join(releaseRoot,releaseSha),
-  });
-  process.stdout.write(JSON.stringify(sanitizedResult(result,{
-    releaseSha,operationId,attemptId,candidatePath,
-  }))+'\n');
+  const input={releaseSha,operationId,attemptId,sourceConfigurationFile,candidatePath,
+    artifactRoot:path.join(releaseRoot,releaseSha)};
+  const operation=mode==='--prepare'?prepareBuyerWriterGatewayV4
+    :mode==='--inspect'?inspectBuyerWriterGatewayV4Preparation
+      :mode==='--reconcile'?reconcileBuyerWriterGatewayV4Preparation
+        :retireBuyerWriterGatewayV4Preparation;
+  const result=await operation(input,retiring?{nextAttemptId}:undefined);
+  process.stdout.write(JSON.stringify(retiring
+    ?sanitizedRetirement(result,{releaseSha,operationId,attemptId,nextAttemptId,candidatePath})
+    :sanitizedResult(result,{releaseSha,operationId,attemptId,candidatePath}))+'\n');
 }catch{
   process.stderr.write(
     'Buyer writer gateway v4 preparation stopped; protected inputs and state were not disclosed\n',

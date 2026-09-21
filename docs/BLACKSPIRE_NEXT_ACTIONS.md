@@ -1,5 +1,17 @@
 # Blackspire Next Actions
 
+## 2026-09-21 — integrated cold-start release continuation
+
+1. DONE locally: 33/33 focused checks, 2,180 total / 2,103 passed / 77 intended skips / zero failures in the contained suite, static/security/memory gates and independent source re-review. All production fences and old journal history remain preserved.
+2. Commit the reviewed repair, then publish only with a fresh explicit push authorization and require CI for that exact new commit. ea39f00 CI does not cover this repair.
+3. After review and CI, obtain explicit release-branch merge authority before sealing/installing the candidate. Recheck the production disk envelope (about 1.5 GB free at this inspection), protected inputs and journal compatibility. Production activation remains a separate controlled step.
+
+## 2026-09-21 — current release sequence
+
+1. DONE locally: journal-only upgrade recovery passes 32/32 direct tests and the contained suite passes 2,176 total / 2,099 passed / 77 intended skips / zero failures. Build, lint, syntax/typecheck, canonical-memory, security and whitespace gates pass.
+2. Publish the exact validated commit only with available push authority, then require fresh exact-head CI and independent review on PR #146 before release integration. Parent CI is not repair evidence.
+3. Complete reviewed release integration and sealing before controlled production activation. Production is still on `6f7e0c2`, all three services are stopped, and all four Buyer Writer roles are absent. Preserve the existing protected installation, provisioning, HELD acceptance, rollback and OPEN gates; source tests do not prove live acceptance.
+
 ## 2026-09-18 — finish admitted caller evidence without crossing live authority
 
 1. **DONE locally:** repaired both P1s from the first independent exact-commit review: caller dispatch UUIDs now remain the signed issuance request with a distinct JTI, and the exact signed recovery route traverses both authenticated local transport layers while near-miss paths are denied. The trusted contained suite passes 2,099 total / 2,034 passed / 65 explicit skips / zero failed across all 215 files; Buyer Writer passes 392/392, the focused repair surface passes 49/49, root-only preflight passes 7/7 separately and static/security gates pass. The first repair re-review found one P2 in the disposable PostgreSQL fixture and exposed the matching stored-procedure identity coupling; both canonical SQL sources, exact digests and the fixture are repaired, and the real PostgreSQL 17.6 admission/recovery E2E harness passes. **DONE locally:** fresh exact-commit re-review of `49dd69ac412817ddd8beecba4d2e4d9439fc8709` found no actionable correctness or security regression.

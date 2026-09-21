@@ -6,11 +6,14 @@ import {fileURLToPath} from 'node:url';
 import {createHash,createPrivateKey,createPublicKey} from 'node:crypto';
 import {validateBuyerWriterGatewayProvisioningConfiguration} from '../packages/buyer-writer/configuration.js';
 import {
-  buildBuyerWriterGatewayV4Preparation,publishBuyerWriterGatewayV4Preparation,prepareBuyerWriterGatewayV4,
+  buildBuyerWriterGatewayV4Preparation,buyerWriterGatewayV4CompletePath,buyerWriterGatewayV4IntentPath,
+  buyerWriterGatewayV4RetiredPath,inspectBuyerWriterGatewayV4Preparation,
+  publishBuyerWriterGatewayV4Preparation,prepareBuyerWriterGatewayV4,
+  reconcileBuyerWriterGatewayV4Preparation,retireBuyerWriterGatewayV4Preparation,
 } from '../packages/buyer-writer/gateway-v4-preparation.js';
 import {
-  artifactRoot,candidatePath,currentGatewayFile,deterministicDependencies,ids,inputFixture,keyId,keyPath,
-  preparationRoot,sourceConfigurationFile,translatedFilesystem,
+  acceptanceTargetPath,artifactRoot,candidatePath,currentGatewayFile,deterministicDependencies,ids,
+  inputFixture,keyId,keyPath,preparationRoot,sourceConfigurationFile,translatedFilesystem,
 } from './helpers/buyer-writer-gateway-v4-preparation.js';
 
 const generic=/Buyer writer gateway v4 preparation failed/;
@@ -20,7 +23,8 @@ const highInput=overrides=>({releaseSha:ids.releaseSha,operationId:ids.operation
 const snapshotIdentity=(ino,gid=0)=>({uid:0,gid,mode:0o100600,nlink:1,size:100,
   dev:1,ino,mtimeMs:1,ctimeMs:1});
 function highHarness(t,{drift,postpublish=false,replaceCandidate=false}={}){
-  const f=translatedFilesystem(t),base=inputFixture();let sourceReads=0,currentReads=0,artifactReads=0,identityReads=0,foreignCandidate;
+  const f=translatedFilesystem(t),base=inputFixture();let sourceReads=0,currentReads=0,
+    acceptanceReads=0,artifactReads=0,identityReads=0,foreignCandidate;
   const foreignSource=preparationRoot+'/foreign-candidate-race.json';
   if(replaceCandidate)f.io.writeFileSync(foreignSource,'foreign-candidate-state\n',{mode:0o600});
   const readSnapshot=(filename,{groupId})=>{
@@ -33,6 +37,19 @@ function highHarness(t,{drift,postpublish=false,replaceCandidate=false}={}){
       assert.equal(groupId,982);currentReads++;const value=structuredClone(base.currentGatewayConfiguration);
       if(drift==='current'&&currentReads===2)value.authority.attemptId='80000000-0000-4000-8000-000000000002';
       return {value,identity:snapshotIdentity(11,982)};
+    }
+    if(filename===acceptanceTargetPath){
+      assert.equal(groupId,984);acceptanceReads++;const value=structuredClone(base.acceptanceTarget);
+      if(drift==='acceptance'&&acceptanceReads===2)
+        value.ownerId='80000000-0000-4000-8000-000000000003';
+      return {value,identity:{...snapshotIdentity(12,984),
+        ...(drift==='acceptance-identity'&&acceptanceReads===2?{mtimeMs:2}:{})}};
+    }
+    if(filename===buyerWriterGatewayV4IntentPath(candidatePath)
+      ||filename===buyerWriterGatewayV4CompletePath(candidatePath)){
+      const value=readJson(f.io,filename),stat=f.io.lstatSync(filename);
+      return {value,identity:{uid:stat.uid,gid:stat.gid,mode:stat.mode,nlink:stat.nlink,
+        size:stat.size,dev:stat.dev,ino:stat.ino,mtimeMs:stat.mtimeMs,ctimeMs:stat.ctimeMs}};
     }
     if(filename===candidatePath){
       const value=readJson(f.io,filename);
@@ -132,6 +149,7 @@ test('publisher creates an exact protected candidate and API-owned Ed25519 key w
   const permit=JSON.parse(candidate.operationPermitConfiguration);
   assert.equal(permit.releaseSha,ids.releaseSha);assert.equal(permit.operationId,ids.operationId);
   assert.equal(permit.attemptId,ids.attemptId);assert.equal(permit.keyId,keyId);
+  assert.equal(permit.subject,input.acceptanceTarget.ownerId);
   const validated=validateBuyerWriterGatewayProvisioningConfiguration(candidate,{workspace:'blackspire-command'});
   const privateKey=createPrivateKey(keyBytes),publicPem=createPublicKey(privateKey).export({type:'spki',format:'pem'});
   assert.equal(privateKey.asymmetricKeyType,'ed25519');
@@ -170,6 +188,9 @@ test('malformed authority, artifact identity and escaped candidate path fail bef
     inputFixture({candidatePath:preparationRoot+'/../escaped.json'}),
     inputFixture({artifact:{...artifact,deployed:true}}),
     inputFixture({artifact:{...artifact,releaseSha:'c'.repeat(40)}}),
+    inputFixture({acceptanceTarget:{...inputFixture().acceptanceTarget,
+      releaseSha:'c'.repeat(40)}}),
+    inputFixture({acceptanceTarget:{...inputFixture().acceptanceTarget,ownerId:'not-a-uuid'}}),
   ];
   for(const input of cases){
     const f=translatedFilesystem(t),dependencies={...deterministicDependencies(),io:f.io};
@@ -269,10 +290,14 @@ test('path-only high-level preparation publishes and returns the exact sanitized
   assert.equal(result.keyId,keyId);assert.equal(result.keyPath,keyPath);
   assert.match(result.candidateDigest,/^[a-f0-9]{64}$/);assert.match(result.publicKeyDigest,/^[a-f0-9]{64}$/);
   assert.equal(h.f.io.existsSync(candidatePath),true);assert.equal(h.f.io.existsSync(keyPath),true);
+  const candidate=readJson(h.f.io,candidatePath);
+  assert.equal(JSON.parse(candidate.operationPermitConfiguration).subject,
+    inputFixture().acceptanceTarget.ownerId);
 });
 
 test('path-only preparation refuses source, current, artifact or identity recheck drift before bytes',async t=>{
-  for(const drift of ['source','source-identity','current','artifact','identity']){
+  for(const drift of ['source','source-identity','current','acceptance','acceptance-identity',
+    'artifact','identity']){
     const h=highHarness(t,{drift});
     await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),h.deps),generic);
     assert.equal(h.f.io.existsSync(candidatePath),false,drift+' candidate');
@@ -295,14 +320,19 @@ test('path-only preparation rejects wrong artifact root and misplaced source/can
   }
 });
 
-test('path-only postpublish identity drift removes both invocation-owned outputs',async t=>{
+test('path-only postpublish identity drift retains the exact pair for explicit reconciliation',async t=>{
   const h=highHarness(t,{drift:'identity-postpublish'});
   await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),h.deps),generic);
-  assert.equal(h.f.io.existsSync(candidatePath),false);
-  assert.equal(h.f.io.existsSync(keyPath),false);
+  assert.equal(h.f.io.existsSync(candidatePath),true);
+  assert.equal(h.f.io.existsSync(keyPath),true);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),true);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4CompletePath(candidatePath)),false);
+  const reconciled=await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(reconciled.status,'BUYER_WRITER_GATEWAY_V4_PREPARED');
+  assert.equal(reconciled.completeRecorded,true);
 });
 
-test('postverify candidate replacement preserves foreign inode, removes owned key and closes held descriptors',async t=>{
+test('postverify candidate replacement preserves foreign inode and retains paired key for fail-closed reconciliation',async t=>{
   const h=highHarness(t,{replaceCandidate:true}),open=new Set();
   const io=new Proxy(h.f.io,{get(target,property){
     if(property==='openSync')return (...args)=>{const fd=target.openSync(...args);open.add(fd);return fd;};
@@ -314,15 +344,221 @@ test('postverify candidate replacement preserves foreign inode, removes owned ke
   const after=h.f.io.lstatSync(candidatePath),foreign=h.foreignCandidate();
   assert.equal(after.dev,foreign.dev);assert.equal(after.ino,foreign.ino);
   assert.equal(h.f.io.readFileSync(candidatePath,'utf8'),'foreign-candidate-state\n');
-  assert.equal(h.f.io.existsSync(keyPath),false);
+  assert.equal(h.f.io.existsSync(keyPath),true);
+  await assert.rejects(inspectBuyerWriterGatewayV4Preparation(highInput(),{...h.deps,io}),generic);
+  await assert.rejects(reconcileBuyerWriterGatewayV4Preparation(highInput(),{...h.deps,io}),generic);
+  assert.equal(h.f.io.existsSync(keyPath),true);
   assert.equal(open.size,0,'every descriptor opened through the preparation IO is closed');
 });
 
-test('path-only postpublish validation failure removes both invocation-owned outputs',async t=>{
+test('path-only postpublish validation failure is completed only by explicit reconciliation',async t=>{
   const h=highHarness(t,{postpublish:true});
   await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),h.deps),generic);
-  assert.equal(h.f.io.existsSync(candidatePath),false,'invalid candidate is removed by exact inode');
-  assert.equal(h.f.io.existsSync(keyPath),false,'paired invocation key is removed by exact inode');
+  assert.equal(h.f.io.existsSync(candidatePath),true);
+  assert.equal(h.f.io.existsSync(keyPath),true);
+  assert.equal((await inspectBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,'COMPLETE');
+  assert.equal((await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,
+    'BUYER_WRITER_GATEWAY_V4_PREPARED');
+});
+
+test('durable intent binds deterministic staging paths and digests without secret material',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  const intent=readJson(h.f.io,buyerWriterGatewayV4IntentPath(candidatePath));
+  assert.equal(intent.releaseSha,ids.releaseSha);assert.equal(intent.operationId,ids.operationId);
+  assert.equal(intent.attemptId,ids.attemptId);assert.equal(intent.candidatePath,candidatePath);
+  assert.equal(intent.keyPath,keyPath);assert.match(intent.artifactDigest,/^[a-f0-9]{64}$/);
+  for(const key of ['artifactProofDigest','sourceSnapshotDigest','currentSnapshotDigest',
+    'acceptanceTargetSnapshotDigest','candidateDigest','keyDigest','publicKeyDigest'])
+    assert.match(intent[key],/^[a-f0-9]{64}$/);
+  assert.equal(intent.version,3);
+  assert.equal(intent.candidateSize,h.f.io.lstatSync(candidatePath).size);
+  assert.equal(intent.keySize,h.f.io.lstatSync(keyPath).size);
+  assert.match(intent.candidateStagePath,/^\/var\/lib\/blackspire-operator\/preparation\/\.zola-v4-[a-f0-9]{32}\.candidate$/);
+  assert.match(intent.keyStagePath,/^\/etc\/blackspire\/\.zola-v4-[a-f0-9]{32}\.key$/);
+  assert.equal(h.f.io.existsSync(intent.candidateStagePath),false);
+  assert.equal(h.f.io.existsSync(intent.keyStagePath),false);
+  const serialized=JSON.stringify(intent),fixture=inputFixture();
+  for(const secret of [fixture.sourceConfiguration.writerCredential,
+    fixture.sourceConfiguration.issuerCredential,fixture.sourceConfiguration.runtime.password,
+    fixture.sourceConfiguration.issuer.password,fixture.currentGatewayConfiguration.gatewayCapability,
+    'PRIVATE KEY'])assert.equal(serialized.includes(secret),false);
+  await assert.rejects(inspectBuyerWriterGatewayV4Preparation(
+    highInput({attemptId:'70000000-0000-4000-8000-000000000002'}),h.deps),generic);
+});
+
+test('interrupted candidate promotion leaves an intent-bound key partial for reconcile only',async t=>{
+  const h=highHarness(t);
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='linkSync')return (from,to)=>{
+      if(to===candidatePath)throw new Error('lost before candidate publication');
+      return target.linkSync(from,to);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),{...h.deps,io}),generic);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),true);
+  assert.equal(h.f.io.existsSync(keyPath),true);assert.equal(h.f.io.existsSync(candidatePath),false);
+  assert.equal((await inspectBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,'PARTIAL');
+  assert.equal((await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,
+    'PARTIAL_REMOVED_RETRY_NOT_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(keyPath),false);assert.equal(h.f.io.existsSync(candidatePath),false);
+});
+
+test('inspect classifies and reconcile removes only an exact recorded partial',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  h.f.io.unlinkSync(buyerWriterGatewayV4CompletePath(candidatePath));
+  h.f.io.unlinkSync(candidatePath);
+  const before=h.f.io.lstatSync(keyPath);
+  const inspected=await inspectBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(inspected.status,'PARTIAL');assert.equal(inspected.completeRecorded,false);
+  const reconciled=await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(reconciled.status,'PARTIAL_REMOVED_RETRY_NOT_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(keyPath),false);
+  assert.ok(before.ino>0);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),true);
+});
+
+test('absent reconcile never generates or republishes a fresh pair',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  for(const name of [buyerWriterGatewayV4CompletePath(candidatePath),candidatePath,keyPath])
+    h.f.io.unlinkSync(name);
+  assert.equal((await inspectBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,'ABSENT');
+  const result=await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(result.status,'ABSENT_RETRY_NOT_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(candidatePath),false);assert.equal(h.f.io.existsSync(keyPath),false);
+});
+
+test('intent is durable before deterministic secret staging begins',async t=>{
+  const h=highHarness(t);let checked=false;
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='openSync')return (name,...args)=>{
+      if(typeof name==='string'&&name.startsWith('/etc/blackspire/.zola-v4-')){
+        assert.equal(target.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),true);
+        checked=true;throw new Error('stop before secret bytes');
+      }
+      return target.openSync(name,...args);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),{...h.deps,io}),generic);
+  assert.equal(checked,true);assert.equal(h.f.io.existsSync(keyPath),false);
+  assert.equal(h.f.io.existsSync(candidatePath),false);
+});
+
+test('inspection and reconciliation reject acceptance-owner drift after publication',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  const readSnapshot=(filename,options)=>{
+    const snapshot=h.deps.readSnapshot(filename,options);
+    if(filename!==acceptanceTargetPath)return snapshot;
+    return {...snapshot,value:{...snapshot.value,
+      ownerId:'80000000-0000-4000-8000-000000000003'}};
+  };
+  await assert.rejects(inspectBuyerWriterGatewayV4Preparation(
+    highInput(),{...h.deps,readSnapshot}),generic);
+  await assert.rejects(reconcileBuyerWriterGatewayV4Preparation(
+    highInput(),{...h.deps,readSnapshot}),generic);
+  assert.equal(h.f.io.existsSync(candidatePath),true);
+  assert.equal(h.f.io.existsSync(keyPath),true);
+});
+
+test('post-link pre-unlink crash is classified and reconciled from deterministic staging path',async t=>{
+  const h=highHarness(t);let armed=true;
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='unlinkSync')return name=>{
+      if(armed&&typeof name==='string'&&name.includes('.zola-v4-')&&name.endsWith('.key')){
+        armed=false;throw new Error('lost after durable link');
+      }
+      return target.unlinkSync(name);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),{...h.deps,io}),generic);
+  const intent=readJson(h.f.io,buyerWriterGatewayV4IntentPath(candidatePath));
+  assert.equal(h.f.io.lstatSync(intent.keyStagePath).nlink,2);
+  assert.equal(h.f.io.lstatSync(keyPath).nlink,2);
+  assert.equal((await inspectBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,'PARTIAL');
+  assert.equal((await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps)).status,
+    'PARTIAL_REMOVED_RETRY_NOT_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(intent.keyStagePath),false);
+  assert.equal(h.f.io.existsSync(keyPath),false);
+});
+
+test('intent root-record post-link crash is discoverable and reconciled without replay',async t=>{
+  const h=highHarness(t),intentPath=buyerWriterGatewayV4IntentPath(candidatePath);
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='unlinkSync')return name=>{
+      if(name===intentPath+'.stage')throw new Error('lost after intent link');
+      return target.unlinkSync(name);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),{...h.deps,io}),generic);
+  assert.equal(h.f.io.lstatSync(intentPath).nlink,2);
+  assert.equal(h.f.io.lstatSync(intentPath+'.stage').nlink,2);
+  const reconciled=await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(reconciled.status,'ABSENT_RETRY_NOT_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(intentPath+'.stage'),false);
+});
+
+test('complete root-record post-link crash is finished only by exact reconcile',async t=>{
+  const h=highHarness(t),completePath=buyerWriterGatewayV4CompletePath(candidatePath);
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='unlinkSync')return name=>{
+      if(name===completePath+'.stage')throw new Error('lost after complete link');
+      return target.unlinkSync(name);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(prepareBuyerWriterGatewayV4(highInput(),{...h.deps,io}),generic);
+  assert.equal(h.f.io.lstatSync(completePath).nlink,2);
+  const reconciled=await reconcileBuyerWriterGatewayV4Preparation(highInput(),h.deps);
+  assert.equal(reconciled.status,'BUYER_WRITER_GATEWAY_V4_PREPARED');
+  assert.equal(h.f.io.lstatSync(completePath).nlink,1);
+  assert.equal(h.f.io.existsSync(completePath+'.stage'),false);
+});
+
+test('retirement marker publication is resumable and idempotent after post-link crash',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  for(const name of [buyerWriterGatewayV4CompletePath(candidatePath),candidatePath,keyPath])
+    h.f.io.unlinkSync(name);
+  const nextAttemptId='70000000-0000-4000-8000-000000000002';
+  const retiredPath=buyerWriterGatewayV4RetiredPath(candidatePath,ids.attemptId);
+  const io=new Proxy(h.f.io,{get(target,property){
+    if(property==='unlinkSync')return name=>{
+      if(name===retiredPath+'.stage')throw new Error('lost after retirement link');
+      return target.unlinkSync(name);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(retireBuyerWriterGatewayV4Preparation(highInput(),
+    {...h.deps,io,nextAttemptId}),generic);
+  assert.equal(h.f.io.lstatSync(retiredPath).nlink,2);
+  const resumed=await retireBuyerWriterGatewayV4Preparation(highInput(),
+    {...h.deps,nextAttemptId});
+  assert.equal(resumed.status,'RETIRED_RETRY_AUTHORIZED');
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),false);
+  const replayed=await retireBuyerWriterGatewayV4Preparation(highInput(),
+    {...h.deps,nextAttemptId});
+  assert.equal(replayed.status,'RETIRED_RETRY_AUTHORIZED');
+  assert.equal(replayed.reconciled,true);
+});
+
+test('outer-bound retirement authorizes a new attempt after absent reconciliation',async t=>{
+  const h=highHarness(t);await prepareBuyerWriterGatewayV4(highInput(),h.deps);
+  for(const name of [buyerWriterGatewayV4CompletePath(candidatePath),candidatePath,keyPath])
+    h.f.io.unlinkSync(name);
+  const nextAttemptId='70000000-0000-4000-8000-000000000002';
+  const retired=await retireBuyerWriterGatewayV4Preparation(highInput(),
+    {...h.deps,nextAttemptId});
+  assert.equal(retired.status,'RETIRED_RETRY_AUTHORIZED');
+  assert.equal(retired.nextAttemptId,nextAttemptId);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4IntentPath(candidatePath)),false);
+  assert.equal(h.f.io.existsSync(buyerWriterGatewayV4RetiredPath(candidatePath,ids.attemptId)),true);
+  const freshCrypto=deterministicDependencies();
+  const retried=await prepareBuyerWriterGatewayV4(highInput({attemptId:nextAttemptId}),
+    {...h.deps,...freshCrypto,io:h.f.io,readSnapshot:h.deps.readSnapshot,
+      inspectArtifact:h.deps.inspectArtifact,resolveIdentity:h.deps.resolveIdentity});
+  assert.equal(retried.status,'BUYER_WRITER_GATEWAY_V4_PREPARED');
 });
 
 test('spawned CLI rejects a bad invocation with exact sanitized output',()=>{
@@ -339,12 +575,17 @@ test('public CLI is root-only, fixed-input and never accepts credential material
   const source=fs.readFileSync(new URL('../scripts/prepare-buyer-writer-gateway-v4.js',import.meta.url),'utf8');
   assert.match(source,/process\.getuid/);assert.match(source,/process\.versions\.node/);
   assert.doesNotMatch(source,/process\.env/);assert.doesNotMatch(source,/PRIVATE KEY/);
-  assert.match(source,/prepareBuyerWriterGatewayV4\(\{\s*releaseSha,operationId,attemptId,sourceConfigurationFile,candidatePath,/);
+  assert.match(source,/mode==='--prepare'\?prepareBuyerWriterGatewayV4/);
+  assert.match(source,/mode==='--inspect'\?inspectBuyerWriterGatewayV4Preparation/);
+  assert.match(source,/mode==='--reconcile'\?reconcileBuyerWriterGatewayV4Preparation/);
+  assert.match(source,/retireBuyerWriterGatewayV4Preparation/);
+  assert.match(source,/mode==='--retire'/);
+  assert.match(source,/nextAttemptId/);
   assert.match(source,/artifactRoot:path\.join\(releaseRoot,releaseSha\)/);
   assert.match(source,/const canonicalRepository='https:\/\/github\.com\/houseomegakennels-bit\/blackspire-helix-group\.git'/);
   assert.match(source,/\['ls-remote','--exit-code',canonicalRepository,/);
   assert.doesNotMatch(source,/\['ls-remote','--exit-code','origin'/);
-  assert.match(source,/status!=='BUYER_WRITER_GATEWAY_V4_PREPARED'/);
+  assert.match(source,/ABSENT_RETRY_NOT_AUTHORIZED/);
   for(const key of ['keyId','candidatePath','keyPath','candidateDigest','publicKeyDigest'])assert.match(source,new RegExp(key));
   assert.match(source,/gateway v4 preparation stopped/i);
 });

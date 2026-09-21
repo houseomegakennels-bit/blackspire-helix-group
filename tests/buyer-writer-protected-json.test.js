@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {readRootOwnedJson,readRootOwnedMetadataSnapshot} from '../packages/buyer-writer/protected-json.js';
+import {createHash} from 'node:crypto';
+import {readRootOwnedJson,readRootOwnedJsonDigestSnapshot,readRootOwnedMetadataSnapshot} from '../packages/buyer-writer/protected-json.js';
 function fixture({file={},directory={},contents='{"version":1}',changed=false,failure,aclResult,reader=readRootOwnedJson,maxBytes=256}={}){
   const bytes=Buffer.from(contents);let position=0,closed=0,stats=0,rawBuffer;
   const stat={uid:0,gid:42,mode:0o100640,nlink:1,size:bytes.length,dev:1,ino:2,mtimeMs:1,ctimeMs:1,isFile:()=>true,...file};
@@ -17,6 +18,8 @@ function fixture({file={},directory={},contents='{"version":1}',changed=false,fa
 test('protected JSON accepts only a bounded stable root-owned API-readable file',()=>{
   const f=fixture();assert.deepEqual(f.read(),{version:1});assert.equal(f.closed(),1);
   assert.ok(f.rawBuffer().every(byte=>byte===0),'raw protected JSON buffer is wiped after parsing');
+  const digest=fixture({reader:readRootOwnedJsonDigestSnapshot}).read();
+  assert.equal(digest.digest,createHash('sha256').update('{"version":1}').digest('hex'));
 });
 test('unsafe ancestors, ownership, links, modes, size and concurrent changes reject',()=>{
   assert.throws(()=>readRootOwnedJson('/etc/blackspire/writer.json'),/unavailable/);

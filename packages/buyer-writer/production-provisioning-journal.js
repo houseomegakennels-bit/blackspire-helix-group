@@ -4,6 +4,7 @@ import path from 'node:path';
 export const BUYER_WRITER_PROVISIONING_JOURNAL_ROOT='/var/lib/blackspire-operator/buyer-writer-provisioning';
 export const BUYER_WRITER_PROVISIONING_JOURNAL_FILE=`${BUYER_WRITER_PROVISIONING_JOURNAL_ROOT}/state.json`;
 
+const SHA=/^[a-f0-9]{40}$/;
 const SHA256=/^[a-f0-9]{64}$/;
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const modes=new Set(['apply','rollback','reconcile','verify']);
@@ -19,8 +20,12 @@ const fail=()=>{throw new Error('Buyer writer provisioning journal rejected');};
 // authoritative when reconciling an interrupted attempt.
 export function encodeBuyerWriterProvisioningJournal(value){
  try{
-  if(!exact(value,['version','kind','operationId','installerSha256','mode','phase','status','updatedAt'])
-   ||value.version!==1||value.kind!=='buyer_writer_production_provisioning'||!UUID.test(value.operationId??'')
+  const fields=value?.version===2
+    ?['version','kind','releaseSha','operationId','attemptId','installerSha256','mode','phase','status','updatedAt']
+    :['version','kind','operationId','installerSha256','mode','phase','status','updatedAt'];
+  if(!exact(value,fields)||![1,2].includes(value.version)||value.kind!=='buyer_writer_production_provisioning'
+   ||!UUID.test(value.operationId??'')||(value.version===2&&(!SHA.test(value.releaseSha??'')
+    ||!UUID.test(value.attemptId??'')||value.attemptId===value.operationId))
    ||!SHA256.test(value.installerSha256??'')||!modes.has(value.mode)||!phases.has(value.phase)
    ||!statuses.has(value.status)||typeof value.updatedAt!=='string'||new Date(value.updatedAt).toISOString()!==value.updatedAt)fail();
   if(value.status==='IN_PROGRESS'&&!['started','roles-disabled','installer-committed','credential-transaction-started'].includes(value.phase)

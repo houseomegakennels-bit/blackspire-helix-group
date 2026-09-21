@@ -5,6 +5,8 @@ import path from 'node:path';
 import {createHash,generateKeyPairSync,randomBytes,randomUUID} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {createBuyerWriterGatewayConfigurationFileControls,
+  recoverBuyerWriterGatewayConfigurationJournalPrefix,
+  reconcileBuyerWriterGatewayConfigurationFile,
   rollbackBuyerWriterGatewayConfigurationFile} from
   '../packages/buyer-writer/gateway-configuration-upgrade-files.js';
 import {upgradeBuyerWriterGatewayConfiguration} from
@@ -38,20 +40,97 @@ function configs(){
 function fixture(t,{quiesced=true}={}){
   const root=fs.mkdtempSync('/root/zola-gateway-upgrade-'),configDirectory=path.join(root,'gateway'),
     stateDirectory=path.join(root,'state'),configurationFile=path.join(configDirectory,'gateway.json'),
-    writerGroupId=982,operationId=randomUUID(),values=configs(),events=[];
+    writerGroupId=982,values=configs(),events=[];
+  const bound={releaseSha:values.newConfiguration.authority.releaseSha,
+    operationId:values.newConfiguration.authority.operationId,
+    attemptId:values.newConfiguration.authority.attemptId,
+    artifactDigest:'c'.repeat(64),candidateDigest:'d'.repeat(64)};
+  const {operationId}=bound;
   fs.mkdirSync(configDirectory,{mode:0o750});fs.chownSync(configDirectory,0,writerGroupId);
   fs.mkdirSync(stateDirectory,{mode:0o700});fs.chownSync(stateDirectory,0,0);
   fs.writeFileSync(configurationFile,JSON.stringify(values.oldConfiguration)+'\n',{mode:0o640});
   fs.chownSync(configurationFile,0,writerGroupId);fs.chmodSync(configurationFile,0o640);
-  const controls=createBuyerWriterGatewayConfigurationFileControls({operationId,writerGroupId,
+  const controls=createBuyerWriterGatewayConfigurationFileControls({...bound,writerGroupId,
     configurationFile,stateDirectory,proveQuiesced:async()=>quiesced});
-  const input={operationId,...values,controls,appendJournal:async event=>events.push(event),
+  const input={...bound,...values,controls,appendJournal:async event=>events.push(event),
     now:()=>Date.UTC(2026,8,18,10,30,0)};
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
-  return {root,configDirectory,stateDirectory,configurationFile,writerGroupId,operationId,
+  return {root,configDirectory,stateDirectory,configurationFile,writerGroupId,operationId,bound,
     values,events,controls,input};
 }
 const read=file=>JSON.parse(fs.readFileSync(file,'utf8'));
+function journalPrefix(f,phases=['started','quiesced','prepared']){
+  const digest=value=>createHash('sha256').update(JSON.stringify(value)+'\n').digest('hex');
+  return phases.map(phase=>({version:1,kind:'buyer_writer_gateway_configuration_upgrade',
+    ...f.bound,phase,status:'IN_PROGRESS',oldConfigDigest:digest(f.values.oldConfiguration),
+    newConfigDigest:digest(f.values.newConfiguration),updatedAt:'2026-09-19T00:00:00.000Z'}));
+}
+
+function prefixInput(f,events){
+  const row=journalPrefix(f,['started'])[0];
+  return {...f.bound,oldConfigDigest:row.oldConfigDigest,newConfigDigest:row.newConfigDigest,
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+    journalEvents:events,appendJournal:async event=>events.push(event)};
+}
+test('journal-only crash recovery preserves history and completes one real file upgrade',rootOnly,async t=>{
+  for(const phases of [[],['started'],['started','quiesced']]){
+    const f=fixture(t),events=journalPrefix(f,phases);
+    const before=fs.statSync(f.configurationFile).ino;
+    const result=await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+    assert.equal(result.status,'JOURNAL_PREFIX_RECOVERED');
+    assert.equal(fs.statSync(f.configurationFile).ino,before);
+    assert.deepEqual(fs.readdirSync(f.stateDirectory),[]);
+    if(phases.length)assert.equal(events.at(-1).status,'FAIL_CLOSED');
+    assert.equal((await upgradeBuyerWriterGatewayConfiguration({...f.input,
+      appendJournal:async event=>events.push(event)})).status,'UPGRADED');
+    const recovered=await reconcileBuyerWriterGatewayConfigurationFile({
+      ...f.bound,...f.values,writerGroupId:f.writerGroupId,
+      configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
+      proveQuiesced:async()=>true,journalEvents:events,
+      appendJournal:async event=>events.push(event)});
+    assert.equal(recovered.status,'UPGRADED');
+  }
+});
+test('journal-only recovery refuses durable artifacts, drift and unavailable quiescence',rootOnly,async t=>{
+  for(const suffix of ['.state.json','.backup.json','.candidate','.restore']){
+    const f=fixture(t),events=journalPrefix(f,['started']);
+    const name=suffix==='.candidate'||suffix==='.restore'
+      ?'.'+f.operationId+suffix:f.operationId+suffix;
+    fs.writeFileSync(path.join(f.stateDirectory,name),'{}',{mode:0o600});
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events)));
+    assert.equal(events.length,1);
+  }
+  for(const change of [
+    input=>({...input,proveQuiesced:async()=>false}),
+    input=>({...input,oldConfigDigest:'0'.repeat(64)}),
+    input=>({...input,candidateDigest:'0'.repeat(64)}),
+    input=>({...input,appendJournal:async()=>{throw new Error('disk failure');}}),
+  ]){
+    const f=fixture(t),events=journalPrefix(f,['started']);
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(change(prefixInput(f,events))));
+    assert.deepEqual(read(f.configurationFile),f.values.oldConfiguration);
+    assert.deepEqual(fs.readdirSync(f.stateDirectory),[]);
+  }
+});
+test('journal-only recovery refuses later phases and malformed order without appending',rootOnly,async t=>{
+  for(const phases of [['quiesced'],['started','quiesced','prepared'],
+    ['started','started'],['started','quiesced','prepared','configuration-published']]){
+    const f=fixture(t),events=journalPrefix(f,phases),before=JSON.stringify(events);
+    await assert.rejects(()=>recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events)));
+    assert.equal(JSON.stringify(events),before);
+  }
+});
+test('journal-only repeated interruption remains recoverable without discarding audit rows',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f,['started']);
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  events.push(...journalPrefix(f,['started','quiesced']));
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  const before=events.length;
+  await recoverBuyerWriterGatewayConfigurationJournalPrefix(prefixInput(f,events));
+  assert.equal(events.length,before);
+  assert.equal(events.filter(row=>row.phase==='fail-closed').length,2);
+});
 
 test('actual files atomically upgrade, retain a root-only exact backup and durable completed state',rootOnly,async t=>{
   const f=fixture(t);
@@ -107,7 +186,7 @@ test('completed upgrade can be explicitly rolled back from durable state',rootOn
   await upgradeBuyerWriterGatewayConfiguration(f.input);
   assert.deepEqual(read(f.configurationFile),f.values.newConfiguration);
   const result=await rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>true,
   });
@@ -119,7 +198,7 @@ test('completed upgrade can be explicitly rolled back from durable state',rootOn
 test('manual rollback refuses a running service, state drift and current configuration drift',rootOnly,async t=>{
   const running=fixture(t);await upgradeBuyerWriterGatewayConfiguration(running.input);
   await assert.rejects(()=>rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:running.operationId,writerGroupId:running.writerGroupId,
+    ...running.bound,writerGroupId:running.writerGroupId,
     configurationFile:running.configurationFile,stateDirectory:running.stateDirectory,
     proveQuiesced:async()=>false,
   }));
@@ -130,7 +209,7 @@ test('manual rollback refuses a running service, state drift and current configu
     creatorOid:99999})+'\n');
   fs.chownSync(drift.configurationFile,0,drift.writerGroupId);fs.chmodSync(drift.configurationFile,0o640);
   await assert.rejects(()=>rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:drift.operationId,writerGroupId:drift.writerGroupId,
+    ...drift.bound,writerGroupId:drift.writerGroupId,
     configurationFile:drift.configurationFile,stateDirectory:drift.stateDirectory,
     proveQuiesced:async()=>true,
   }));
@@ -143,7 +222,7 @@ test('rollback recovers a crash after prepare before publication',rootOnly,async
   assert.ok(prepared);
   assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'PREPARED');
   const result=await rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>true,
   });
@@ -159,7 +238,7 @@ test('rollback recovers a crash after rename before published-state update',root
   assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'PREPARED');
   assert.deepEqual(read(f.configurationFile),f.values.newConfiguration);
   const result=await rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>true,
   });
@@ -172,7 +251,7 @@ test('rollback closes an intent-only crash without requiring a backup',rootOnly,
   const f=fixture(t),stateFile=path.join(f.stateDirectory,f.operationId+'.state.json');
   const digest=value=>createHash('sha256').update(JSON.stringify(value)+'\n').digest('hex');
   fs.writeFileSync(stateFile,JSON.stringify({
-    version:1,kind:'buyer_writer_gateway_configuration_upgrade',operationId:f.operationId,
+    version:2,kind:'buyer_writer_gateway_configuration_upgrade',...f.bound,
     phase:'INTENT',configurationFile:f.configurationFile,
     backupFile:path.join(f.stateDirectory,f.operationId+'.backup.json'),
     oldConfigDigest:digest(f.values.oldConfiguration),
@@ -180,7 +259,7 @@ test('rollback closes an intent-only crash without requiring a backup',rootOnly,
   })+'\n',{mode:0o600});
   fs.chownSync(stateFile,0,0);fs.chmodSync(stateFile,0o600);
   const result=await rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>true,
   });
@@ -193,7 +272,7 @@ test('rollback closes an intent-only crash without requiring a backup',rootOnly,
 test('a service start immediately before publish aborts and restores old configuration',rootOnly,async t=>{
   const f=fixture(t),checks={count:0};
   const controls=createBuyerWriterGatewayConfigurationFileControls({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>++checks.count!==3,
   });
@@ -207,7 +286,7 @@ test('a service start immediately before manual rollback preserves the new confi
   const f=fixture(t);await upgradeBuyerWriterGatewayConfiguration(f.input);
   let checks=0;
   await assert.rejects(()=>rollbackBuyerWriterGatewayConfigurationFile({
-    operationId:f.operationId,writerGroupId:f.writerGroupId,
+    ...f.bound,writerGroupId:f.writerGroupId,
     configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
     proveQuiesced:async()=>++checks===1,
   }));
@@ -229,6 +308,113 @@ test('completed-journal failure retains the plan and restores the exact old file
   assert.equal(f.events.at(-1).phase,'rolled-back');
 });
 
+test('reconcile completes an exact post-publication v4 observation without redispatch',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f);
+  await f.controls.prepareReplacement(f.values.oldConfiguration,f.values.newConfiguration);
+  fs.renameSync(path.join(f.stateDirectory,'.'+f.operationId+'.candidate'),f.configurationFile);
+  const result=await reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,...f.values,journalEvents:events,appendJournal:async row=>events.push(row),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+    now:()=>Date.UTC(2026,8,19,0,1,0),
+  });
+  assert.equal(result.status,'UPGRADED');assert.equal(result.reconciled,true);
+  assert.deepEqual(read(f.configurationFile),f.values.newConfiguration);
+  assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'COMPLETED');
+  assert.deepEqual(events.map(row=>row.phase),['started','quiesced','prepared',
+    'configuration-published','configuration-verified','completed']);
+});
+
+test('completed journal with PUBLISHED state finalizes idempotently after atomic-state crash',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f,
+    ['started','quiesced','prepared','configuration-published','configuration-verified']);
+  const prepared=await f.controls.prepareReplacement(
+    f.values.oldConfiguration,f.values.newConfiguration);
+  assert.equal(await f.controls.publishReplacement(prepared,f.values.newConfiguration),true);
+  const stateFile=path.join(f.stateDirectory,f.operationId+'.state.json');
+  assert.equal(read(stateFile).phase,'PUBLISHED');
+  let armed=true;
+  const io=new Proxy(fs,{get(target,property){
+    if(property==='renameSync')return (from,to)=>{
+      if(armed&&to===stateFile&&events.at(-1)?.phase==='completed'){
+        armed=false;throw new Error('lost after completed journal append');
+      }
+      return target.renameSync(from,to);
+    };
+    const value=target[property];return typeof value==='function'?value.bind(target):value;
+  }});
+  await assert.rejects(()=>reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,...f.values,journalEvents:events,appendJournal:async row=>events.push(row),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,io,
+  }));
+  assert.equal(read(stateFile).phase,'PUBLISHED');
+  assert.equal(events.filter(row=>row.phase==='completed').length,1);
+  const input={...f.bound,...f.values,journalEvents:events,
+    appendJournal:async()=>assert.fail('completed journal must not be duplicated'),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true};
+  assert.equal((await reconcileBuyerWriterGatewayConfigurationFile(input)).status,'UPGRADED');
+  assert.equal(read(stateFile).phase,'COMPLETED');
+  assert.equal((await reconcileBuyerWriterGatewayConfigurationFile(input)).status,'UPGRADED');
+  assert.equal(events.filter(row=>row.phase==='completed').length,1);
+});
+
+test('reconcile closes durable INTENT without requiring a backup',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f,['started','quiesced']);
+  const digest=value=>createHash('sha256').update(JSON.stringify(value)+'\n').digest('hex');
+  const stateFile=path.join(f.stateDirectory,f.operationId+'.state.json');
+  fs.writeFileSync(stateFile,JSON.stringify({
+    version:2,kind:'buyer_writer_gateway_configuration_upgrade',...f.bound,
+    phase:'INTENT',configurationFile:f.configurationFile,
+    backupFile:path.join(f.stateDirectory,f.operationId+'.backup.json'),
+    oldConfigDigest:digest(f.values.oldConfiguration),
+    newConfigDigest:digest(f.values.newConfiguration),
+  })+'\n',{mode:0o600});
+  fs.chownSync(stateFile,0,0);fs.chmodSync(stateFile,0o600);
+  const result=await reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,...f.values,journalEvents:events,appendJournal:async row=>events.push(row),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+  });
+  assert.equal(result.status,'ROLLED_BACK');
+  assert.equal(fs.existsSync(path.join(f.stateDirectory,f.operationId+'.backup.json')),false);
+  assert.deepEqual(events.map(row=>row.phase),['started','quiesced','rolled-back']);
+});
+
+test('reconcile bridges quiesced journal to durable PREPARED state before rollback',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f,['started','quiesced']);
+  await f.controls.prepareReplacement(f.values.oldConfiguration,f.values.newConfiguration);
+  assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'PREPARED');
+  const result=await reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,...f.values,journalEvents:events,appendJournal:async row=>events.push(row),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+  });
+  assert.equal(result.status,'ROLLED_BACK');
+  assert.deepEqual(events.map(row=>row.phase),['started','quiesced','prepared','rolled-back']);
+  assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'ROLLED_BACK');
+});
+
+test('reconcile closes a prepared old observation as rollback and rejects binding drift',rootOnly,async t=>{
+  const f=fixture(t),events=journalPrefix(f);
+  await f.controls.prepareReplacement(f.values.oldConfiguration,f.values.newConfiguration);
+  const result=await reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,...f.values,journalEvents:events,appendJournal:async row=>events.push(row),
+    writerGroupId:f.writerGroupId,configurationFile:f.configurationFile,
+    stateDirectory:f.stateDirectory,proveQuiesced:async()=>true,
+  });
+  assert.equal(result.status,'ROLLED_BACK');
+  assert.equal(read(path.join(f.stateDirectory,f.operationId+'.state.json')).phase,'ROLLED_BACK');
+  assert.equal(events.at(-1).phase,'rolled-back');
+  await assert.rejects(()=>reconcileBuyerWriterGatewayConfigurationFile({
+    ...f.bound,candidateDigest:'e'.repeat(64),...f.values,journalEvents:events,
+    appendJournal:async()=>{},writerGroupId:f.writerGroupId,
+    configurationFile:f.configurationFile,stateDirectory:f.stateDirectory,
+    proveQuiesced:async()=>true,
+  }));
+});
+
 test('extended and inherited ACLs are rejected before credential copies are created',rootOnly,async t=>{
   const current=fixture(t);
   execFileSync('/usr/bin/setfacl',['-m','u:65534:r--',current.configurationFile]);
@@ -241,7 +427,7 @@ test('extended and inherited ACLs are rejected before credential copies are crea
   execFileSync('/usr/bin/setfacl',['-m','d:u:65534:r-x',inherited.stateDirectory]);
   fs.chmodSync(inherited.stateDirectory,0o700);
   assert.throws(()=>createBuyerWriterGatewayConfigurationFileControls({
-    operationId:inherited.operationId,writerGroupId:inherited.writerGroupId,
+    ...inherited.bound,writerGroupId:inherited.writerGroupId,
     configurationFile:inherited.configurationFile,stateDirectory:inherited.stateDirectory,
     proveQuiesced:async()=>true,
   }));

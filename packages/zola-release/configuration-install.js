@@ -1,19 +1,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {execFile,spawnSync} from 'node:child_process';
 import {promisify} from 'node:util';
 import {readRootOwnedJsonSnapshot} from '../buyer-writer/protected-json.js';
 import {renderZolaGatewayConfigurations} from './gateway-configuration-render.js';
 import {resolveBuyerWriterIdentity} from '../buyer-writer/runtime-identity.js';
-import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {createBuyerWriterGatewayPostgres} from '../buyer-writer/local-gateway-postgres.js';
 import {createOperationPermitSigner} from '../buyer-writer/operation-permit-signer.js';
+import {installedBuyerWriterManifestPath} from './installed-buyer-writer.js';
 
 const execute=promisify(execFile),plans=new WeakMap();
 const reject=()=>{throw new Error('Zola configuration installation rejected');};
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const sealedArtifactProof=(artifact,releaseSha)=>artifact&&Object.keys(artifact).length===6
+  &&artifact.releaseSha===releaseSha&&artifact.environment==='production'
+  &&(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??'')
+  &&artifact.status==='SEALED_ARTIFACT_VERIFIED'&&artifact.deployed===false&&artifact.productionAccepted===false;
 const defaults={configDirectory:'/etc/blackspire',gatewayConfigDirectory:'/etc/blackspire-buyer-writer-gateway',
   unitDirectory:'/etc/systemd/system',releaseRoot:'/opt/blackspire-command/releases'};
 const options={encoding:'utf8',timeout:2000,maxBuffer:8192,killSignal:'SIGKILL',env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}};
@@ -40,39 +45,67 @@ function checkDirectoryDefaultAcl(acl,name){
   const result=acl('/usr/bin/getfacl',['--numeric','--omit-header','--skip-base','--default','--logical','--',name],options);
   if(result.status!==0||result.error||result.stdout!==''||result.stderr!=='')reject();
 }
-function readExact(io,acl,name,bytes,gid,mode,uid=0){
-  directory(io,path.dirname(name));let fd;
+function readExact(io,acl,name,bytes,gid,mode,uid=0,links=1){
+  directory(io,path.dirname(name));let fd,found;
   try{
     fd=io.openSync(name,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
     const a=io.fstatSync(fd);
-    if(!a.isFile()||a.uid!==uid||a.gid!==gid||a.nlink!==1||(a.mode&0o7777)!==mode||a.size!==bytes.length)reject();
+    if(!a.isFile()||a.uid!==uid||a.gid!==gid||a.nlink!==links||(a.mode&0o7777)!==mode||a.size!==bytes.length)reject();
     checkAcl(acl,fd);
-    const found=Buffer.alloc(bytes.length+1);let count=0;
+    found=Buffer.alloc(bytes.length+1);let count=0;
     while(count<found.length){const n=io.readSync(fd,found,count,found.length-count,null);if(!n)break;count+=n;}
     const b=io.fstatSync(fd);
     if(count!==bytes.length||!found.subarray(0,count).equals(bytes)||['dev','ino','uid','gid','mode','nlink','size','ctimeMs','mtimeMs'].some(k=>a[k]!==b[k]))reject();
     return true;
-  }catch(error){if(error.code==='ENOENT')return false;throw error;}finally{if(fd!==undefined)io.closeSync(fd);}
+  }catch(error){if(error.code==='ENOENT')return false;throw error;}
+  finally{found?.fill(0);if(fd!==undefined)io.closeSync(fd);}
 }
-// Atomic no-replace publication. A crash can leave an inert temporary file or
-// a two-link inode that readers reject; never replace or delete foreign state.
+function statOrNull(io,name){try{return io.lstatSync(name);}catch(error){if(error.code==='ENOENT')return null;throw error;}}
+function publicationState(io,acl,name,bytes,gid,mode,uid=0){
+  const token=hash(Buffer.concat([Buffer.from(name+'\0'),bytes])).slice(0,32);
+  const temporary=path.join(path.dirname(name),'.zola-install-'+token+'.tmp');
+  const installed=statOrNull(io,name),staged=statOrNull(io,temporary);
+  if(!installed&&!staged)return 'absent';
+  if(installed?.nlink===1&&!staged&&readExact(io,acl,name,bytes,gid,mode,uid))return 'published';
+  if(!installed&&staged?.nlink===1&&readExact(io,acl,temporary,bytes,gid,mode,uid))return 'staged';
+  if(installed?.nlink===2&&staged&&installed.dev===staged.dev&&installed.ino===staged.ino
+    &&readExact(io,acl,name,bytes,gid,mode,uid,2)&&readExact(io,acl,temporary,bytes,gid,mode,uid,2))return 'linked';
+  reject();
+}
+// Deterministic no-replace publication. Exact one-link, staged, and post-link
+// states are recoverable; foreign state is never replaced or removed.
 function publish(io,acl,name,bytes,gid,mode,uid=0){
-  if(readExact(io,acl,name,bytes,gid,mode,uid))return 'existing';
-  const temporary=path.join(path.dirname(name),'.zola-install-'+randomUUID()+'.tmp');let fd,identity;
+  const token=hash(Buffer.concat([Buffer.from(name+'\0'),bytes])).slice(0,32);
+  const temporary=path.join(path.dirname(name),'.zola-install-'+token+'.tmp');let fd,identity;
+  const installed=statOrNull(io,name),staged=statOrNull(io,temporary);
+  if(installed){
+    if(installed.nlink===1&&!staged&&readExact(io,acl,name,bytes,gid,mode,uid))return 'existing';
+    if(installed.nlink===2&&staged&&installed.dev===staged.dev&&installed.ino===staged.ino
+      &&readExact(io,acl,name,bytes,gid,mode,uid,2)&&readExact(io,acl,temporary,bytes,gid,mode,uid,2)){
+      io.unlinkSync(temporary);syncDirectory(io,path.dirname(name));
+      if(readExact(io,acl,name,bytes,gid,mode,uid))return 'recovered';
+    }
+    reject();
+  }
+  if(staged){
+    if(!readExact(io,acl,temporary,bytes,gid,mode,uid))reject();
+    io.linkSync(temporary,name);io.unlinkSync(temporary);syncDirectory(io,path.dirname(name));
+    if(readExact(io,acl,name,bytes,gid,mode,uid))return 'recovered';
+    reject();
+  }
   try{
     fd=io.openSync(temporary,fs.constants.O_WRONLY|fs.constants.O_CREAT|fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);
-    identity=io.fstatSync(fd);
-    // A directory default ACL can create masked named-user entries even at
-    // mode0600. Reject them while this inode is EMPTY, before chmod enables its
-    // group mask and before any credential bytes are written.
-    checkAcl(acl,fd);
+    identity=io.fstatSync(fd);checkAcl(acl,fd);
     io.fchownSync(fd,uid,gid);io.fchmodSync(fd,mode);io.writeFileSync(fd,bytes);io.fsyncSync(fd);io.closeSync(fd);fd=undefined;
     if(!readExact(io,acl,temporary,bytes,gid,mode,uid))reject();
     io.linkSync(temporary,name);io.unlinkSync(temporary);syncDirectory(io,path.dirname(name));
     if(!readExact(io,acl,name,bytes,gid,mode,uid))reject();return 'published';
   }finally{
     if(fd!==undefined)io.closeSync(fd);
-    try{const s=io.lstatSync(temporary);if(identity&&s.dev===identity.dev&&s.ino===identity.ino)io.unlinkSync(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}
+    try{
+      const temp=io.lstatSync(temporary),target=statOrNull(io,name);
+      if(identity&&temp.dev===identity.dev&&temp.ino===identity.ino&&!target)io.unlinkSync(temporary);
+    }catch(error){if(error.code!=='ENOENT')throw error;}
   }
 }
 
@@ -103,7 +136,7 @@ async function hostIdentity(run){
 // No connections and no filesystem mutations while preparing a plan. Production
 // CLI does not expose the injectable dependencies used by disposable tests.
 export async function prepareZolaConfigurationInstall({releaseSha,configurationFile},{io=fs,acl=spawnSync,run=execute,
-  readSnapshot=readRootOwnedJsonSnapshot,inspectArtifact=inspectBuyerWriterArtifact,identity=hostIdentity,paths=defaults,uid=process.getuid()}={}){
+  readSnapshot=readRootOwnedJsonSnapshot,inspectArtifact=inspectSealedBuyerWriterArtifact,identity=hostIdentity,paths=defaults,uid=process.getuid()}={}){
   try{
     if(uid!==0||!(/^[a-f0-9]{40}$/).test(releaseSha??''))reject();
     directory(io,paths.configDirectory);directory(io,paths.unitDirectory);
@@ -120,7 +153,7 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     for(const c of [config.runtime,config.issuer])if(c.host!=='db.kchtrvfcixnimvxxctkj.supabase.co'||c.port!==5432||c.database!=='postgres'
       ||hash(c.ca??'')!=='700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7')reject();
     const artifact=await inspectArtifact({artifactRoot:path.join(paths.releaseRoot,releaseSha),releaseSha,environment:'production'});
-    if(artifact.releaseSha!==releaseSha||artifact.environment!=='production'||!(/^[a-f0-9]{64}$/).test(artifact.artifactDigest??''))reject();
+    if(!sealedArtifactProof(artifact,releaseSha))reject();
     const gatewayBytes=Buffer.from(JSON.stringify(gatewayConfig)+'\n'),clientBytes=Buffer.from(JSON.stringify(clientConfig)+'\n'),
       ingressBytes=Buffer.from(JSON.stringify(ingressConfig)+'\n'),signerBytes=Buffer.from(JSON.stringify(signerConfig)+'\n');
     const gatewayConfigPath=path.join(paths.gatewayConfigDirectory,'gateway.json');
@@ -129,17 +162,24 @@ export async function prepareZolaConfigurationInstall({releaseSha,configurationF
     const signerConfigPath=path.join(paths.configDirectory,'buyer-writer-signer-'+hash(signerBytes)+'.json');
     const dropinDirectory=path.join(paths.unitDirectory,'blackspire-command.service.d'),dropinPath=path.join(dropinDirectory,'40-zola-writer.conf');
     const dropin=Buffer.from('[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+clientConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingressConfigPath+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG='+signerConfigPath+'\n');
-    readExact(io,acl,gatewayConfigPath,gatewayBytes,ids.gatewayGid,0o640);
-    readExact(io,acl,clientConfigPath,clientBytes,ids.credentialGroupId,0o640);
-    readExact(io,acl,ingressConfigPath,ingressBytes,ids.credentialGroupId,0o640);
-    readExact(io,acl,signerConfigPath,signerBytes,ids.credentialGroupId,0o640);
-    try{directory(io,dropinDirectory);readExact(io,acl,dropinPath,dropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
+    const manifestPath=installedBuyerWriterManifestPath(releaseSha,{configDirectory:paths.configDirectory});
+    const manifestBytes=Buffer.from(JSON.stringify({schema:1,kind:'zola_installed_buyer_writer',releaseSha,
+      artifactDigest:artifact.artifactDigest,workspace:config.workspace,
+      clientConfig:{path:clientConfigPath,digest:hash(clientBytes)},ingressConfig:{path:ingressConfigPath,digest:hash(ingressBytes)},
+      signerConfig:{path:signerConfigPath,digest:hash(signerBytes)},gatewayConfig:{path:gatewayConfigPath,digest:hash(gatewayBytes)},
+      serviceDropin:{path:dropinPath,digest:hash(dropin)}})+'\n');
+    publicationState(io,acl,gatewayConfigPath,gatewayBytes,ids.gatewayGid,0o640);
+    publicationState(io,acl,clientConfigPath,clientBytes,ids.credentialGroupId,0o640);
+    publicationState(io,acl,ingressConfigPath,ingressBytes,ids.credentialGroupId,0o640);
+    publicationState(io,acl,signerConfigPath,signerBytes,ids.credentialGroupId,0o640);
+    publicationState(io,acl,manifestPath,manifestBytes,0,0o600);
+    try{directory(io,dropinDirectory);publicationState(io,acl,dropinPath,dropin,0,0o644);}catch(e){if(e.code!=='ENOENT')throw e;}
     if(!same(snapshot,readSnapshot(configurationFile,{groupId:ids.credentialGroupId,maxBytes:65536}))||!same(state,await hostState(run)))reject();
     const result=Object.freeze({version:2,kind:'zola-configuration-install',releaseSha,artifactDigest:artifact.artifactDigest,
-      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,signerConfigPath,gatewayConfigPath,dropinPath,
+      configPath:clientConfigPath,clientConfigPath,ingressConfigPath,signerConfigPath,gatewayConfigPath,dropinPath,manifestPath,
       status:'PREPARED',servicesStarted:false,authorityActivated:false});
     plans.set(result,{io,acl,run,readSnapshot,identity,inspectArtifact,paths,input:{releaseSha,configurationFile},snapshot,ids,
-      gatewayBytes,clientBytes,ingressBytes,signerBytes,dropin,dropinDirectory});return result;
+      gatewayBytes,clientBytes,ingressBytes,signerBytes,dropin,dropinDirectory,manifestBytes});return result;
   }catch{reject();}
 }
 
@@ -161,7 +201,7 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     await hostState(p.run);
     if(!same(p.ids,await p.identity(p.run))||!same(p.snapshot,p.readSnapshot(p.input.configurationFile,{groupId:p.ids.credentialGroupId,maxBytes:65536})))reject();
     const artifact=await p.inspectArtifact({artifactRoot:path.join(p.paths.releaseRoot,plan.releaseSha),releaseSha:plan.releaseSha,environment:'production'});
-    if(artifact.artifactDigest!==plan.artifactDigest||artifact.releaseSha!==plan.releaseSha||artifact.environment!=='production')reject();
+    if(!sealedArtifactProof(artifact,plan.releaseSha)||artifact.artifactDigest!==plan.artifactDigest)reject();
     record({event:'configuration_install_intent',releaseSha:plan.releaseSha,artifactDigest:plan.artifactDigest});
     privateGatewayDirectory(p.io,p.paths.gatewayConfigDirectory,p.ids.gatewayGid);
     publish(p.io,p.acl,plan.gatewayConfigPath,p.gatewayBytes,p.ids.gatewayGid,0o640);
@@ -171,7 +211,9 @@ export async function installZolaConfiguration(plan,{connect=createBuyerWriterGa
     try{p.io.mkdirSync(p.dropinDirectory,{mode:0o755});syncDirectory(p.io,path.dirname(p.dropinDirectory));}catch(e){if(e.code!=='EEXIST')throw e;}
     directory(p.io,p.dropinDirectory);await hostState(p.run);
     publish(p.io,p.acl,plan.dropinPath,p.dropin,0,0o644);
-    record({event:'configuration_install_verified',releaseSha:plan.releaseSha});
+    publish(p.io,p.acl,plan.manifestPath,p.manifestBytes,0,0o600);
+    record({event:'configuration_install_verified',releaseSha:plan.releaseSha,
+      manifestPath:plan.manifestPath,manifestDigest:hash(p.manifestBytes)});
     return {...plan,status:'INSTALLED_RELOAD_REQUIRED'};
   }catch{reject();}finally{if(database)await database.close().catch(()=>{});}
 }

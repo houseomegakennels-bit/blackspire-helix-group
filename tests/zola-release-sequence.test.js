@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {RELEASE_STAGES,MUTATING_STAGES,inspectReleaseSequence,runReleaseSequence} from '../packages/zola-release/commander-sequence.js';
 
+import {createHeldProductionOperations} from '../packages/zola-release/production-held-operations.js';
+import {createProviderAclCheckOperation,PROVIDER_ACL_FUNCTIONS} from '../packages/zola-release/production-acl-writer.js';
+
 const releaseSha='a'.repeat(40),previousMainSha='b'.repeat(40),recoverySha='c'.repeat(40),newMainSha='d'.repeat(40);
 const protectedInputDigest='e'.repeat(64),workspace='zola-production',principal='blackspire-release-root';
 const input={releaseSha,previousMainSha,recoverySha,protectedInputDigest,workspace,principal,inputDigest:createHash('sha256').update(JSON.stringify({releaseSha,previousMainSha,recoverySha,protectedInputDigest,workspace,principal})).digest('hex')};
@@ -13,6 +16,90 @@ function adapters(calls,{throwStage}={}){
   reconcile:async()=>{calls.push('reconcile:'+stage);return{status:'PASS',evidence:stage==='guarded_held_to_open'?{open:true,newMainSha}:stage==='capture_new_main_sha'?{newMainSha}:{stage,reconciled:true}};},
   observe:async()=>{calls.push('observe:'+stage);return{status:'PASS',evidence:stage==='capture_new_main_sha'?{newMainSha}:stage==='guarded_held_to_open'?{open:true,newMainSha}:{stage,observed:true}};}}]));
 }
+function coldStartFixture({isolation=true,catalogError=false,activationError=false}={}){
+ const j=journal(),calls=[],set=adapters(calls);
+ const host={roles:false,active:false,activations:0,isolation,catalogError,catalogReads:0};
+ const proof={artifactDigest:'6'.repeat(64),api:{generation:'1'.repeat(32)},worker:{generation:'2'.repeat(32)}};
+ const held=createHeldProductionOperations({input,journal:j,release:{activationConfigurationFile:'/protected/activation.json'}},{
+  async activate(){
+   if(activationError)throw new Error('bootstrap refused');
+   if(!host.roles){assert.equal(host.active,false);host.roles=true;host.activations++;}
+  },
+  async establishHeld(){
+   assert.equal(host.roles,true);host.active=true;
+   return {status:'HELD_LIFECYCLE_OBSERVED',releaseSha,
+    runId:'22222222-2222-4222-8222-222222222222',proof};
+  },
+  async lifecycle(){assert.equal(host.active,true);return proof;},
+ });
+ set.admission_lease=held.admission_lease;
+ set.generation_revalidation=held.generation_revalidation;
+ set.provider_acl_check=createProviderAclCheckOperation({
+  query:async()=>{
+   calls.push('catalog');
+   host.catalogReads++;
+   if(!host.roles||host.catalogError===true||host.catalogError==='second'&&host.catalogReads===2)
+    throw new Error('catalog unavailable');
+   return {rows:PROVIDER_ACL_FUNCTIONS.map(functionName=>({functionName,arguments:'',
+    owner:'supabase_admin',publicExecute:false,ownerExecute:true,postgresExecute:true,
+    serviceRoleExecute:true,writerExecute:false}))};
+  },
+  isolationProof:async()=>host.active&&host.isolation?{status:'PASS',evidence:{
+   pgNetIsolationVerified:true,applicationDbCredentialsAbsent:true,gatewayTransportVerified:true,
+   arbitrarySqlDenied:true,arbitraryFunctionDenied:true,arbitraryUrlDenied:true,
+   applicationPgNetCallSitesZero:true,applicationDbPgNetReferencesZero:true,
+   applicationPgNetCallSiteCount:0,applicationDbPgNetReferenceCount:0,
+   sourceScanDigest:'b'.repeat(64),functionBodyDigest:'c'.repeat(64),
+  }}:{status:'BLOCKED_EXTERNAL'},
+ });
+ // Stop before any downstream mutation; these are simulated hosts, not live acceptance.
+ set.n8n_migration.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ return {j,calls,set,host};
+}
+test('cold start provisions and establishes HELD before full provider isolation observation',async()=>{
+ const f=coldStartFixture();
+ const result=await runReleaseSequence({input,journal:f.j,adapters:f.set});
+ assert.equal(result.stage,'n8n_migration');
+ assert.equal(f.host.activations,1);assert.equal(f.host.active,true);
+ const observed=inspectReleaseSequence(f.j.events);
+ assert.equal(observed.outputs.admission_lease.intakeOpen,false);
+ assert.equal(observed.outputs.provider_acl_check.pgNetIsolationVerified,true);
+ assert.equal(f.calls.includes('execute:n8n_migration'),false);
+ assert.equal(observed.outputs.guarded_held_to_open,undefined);
+});
+test('failed post-HELD catalog or runtime isolation blocks every downstream effect and resumes without activation replay',async()=>{
+ for(const options of [{isolation:false},{catalogError:true},{catalogError:'second'}]){
+  const f=coldStartFixture(options);
+  let result=await runReleaseSequence({input,journal:f.j,adapters:f.set});
+  assert.equal(result.stage,'provider_acl_check');assert.equal(result.releaseState,'BLOCKED_EXTERNAL');
+  assert.equal(result.mutationSent,true);assert.equal(f.host.activations,1);
+  assert.equal(inspectReleaseSequence(f.j.events).outputs.admission_lease.intakeOpen,false);
+  for(const stage of ['n8n_migration','bounded_writer_e2e','production_migrations','guarded_held_to_open'])
+   assert.equal(f.calls.some(value=>value.endsWith(':'+stage)),false);
+  f.host.isolation=true;f.host.catalogError=false;
+  result=await runReleaseSequence({input,journal:f.j,adapters:f.set});
+  assert.equal(result.stage,'n8n_migration');assert.equal(f.host.activations,1);
+ }
+});
+test('failed bootstrap never reaches provider observation or downstream effects',async()=>{
+ const f=coldStartFixture({activationError:true});
+ const result=await runReleaseSequence({input,journal:f.j,adapters:f.set});
+ assert.equal(result.stage,'admission_lease');assert.equal(result.mutationSent,null);
+ assert.equal(f.calls.includes('catalog'),false);assert.equal(f.host.active,false);
+ assert.equal(inspectReleaseSequence(f.j.events).outputs.guarded_held_to_open,undefined);
+});
+test('prior ordering journals fail closed without replay or ordinal reinterpretation',async()=>{
+ const f=coldStartFixture();await runReleaseSequence({input,journal:f.j,adapters:f.set});
+ const legacyStages=[...RELEASE_STAGES].filter(stage=>stage!=='provider_acl_check');
+ legacyStages.splice(3,0,'provider_acl_check');
+ const legacyDigest=createHash('sha256').update(JSON.stringify(legacyStages.map((stage,ordinal)=>({
+  ordinal,stage,mutating:MUTATING_STAGES.has(stage),
+ })))).digest('hex');
+ const rows=structuredClone(f.j.events);rows[0].registryDigest=legacyDigest;
+ assert.throws(()=>inspectReleaseSequence(rows));
+ const calls=[],result=await runReleaseSequence({input,journal:journal(rows),adapters:adapters(calls)});
+ assert.equal(result.releaseState,'FAIL_CLOSED');assert.deepEqual(calls,[]);
+});
 test('registry is exact, frozen, unique and contains 34 ordered stages',()=>{
  assert.equal(RELEASE_STAGES.length,34);assert.equal(new Set(RELEASE_STAGES).size,34);assert.ok(Object.isFrozen(RELEASE_STAGES));
  assert.equal(MUTATING_STAGES.size,22);assert.ok(MUTATING_STAGES.has('admission_lease'));assert.ok(MUTATING_STAGES.has('expected_head_merge'));assert.ok(MUTATING_STAGES.has('guarded_held_to_open'));
@@ -65,9 +152,9 @@ test('malformed, reordered, mixed-operation and secret-bearing evidence fail clo
  const result=await runReleaseSequence({input,journal:j,adapters:bad});assert.equal(result.status,'STOPPED');assert.ok(!JSON.stringify(j.events).includes('never'));
 });
 test('external block records no mutation intent and remains resumable',async()=>{
- const j=journal(),calls=[],set=adapters(calls);set.provider_acl_check.check=async()=>({status:'BLOCKED_EXTERNAL'});
+ const j=journal(),calls=[],set=adapters(calls);set.vercel_exact_head_preview.check=async()=>({status:'BLOCKED_EXTERNAL'});
  const result=await runReleaseSequence({input,journal:j,adapters:set});assert.equal(result.reason,'EXTERNAL_GATE');assert.equal(result.mutationSent,false);
- assert.equal(inspectReleaseSequence(j.events).nextOrdinal,3);
+ assert.equal(inspectReleaseSequence(j.events).nextOrdinal,2);
  assert.equal(j.events.at(-1).type,'sequence_stopped');assert.equal(j.events.at(-1).releaseState,'BLOCKED_EXTERNAL');
 });
 
