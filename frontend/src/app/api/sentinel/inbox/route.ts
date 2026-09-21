@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -15,6 +16,9 @@ const ACTION_TO_STATUS = { read: "read", resolve: "resolved", archive: "archived
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
@@ -34,6 +38,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;

@@ -9,7 +9,7 @@ const executable=source=>stripTypeScriptTypes(source.replace(/^import[^;]+;\s*/g
 function fixture(role,expiresAt) {
   const operator=role===null?null:{id:'operator',app_metadata:{blackspire_role:role,demo_expires_at:expiresAt}};
   const response={json:(body,options={})=>({body,status:options.status??200})};
-  const guards=vm.runInNewContext(`${executable(read('lib/operator-access.ts'))}\n({guardSignedInApi,requireSignedInPage})`,{
+  const guards=vm.runInNewContext(`${executable(read('lib/operator-access.ts'))}\n({guardSignedInApi,guardWorkspaceApi,requireSignedInPage,requireWorkspacePage,requireDemoViewerPage})`,{
     getAuthenticatedOperator:async()=>operator,listAuthUsers:async()=>[{id:'original-admin'},{id:'operator'}],
     NextResponse:response,redirect:location=>{throw new Error(`redirect:${location}`);},
   });
@@ -48,4 +48,32 @@ test('explicit admin and beta operators retain Studio and signed-in page access'
     assert.equal(f.effects(),2);
     assert.equal((await f.guards.requireSignedInPage()).role,role);
   }
+});
+
+test('demo operators remain isolated from production and fail closed on invalid expiry',async()=>{
+  for(const expiry of ['2999-01-01T00:00:00Z','2000-01-01T00:00:00Z',undefined,'invalid']) {
+    const f=fixture('demo_operator',expiry);
+    assert.equal((await f.guards.guardWorkspaceApi()).status,403);
+    assert.equal((await f.guards.guardSignedInApi()).status,403);
+    await assert.rejects(()=>f.guards.requireWorkspacePage());
+    if(expiry==='2999-01-01T00:00:00Z')assert.equal((await f.guards.requireDemoViewerPage()).role,'demo_operator');
+    else await assert.rejects(()=>f.guards.requireDemoViewerPage(),/demo-expired/);
+  }
+});
+
+
+test('first-user compatibility never promotes explicit demo accounts in legacy admin checks',async()=>{
+ const authSource=read('lib/buyer-engine-auth.ts');
+ const adminFunction=authSource.slice(authSource.indexOf('export async function isAuthenticatedOperatorAdmin'));
+ for(const role of ['demo_operator','demo_viewer','client_only','beta_tester','admin',undefined]) {
+  const operator={id:'first-user',app_metadata:{blackspire_role:role}};
+  const check=vm.runInNewContext(executable(adminFunction)+'\nisAuthenticatedOperatorAdmin',{getAuthenticatedOperator:async()=>operator,listAuthUsers:async()=>[operator]});
+  assert.equal(await check(),role==='admin'||role===undefined);
+ }
+ const social=read('lib/social-os-server.ts');
+ const start=social.indexOf('async function buildViewerFromAuthUser(');
+ const end=social.indexOf('  const userMeta',start);
+ const blocked=executable(social.slice(start,end)+' return "reached social authority";\n}');
+ const viewer=vm.runInNewContext(blocked+'\nbuildViewerFromAuthUser',{});
+ for(const role of ['demo_operator','demo_viewer'])assert.equal(await viewer({app_metadata:{blackspire_role:role}},{},[]),null);
 });

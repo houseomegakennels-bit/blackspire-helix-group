@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -68,6 +69,9 @@ function parseAnalysis(text: string): LawnVisionAnalysis {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {

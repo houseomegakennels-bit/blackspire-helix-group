@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { BetaFeedback } from "@/components/beta-feedback";
-import { getOperatorContext, requireWorkspacePage } from "@/lib/operator-access";
+import { getOperatorContext, requireSignedInPage } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,7 @@ const CHECKLIST = [
 ];
 
 export default async function BetaDashboardPage() {
-  await requireWorkspacePage();
+  await requireSignedInPage();
   const { role } = await getOperatorContext();
 
   return (

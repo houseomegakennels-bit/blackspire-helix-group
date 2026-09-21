@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { runSellerLiveSearch } from "@/lib/seller-engine-server";
@@ -8,6 +9,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const gate = await guardBetaAction("sweep");
     if ("response" in gate) return gate.response;

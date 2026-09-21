@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 
 import {
@@ -10,6 +11,9 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const { id } = await context.params;
     const job = await getSearchJobById(id);

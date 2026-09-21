@@ -1382,6 +1382,8 @@ async function buildViewerFromAuthUser(
   state: SocialState,
   users: AuthUserWithMeta[],
 ): Promise<SocialViewer | null> {
+  const systemRole = user.app_metadata?.blackspire_role;
+  if (systemRole === "demo_viewer" || systemRole === "demo_operator") return null;
   const userMeta = user.user_metadata ?? {};
   const adminBySystem =
     users[0]?.id === user.id || (await isAuthenticatedOperatorAdmin().catch(() => false));

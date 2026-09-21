@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createSellerLeadFromHarvester, runHarvesterNexusEnrichment } from "@/lib/harvester-server";
@@ -5,6 +6,9 @@ import { createSellerLeadFromHarvester, runHarvesterNexusEnrichment } from "@/li
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = (await request.json()) as { intakeId?: string; runNexus?: boolean };
     if (!body.intakeId?.trim()) {
