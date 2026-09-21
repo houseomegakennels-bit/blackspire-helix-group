@@ -1,0 +1,93 @@
+// This root-only operator entry is separately reviewed. The canonical CLI's
+// test seam is not itself authorization: all adapters below remain fixed native
+// implementations, with only the exact workflow transport credential gate added.
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
+import {synchronizeOwnedN8nWriter,createOwnedN8nCredentialTransport} from '../packages/zola-release/owned-n8n-credential.js';
+const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/';
+const load=p=>import(canonical+p),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const fail=()=>{throw new Error('Owned n8n operator stopped');};
+let journal;
+try{
+ const [mode,inputFile]=process.argv.slice(2);
+ if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||mode!=='--release'||process.argv.length!==4)fail();
+ // Both the operator worktree and canonical runtime source must remain clean.
+ const operatorRoot=fileURLToPath(new URL('../',import.meta.url));
+ const git=(root,args)=>execFileSync('/usr/bin/git',['-C',root,...args],{encoding:'utf8',timeout:5000,maxBuffer:65536}).trim();
+ const operatorSha=git(operatorRoot,['rev-parse','HEAD']);if(git(operatorRoot,['status','--porcelain']))fail();
+ const {loadProductionReleaseInput}=await load('packages/zola-release/production-release-input.js');
+ const {runProductionRelease}=await load('packages/zola-release/production-release.js');
+ const {createFixedProductionOperations}=await load('packages/zola-release/production-adapters.js');
+ const {readReleaseProtectedBytes,verifyReleaseSource}=await load('packages/zola-release/commander-host.js');
+ const {openReleaseJournal}=await load('packages/zola-release/commander-journal.js');
+ const {inspectReleaseSequenceHistory}=await load('packages/zola-release/commander-sequence.js');
+ const {readRootOwnedJsonSnapshot}=await load('packages/buyer-writer/protected-json.js');
+ const {readOwnedDatabaseProfile,databaseProfileDigest,validateDatabaseTarget}=await load('packages/buyer-writer/database-profile.js');
+ const {validateBuyerWriterConfiguration,validateBuyerWriterGatewayAuthority}=await load('packages/buyer-writer/configuration.js');
+ const {createBuyerStoreProtectedFiles}=await load('packages/buyer-store/protected-files.js');
+ const {prepareN8nTransition,createN8nTransport,WORKFLOW_ID}=await load('packages/zola-release/commander-n8n.js');
+ const {createHeldWriterBindingHost,inspectHeldWriterBindingHistory}=await load('packages/zola-release/held-writer-binding.js');
+ const input=loadProductionReleaseInput(inputFile),release=input.value;
+ if(release.schema!==2||release.backendProfile!=='owned-postgres-v1')fail();
+ verifyReleaseSource(release.releaseSha);journal=openReleaseJournal();
+ const read=file=>readRootOwnedJsonSnapshot(file,{groupId:0,maxBytes:65536});
+ const sourceFile='/var/lib/blackspire-operator/preparation/owned-gateway-provisioning.json';
+ const source=read(sourceFile),configuration=read(release.packageConfigurationFile),backup=readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024),profile=readOwnedDatabaseProfile();
+ const keyFile='/var/lib/blackspire-operator/n8n-api-key',key=readReleaseProtectedBytes(keyFile,16384).trim(),v=source.value;
+ if(!same(Object.keys(v).sort(),['authority','bindingFile','creatorOid','gatewayCapability','issuer','issuerCredential','runtime','version','workspace','writerCredential'])||v.version!==3||v.workspace!=='blackspire-command'||v.authority?.releaseSha!==release.releaseSha||v.runtime?.backendProfile!=='owned-postgres-v1'||v.issuer?.backendProfile!=='owned-postgres-v1'||databaseProfileDigest(profile)!==release.profileDigest)fail();
+ validateBuyerWriterGatewayAuthority(v.authority,{workspace:v.workspace});
+ validateBuyerWriterConfiguration({version:1,workspace:v.workspace,bindingFile:v.bindingFile,writerCredential:v.writerCredential,issuerCredential:v.issuerCredential,creatorOid:v.creatorOid,runtime:v.runtime,issuer:v.issuer},{workspace:v.workspace,environment:'production'});
+ validateDatabaseTarget(v.runtime,{ownedProfile:profile});validateDatabaseTarget(v.issuer,{ownedProfile:profile});
+ if(new Set([v.writerCredential,v.issuerCredential,v.gatewayCapability,v.runtime.password,v.issuer.password]).size!==5)fail();
+ const plan=prepareN8nTransition({configuration:configuration.value,backupBytes:backup});if(plan.releaseSha!==release.releaseSha)fail();
+ const files=createBuyerStoreProtectedFiles(),root='/var/lib/blackspire-operator/preparation/owned-n8n-held-writer';files.directory(root,{create:true});
+ const currentBinding=()=>{
+  const state=inspectReleaseSequenceHistory(journal.stream('release').events());
+  if(state.context?.releaseSha!==release.releaseSha||state.pending?.stage!=='n8n_migration')fail();
+  return {namespace:plan.namespace,releaseSha:release.releaseSha,operationId:state.context.operationId,stageAttemptId:state.pending.attemptId};
+ };
+ const records=b=>{
+  const directory=root+'/'+b.operationId;files.directory(directory,{create:true});
+  return {value:(name,optional)=>files.value(directory+'/'+name+'.json',optional),record:(name,value)=>files.record(directory+'/'+name+'.json',value)};
+ };
+ const heldRecord=b=>{
+  const record=inspectHeldWriterBindingHistory(journal.stream('release').events()).get('admission_lease');
+  if(!record?.result||record.plan.releaseSha!==b.releaseSha||record.plan.operationId!==b.operationId)fail();return record;
+ };
+ const retained=b=>({version:1,operatorSha,...b,profileDigest:release.profileDigest,sourceDigest:hash(source),held:heldRecord(b)});
+ const assertConfigured=async b=>{
+  const store=records(b),binding=retained(b),intent=store.value('intent',true),result=store.value('result',true);
+  if(!same(store.value('authority',true),binding)||!intent||!result||!same(intent.binding,result.binding)||result.binding.sourceDigest!==binding.sourceDigest||result.binding.profileDigest!==binding.profileDigest||result.binding.namespace!==b.namespace)fail();
+ };
+ const synchronize=async b=>{
+  const store=records(b),record=heldRecord(b),authority=retained(b),host=createHeldWriterBindingHost();
+  const deadline=Date.now()+15*60*1000;
+  const fence=async()=>{
+   if(Date.now()>=deadline||!same(currentBinding(),b)||git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
+   verifyReleaseSource(release.releaseSha);
+   if(!same(source,read(sourceFile))||!same(configuration,read(release.packageConfigurationFile))||backup!==readReleaseProtectedBytes(release.n8nBackupFile,2*1024*1024)||!same(profile,readOwnedDatabaseProfile())||key!==readReleaseProtectedBytes(keyFile,16384).trim()||!same(authority,retained(b)))fail();
+   await host.check(record.plan);const proof=await host.inspect(record.plan);
+   if(proof.bindingDigest!==record.result.bindingDigest||proof.commitDigest!==record.result.commitDigest)fail();
+  };
+  try{
+   await host.lease(release.releaseSha);await fence();
+   const prior=store.value('authority',true);if(prior&&!same(prior,authority))fail();if(!prior)store.record('authority',authority);
+   await synchronizeOwnedN8nWriter({plan,writerCredential:v.writerCredential,profileDigest:release.profileDigest,sourceDigest:hash(source)},
+    {store,request:createOwnedN8nCredentialTransport(key),fence});
+  }finally{host.close();}
+ };
+ const transport=createN8nTransport(key);
+ const operations=context=>{
+  const request=createOwnedN8nRequestGate({request:transport,events:()=>journal.stream('n8n').events(),binding:currentBinding,synchronize,assertConfigured,workflowId:WORKFLOW_ID});
+  // Other n8n stages inspect before the migration attempt exists. Only route
+  // through the gate during the exact pending migration; all others stay native.
+  const routed=(...args)=>inspectReleaseSequenceHistory(journal.stream('release').events()).pending?.stage==='n8n_migration'?request(...args):transport(...args);
+  return createFixedProductionOperations(context,{n8nMigration:{n8n:{request:routed}}});
+ };
+ const result=await runProductionRelease({loadedInput:input,journal},{operations});
+ process.stdout.write(JSON.stringify(result)+'\n');if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
+}catch{process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_N8N_OPERATOR_REJECTED',releaseReady:false,reconciliationRequired:true})+'\n');process.exitCode=1;}
+finally{journal?.close();}
