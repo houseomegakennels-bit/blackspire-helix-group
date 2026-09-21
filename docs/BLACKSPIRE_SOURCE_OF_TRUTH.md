@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — missing API authentication profile preparation
+
+The required production API-only environment file is absent; bounded metadata inspection found the retained root-only operator password but no API profile backup. A new explicit root preparer preserves that password, verifies its derived scrypt hash, and provisions separate machine-bearer and session credentials only in a protected retained plan. It consumes the independently synchronized authority-consumer token from its fixed root-only source. The plan is durable before atomic absent-file publication with root ownership, private API group and mode 0640. Exact reruns retain the generated values; foreign files, changed sources and release mismatches are refused.
+
+The host adapter requires the clean exact release source, three stopped services, zero existing sessions through a read-only database handle, expected unit environment references, no API secrets in the shared environment, protected paths/ACLs and an exclusive lock. Final probes require API readability and worker denial. Four regression groups cover retained credentials, interrupted publication, source/service drift, foreign files and credential separation. Build, lint and syntax/typecheck pass. Actual host preparation and synchronized external credentials remain UNVERIFIED pending independent review; no production mutation occurred.
+
 ## 2026-09-21 — reviewed HELD publication integrated; remaining live configuration blockers
 
 Independent review approves authority rebind `67e4e28`, API preparation `b5f3178`, final health port `109c5f4`, and HELD binding/publication through `6856581`. Their integrated binding, migration, history, lifecycle and authority lane passes 28/28. The publication composition exercises real protected manifest/crypto reads, binding and commit files, authenticated loopback HTTP and shared flock; systemd/process observations remain modeled. Zola is not live.

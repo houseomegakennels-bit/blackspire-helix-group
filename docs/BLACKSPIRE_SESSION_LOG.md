@@ -2017,3 +2017,7 @@ Independent review reproduced a third-result append after successful reconciliat
 ## 2026-09-21 — worker receiver-origin transition implementation
 
 Added fixed exact-preview metadata verification, worker-only four-origin override, candidate durable substep and postmerge production/rollback hooks. Thirty focused tests pass using real protected files and mocked Vercel API observations; credential files remain byte-identical. Root preparation must supply reviewed exact candidate metadata before activation. No production mutation or push; independent review and integrated validation pending.
+
+## 2026-09-21 — protected missing API profile preparer
+
+Added a fixed-path root preparer for the absent API authentication environment. It preserves the retained operator password, durably retains distinct generated bearer/session material, consumes the separately synchronized consumer credential and publishes only an absent API-only profile. Four fault/regression groups and root build/lint/typecheck pass. Host execution remains UNVERIFIED; independent review precedes production use. No production mutation or push occurred.
