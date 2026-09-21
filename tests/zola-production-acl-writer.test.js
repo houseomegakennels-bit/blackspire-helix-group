@@ -80,7 +80,7 @@ test('fixed production composition uses installed opener and refuses legacy data
   protectedInputDigest:d('protected'),inputDigest:d('sequence')};
  const context={input,release:{releaseSha:a,activationConfigurationFile:'/fixed/activation.json'},
   journal:{stream:()=>({events:()=>[],append(){throw Error('unexpected journal write');}})}};
- const writerHost={groupId:12345,readAcceptanceSnapshot:()=>{throw Object.assign(new Error('disposable target absent'),{code:'ENOENT'});},
+ const writerHost={resolveAcceptanceBackend:async()=>{throw Error('isolated fixture has no installed backend');},groupId:12345,readAcceptanceSnapshot:()=>{throw Object.assign(new Error('disposable target absent'),{code:'ENOENT'});},
   openDatabase:async()=>{opened++;throw Error('legacy transport reached');}};
  const operation=createFixedProductionOperations(context,{writerHost}).bounded_writer_e2e;
  const call={...attempt,input};

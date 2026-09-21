@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {readRootOwnedJsonSnapshot} from './protected-json.js';
+import {readRootOwnedJsonSnapshot,readRootOwnedMetadataSnapshot} from './protected-json.js';
 import {prepareOwnedBuyerMigrationExecution,executeOwnedBuyerMigration,OWNED_BUYER_RELATIONS} from './owned-data-migration.js';
 import {prepareOwnedBuyerSchema} from './owned-schema.js';
 import {holdOwnedBuyerSourceSnapshot,inspectOwnedBuyerDataSnapshot,transferOwnedBuyerRelation} from './owned-data-copy-postgres.js';
@@ -19,8 +19,9 @@ const sourceStructureDigest=digest(sourceStructure(baseline));
 const targetStructure=catalog=>catalog.relations;
 const targetStructureDigest=digest(targetStructure(baseline));
 export const OWNED_COPY_RECEIPT_SQL=`SELECT receipt FROM owned_buyer_migration.copy_receipts WHERE operation_id=$1`;
-function rootRecord(filename){
- const value=readRootOwnedJsonSnapshot(filename,{groupId:0,maxBytes:4*1024*1024});
+export function readOwnedMigrationRootRecord(filename){
+ const credential=['/etc/blackspire-buyer-writer-gateway/management.json','/etc/blackspire/owned-postgres/management.json'].includes(filename);
+ const value=credential?readRootOwnedJsonSnapshot(filename,{groupId:0,maxBytes:65536}):readRootOwnedMetadataSnapshot(filename,{groupId:0});
  if(value.identity.uid!==0||value.identity.gid!==0||(value.identity.mode&0o7777)!==0o600)reject();return value.value;
 }
 function directory(filename){
@@ -36,7 +37,7 @@ function publish(filename,value){
  }finally{if(fd!==undefined)fs.closeSync(fd);}
  const parent=fs.openSync(path.dirname(filename),fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(parent);}finally{fs.closeSync(parent);}
 }
-function retained(filename){try{fs.lstatSync(filename);}catch(error){if(error.code==='ENOENT')return null;throw error;}return rootRecord(filename);}
+function retained(filename){try{fs.lstatSync(filename);}catch(error){if(error.code==='ENOENT')return null;throw error;}return readOwnedMigrationRootRecord(filename);}
 export function verifyOwnedBuyerMigrationQuiescence({run=spawnSync,io=fs}={}){
  const units=['blackspire-command.service','blackspire-command-worker.service','blackspire-buyer-writer-gateway.service','blackspire-buyer-store.service'];
  for(const unit of units){
@@ -90,7 +91,7 @@ async function runOwnedBuyerMigrationLocked({releaseSha,operationId,mode},deps={
  if(!/^[a-f0-9]{40}$/.test(releaseSha??'')||!uuid(operationId)||!['apply','reconcile'].includes(mode)||(deps.uid??process.getuid)()!==0)reject();
  const db=deps.database??await import('./database-profile.js');
  const security=deps.security??await import('./owned-source-security.js');
- const read=deps.read??rootRecord,put=deps.publish??publish,get=deps.retained??retained,makeDir=deps.directory??directory;
+ const read=deps.read??readOwnedMigrationRootRecord,put=deps.publish??publish,get=deps.retained??retained,makeDir=deps.directory??directory;
  const stopped=deps.stopped??verifyOwnedBuyerMigrationQuiescence,connect=(config)=>(deps.connect??connectDefault)(config,db.databaseTlsOptions(config));
  const verifySource=deps.verifySource??(await import('../zola-release/commander-host.js')).verifyReleaseSource;
  verifySource(releaseSha);stopped();

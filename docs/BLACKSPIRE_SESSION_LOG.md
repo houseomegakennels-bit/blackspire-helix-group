@@ -2177,3 +2177,6 @@ Corrected the API unit identity, added strict four-service quiescence and absent
 ## 2026-09-21 — verify owned Buyer HTTP to native database composition
 
 Added a disposable actual HTTP/Unix IPC/PostgreSQL/SQLite-authority composition. Owner isolation, signed Deal callback, HELD refusal/permission, tamper/replay/revocation denial and disconnect drain pass. External records and host identity are modeled; production deployment remains unverified. No production credentials, data or mutations.
+## 2026-09-21 — owned acceptance target and loader integration
+
+Added separate owned target preparation with original Auth owner lock, descriptor-bound target transaction and exact retry. Fixed backend selection in gateway and admitted writer callers. Actual dual-cluster rehearsal and 64 focused loader/admission groups pass; metadata reader regression also passes. Production execution and combined installation-order rehearsal remain pending.

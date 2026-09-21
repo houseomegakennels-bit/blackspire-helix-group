@@ -1,3 +1,4 @@
+import {acceptanceTargetSelection,matchesAcceptanceTargetBackend,verifyAcceptanceTargetProfile} from './acceptance-target-backend.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
@@ -18,7 +19,6 @@ const AUDIENCE='buyer-writer';
 const KEY_ROOT='/etc/blackspire';
 const PREPARATION_ROOT='/var/lib/blackspire-operator/preparation';
 const CURRENT_GATEWAY='/etc/blackspire-buyer-writer-gateway/gateway.json';
-const ACCEPTANCE_TARGET='/var/lib/blackspire-operator/writer-acceptance.json';
 const RELEASE_ROOT='/opt/blackspire-command/releases';
 const INTENT_VERSION=3;
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -39,10 +39,11 @@ function artifact(value,releaseSha){
     &&value.status==='SEALED_ARTIFACT_VERIFIED'&&value.deployed===false
     &&value.productionAccepted===false;
 }
-function acceptanceTarget(value,releaseSha){
+function acceptanceTarget(value,releaseSha,connection){
+  const selection=acceptanceTargetSelection(connection);
   if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability',
-    'jobId','ownerId','criteria','updatedAt'])||value.schema!==1
-    ||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==releaseSha
+    'jobId','ownerId','criteria','updatedAt',...(selection.backendProfile?['backendProfile','profileDigest']:[])])||value.schema!==1
+    ||!matchesAcceptanceTargetBackend(value,selection)||value.releaseSha!==releaseSha
     ||value.workspace!==WORKSPACE||value.capability!=='buyer.writer.acceptance'
     ||typeof value.principal!=='string'||!/^[a-z][a-z0-9-]{2,63}$/.test(value.principal)
     ||!UUID.test(value.jobId??'')||!UUID.test(value.ownerId??''))fail();
@@ -241,7 +242,7 @@ function validateInput(input){
   const source=validateBuyerWriterConfiguration(input.sourceConfiguration,
     {workspace:WORKSPACE,environment:'production'});
   const current=validateBuyerWriterGatewayServiceConfiguration(input.currentGatewayConfiguration);
-  const target=acceptanceTarget(input.acceptanceTarget,input.releaseSha);
+  const target=acceptanceTarget(input.acceptanceTarget,input.releaseSha,source.runtime);
   if(current.version!==2||source.units||source.rehearsalFile
     ||source.workspace!==current.workspace||source.creatorOid!==current.creatorOid
     ||!same(source.runtime,current.runtime)||!same(source.issuer,current.issuer)
@@ -490,9 +491,10 @@ async function loadPreparationState(input,{io=fs,aclTool=spawnSync,
     ||!Number.isInteger(identity.writerGroupId)||identity.writerGroupId<=0)fail();
   const source=readSnapshot(input.sourceConfigurationFile,{groupId:0,maxBytes:65536,io,aclTool});
   const current=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,maxBytes:65536,io,aclTool});
-  const acceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+  const selection=await verifyAcceptanceTargetProfile(source.value.runtime);
+  const acceptance=readSnapshot(selection.file,{groupId:identity.credentialGroupId,
     maxBytes:32768,io,aclTool});
-  acceptanceTarget(acceptance.value,input.releaseSha);
+  acceptanceTarget(acceptance.value,input.releaseSha,source.value.runtime);
   const artifactProof=await inspectArtifact({artifactRoot:input.artifactRoot,
     releaseSha:input.releaseSha,environment:'production'});
   const intentPath=buyerWriterGatewayV4IntentPath(input.candidatePath);
@@ -665,9 +667,10 @@ async function prepareHigh(input,{
       io,aclTool});
     const current=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,
       maxBytes:65536,io,aclTool});
-    const acceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+    const selection=await verifyAcceptanceTargetProfile(source.value.runtime);
+  const acceptance=readSnapshot(selection.file,{groupId:identity.credentialGroupId,
       maxBytes:32768,io,aclTool});
-    acceptanceTarget(acceptance.value,input.releaseSha);
+    acceptanceTarget(acceptance.value,input.releaseSha,source.value.runtime);
     const observed=await inspectArtifact({artifactRoot:input.artifactRoot,
       releaseSha:input.releaseSha,environment:'production'});
     const builtInput={releaseSha:input.releaseSha,operationId:input.operationId,
@@ -692,9 +695,11 @@ async function prepareHigh(input,{
       maxBytes:65536,io,aclTool});
     const freshCurrent=readSnapshot(CURRENT_GATEWAY,{groupId:identity.writerGroupId,
       maxBytes:65536,io,aclTool});
-    const freshAcceptance=readSnapshot(ACCEPTANCE_TARGET,{groupId:identity.credentialGroupId,
+    const freshSelection=await verifyAcceptanceTargetProfile(freshSource.value.runtime);
+    if(!same(selection,freshSelection))fail();
+    const freshAcceptance=readSnapshot(freshSelection.file,{groupId:identity.credentialGroupId,
       maxBytes:32768,io,aclTool});
-    acceptanceTarget(freshAcceptance.value,input.releaseSha);
+    acceptanceTarget(freshAcceptance.value,input.releaseSha,freshSource.value.runtime);
     const freshArtifact=await inspectArtifact({artifactRoot:input.artifactRoot,
       releaseSha:input.releaseSha,environment:'production'});
     if(!snapshotSame(source,freshSource)||!snapshotSame(current,freshCurrent)
@@ -774,7 +779,7 @@ function verifyPublished(io,aclTool,prepared,identity,readSnapshot,target){
   const validated=validateBuyerWriterGatewayProvisioningConfiguration(
     candidate.value,{workspace:WORKSPACE});
   const permit=JSON.parse(validated.operationPermitConfiguration);
-  if(permit.subject!==acceptanceTarget(target,prepared.releaseSha).ownerId)fail();
+  if(permit.subject!==acceptanceTarget(target,prepared.releaseSha,validated.runtime).ownerId)fail();
   const candidateBytes=Buffer.from(JSON.stringify(candidate.value)+'\n');
   if(digest(candidateBytes)!==prepared.candidateDigest)fail();
   let fd;

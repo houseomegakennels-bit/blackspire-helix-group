@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyOwnedBuyerMigrationQuiescence,runOwnedBuyerMigration} from '../packages/buyer-writer/owned-migration-host.js';
+import {verifyOwnedBuyerMigrationQuiescence,runOwnedBuyerMigration,readOwnedMigrationRootRecord} from '../packages/buyer-writer/owned-migration-host.js';
 const state=(load='loaded',active='inactive',sub='dead',pid='0')=>({status:0,stderr:'',stdout:`LoadState=${load}\nActiveState=${active}\nSubState=${sub}\nMainPID=${pid}\n`});
 test('checks actual API unit and refuses unknown, active and incomplete unit states',()=>{
  const seen=[];verifyOwnedBuyerMigrationQuiescence({run:(_,args)=>{seen.push(args[1]);return state();}});
@@ -23,4 +25,11 @@ test('global release exclusion precedes native work and closes on rejection',asy
  assert.equal(closed,1);
  await assert.rejects(runOwnedBuyerMigration({}, {openReleaseGuard:()=>{throw new Error('busy');},uid:()=>{entered++;return 0;}}));
  assert.equal(entered,0);
+});
+
+test('native retained metadata reader accepts protected manifests above credential limit', {skip:process.getuid?.()!==0},t=>{
+ const root=fs.mkdtempSync(path.join('/root','owned-migration-metadata-'));fs.chmodSync(root,0o700);t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const file=path.join(root,'manifest.json'),value={metadata:'x'.repeat(70000)};fs.writeFileSync(file,JSON.stringify(value),{mode:0o600});
+ assert.deepEqual(readOwnedMigrationRootRecord(file),value);
+ fs.chmodSync(file,0o644);assert.throws(()=>readOwnedMigrationRootRecord(file));
 });

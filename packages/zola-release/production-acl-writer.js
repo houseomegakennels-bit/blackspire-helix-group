@@ -1,3 +1,4 @@
+import {matchesAcceptanceTargetBackend,verifyAcceptanceTargetProfile} from '../buyer-writer/acceptance-target-backend.js';
 import {createHash} from 'node:crypto';
 import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential,databaseTlsOptions} from '../buyer-writer/database-profile.js';
 import {OWNED_DATABASE_ACL_SQL,ownedDatabaseAclParameters,verifyOwnedDatabaseAclResult} from '../buyer-writer/owned-database-evidence.js';
@@ -228,10 +229,16 @@ function acceptanceInspection(bound,state){
  return Object.freeze({schema:1,kind:'zola_bounded_writer_acceptance',...bound,capability:WRITER_CAPABILITY,mutationId:mutationUuid(bound),state,
   businessRowsChanged:0,paidProviderCalls:0,receiptDigest:null,compensationComplete:false,outcomeUnknown:false});
 }
-function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot){
+export async function readFixedWriterAcceptanceBackend(){
+ const groupId=writerGroupId(),snapshot=readRootOwnedJsonSnapshot(BUYER_WRITER_GATEWAY_CONFIG,{groupId,maxBytes:65536});
+ if(snapshot.identity.uid!==0||snapshot.identity.gid!==groupId||(snapshot.identity.mode&0o7777)!==0o640)reject();
+ const config=validateBuyerWriterGatewayServiceConfiguration(snapshot.value);
+ return verifyAcceptanceTargetProfile(config.runtime);
+}
+function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJsonSnapshot,selection={file:WRITER_ACCEPTANCE_TARGET_FILE,kind:'zola_bounded_writer_acceptance_target'}){
  const snapshot=readSnapshot(file,{groupId,maxBytes:32768}),value=snapshot.value;
- if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt'])
-  ||value.schema!==1||value.kind!=='zola_bounded_writer_acceptance_target'||value.releaseSha!==bound.releaseSha
+ if(!exact(value,['schema','kind','releaseSha','workspace','principal','capability','jobId','ownerId','criteria','updatedAt',...(selection.backendProfile?['backendProfile','profileDigest']:[])])
+  ||value.schema!==1||!matchesAcceptanceTargetBackend(value,selection)||value.releaseSha!==bound.releaseSha
   ||value.workspace!==WRITER_WORKSPACE||value.principal!==bound.principal||value.capability!==WRITER_CAPABILITY
   ||!uuid(value.jobId)||!uuid(value.ownerId))reject();
  let captured;
@@ -239,19 +246,22 @@ function fixedAcceptanceTarget(file,bound,groupId,readSnapshot=readRootOwnedJson
  return{snapshot,target:Object.freeze({jobId:value.jobId,ownerId:value.ownerId,criteria:captured.criteria,updatedAt:captured.updatedAt})};
 }
 async function withFixedWriter(bound,work,{groupId,readAcceptanceSnapshot=readRootOwnedJsonSnapshot,
- acceptanceFile=WRITER_ACCEPTANCE_TARGET_FILE,openAdmittedClient}={}){
+ acceptanceFile,openAdmittedClient,resolveAcceptanceBackend}={}){
  let database;
  try{
-  if(typeof acceptanceFile!=='string'||acceptanceFile!==WRITER_ACCEPTANCE_TARGET_FILE||typeof work!=='function'
+  const selection=resolveAcceptanceBackend?await resolveAcceptanceBackend(bound):{file:WRITER_ACCEPTANCE_TARGET_FILE,kind:'zola_bounded_writer_acceptance_target'};
+  acceptanceFile??=selection.file;
+  if(acceptanceFile!==selection.file||![WRITER_ACCEPTANCE_TARGET_FILE,'/var/lib/blackspire-operator/owned-writer-acceptance.json'].includes(acceptanceFile)||typeof work!=='function'
    ||typeof openAdmittedClient!=='function')reject();
-  const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  const gid=groupId??apiGroupId(),acceptance=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot,selection);
   // The release journal is scoped to zola-production; the installed gateway,
   // protected acceptance job and database permits use the fixed writer tenant.
   // Preserve all release/attempt/principal bindings while selecting that tenant.
   database=await openAdmittedClient(Object.freeze({...bound,workspace:WRITER_WORKSPACE}));
   if(database?.isHealthy?.()!==true||typeof database.runtimeQuery!=='function'||typeof database.issuerQuery!=='function'||typeof database.close!=='function')reject();
   const result=await work(database,acceptance.target);
-  const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot);
+  if(resolveAcceptanceBackend&&JSON.stringify(await resolveAcceptanceBackend(bound))!==JSON.stringify(selection))reject();
+  const acceptanceAfter=fixedAcceptanceTarget(acceptanceFile,bound,gid,readAcceptanceSnapshot,selection);
   if(JSON.stringify(acceptance.snapshot)!==JSON.stringify(acceptanceAfter.snapshot)||database.isHealthy()!==true)reject();
   return result;
  }finally{try{await database?.close();}catch{}}
