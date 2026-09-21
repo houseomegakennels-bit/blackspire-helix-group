@@ -1,5 +1,5 @@
-import {verifyOwnedBuyerMigrationQuiescence} from '../packages/buyer-writer/owned-migration-host.js';
 #!/usr/bin/env node
+import {verifyOwnedBuyerMigrationQuiescence} from '../packages/buyer-writer/owned-migration-host.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
