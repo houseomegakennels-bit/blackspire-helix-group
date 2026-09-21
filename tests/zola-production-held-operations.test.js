@@ -142,3 +142,17 @@ test('postmerge writer publication binds the current HELD lifecycle before accep
  assert.equal(result.status,'PASS');assert.deepEqual(calls,['lifecycle','binding','lifecycle','binding']);
  bad=true;await assert.rejects(()=>operation.reconcile(call),/rejected/);
 });
+
+test('owned premerge collector requires its distinct version and immutable database profile',()=>{
+ const profileDigest='8'.repeat(64),context={input,release:{backendProfile:'owned-postgres-v1',profileDigest},journal:{stream:()=>({events:()=>[]})}};
+ const state={context:{operationId,releaseSha:candidate,workspace:input.workspace,principal:input.principal},outputs:{admission_lease:{epochRunId}},pending:null};
+ const call={input,state,ordinal:13};
+ let config={version:6,releaseSha:candidate,runId:epochRunId,workspace:'blackspire-command',principal:'blackspire-operator',backendProfile:'owned-postgres-v1',profileDigest};
+ const operations=createHeldProductionOperations(context,{premergeConfig:()=>config});
+ assert.equal(operations.six_reads.check(call).status,'PASS');
+ for(const mutation of [{version:4},{profileDigest:'9'.repeat(64)},{backendProfile:undefined},{runId:operationId}]){
+  const original=config;config={...original,...mutation};assert.equal(operations.six_reads.check(call).status,'BLOCKED_EXTERNAL');config=original;
+ }
+ const legacy=createHeldProductionOperations({...context,release:{}},{premergeConfig:()=>config});
+ assert.equal(legacy.six_reads.check(call).status,'BLOCKED_EXTERNAL');
+});

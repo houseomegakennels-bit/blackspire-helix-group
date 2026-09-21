@@ -54,6 +54,7 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
     },
   };
   const dependencies = {
+    ownedBuyerStoreEnabled: () => false,
     getEnvState: () => ({ enabled }),
     getSupabaseAdmin: () => { if (!enabled) throw new Error('synthetic missing configuration'); return supabase; },
     normalizeCountyName: (value) => value.toLowerCase(),
@@ -159,6 +160,7 @@ function reportFixture(operatorId = 'operator-a', queryError = null) {
   ];
   let reads = 0;
   const dependencies = {
+    ownedBuyerStoreEnabled: () => false,
     getEnvState: () => ({ enabled: true }),
     getAuthenticatedOperator: async () => operatorId ? { id: operatorId } : null,
     getSupabaseAdmin: () => ({ from() {
@@ -229,7 +231,7 @@ test('Buyer internal endpoint is server-only, authorized, bounded, and read-only
   assert.doesNotMatch(routeSource, /primary_phone|primary_email|mailing_address_snapshot/);
   assert.match(routeSource, /\.from\("deal_leads"\)[\s\S]*\.eq\("id", opportunityId\.toUpperCase\(\)\)[\s\S]*\.limit\(1\)/);
   assert.match(routeSource, /matchBuyersForProperty/);
-  assert.match(routeSource, /matchBuyersForProperty\([^\n]*\{ readOnly: true, readClient: scope\.client \}\)/);
+  assert.match(routeSource, /matchBuyersForProperty\([^\n]*\{ readOnly: true, readClient: scope\.client, \.\.\.\(authority\.buyerData\?\{ownedProfiles:/);
 });
 
 test('Deal analysis capability uses its dedicated persisted underwriting read path', () => {

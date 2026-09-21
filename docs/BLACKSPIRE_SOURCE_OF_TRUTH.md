@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — integrated owned lifecycle and regression repair
+
+Candidate HELD startup now passes the explicit owned backend/profile into its distinct deployment plan, publishes the repository manifest only after real API and worker generations are observed, and then starts the isolated store. The owned collectors require their distinct versions 6 and 7 with the same profile; legacy evidence cannot substitute. Reviewed owned documentation and isolated provider-denial fixtures are listed individually in the existing source audit. Legacy VM fixtures explicitly disable the new owned adapter.
+
+The first contained integration run completed 2,359 tests: 2,222 passed, 21 failed and 116 intentionally skipped, with output drained and no surviving descendants. The failures were traced to stale fixture dependencies, exact source-audit entries, a root-only fixture and missing legacy context handling. Focused repaired lanes pass, including 19 collector tests, 31 source/legacy/candidate tests and 36 integrated lifecycle/retirement/acceptance tests. A new full exact-source pass is still required. Root independently reviewed namespace inventory and retirement hardening; the pre-adapter successor profile guard remains a required integration dependency. No production migration, retirement, startup or deployment occurred.
+
 ## 2026-09-21 — actual owned Buyer HTTP, IPC and SQL composition
 
 A disposable PostgreSQL 17.6 composition now exercises the actual API route, authenticated Unix IPC, owner-scoped SQL/RLS and real SQLite receiver-authority consumption. Owner job creation and foreign-owner read denial pass; invalid user authority and an incorrect IPC MAC produce no repository SQL. The consumed matches callback uses the signed Deal context HTTP contract before native profile reads. Protected HELD reads pass while ordinary writes remain refused; changed request bodies, signed-response tampering, replay and post-read grant revocation refuse. A disconnected HTTP caller cannot release the daemon admission flock until native connection drain completes.

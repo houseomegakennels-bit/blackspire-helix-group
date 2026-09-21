@@ -37,6 +37,10 @@ export const PG_NET_SOURCE_ALLOWLIST=Object.freeze([
  'scripts/test-buyer-migration-executor-postgres.mjs',
  'scripts/test-buyer-migration-executor-session.mjs',
  'scripts/test-buyer-writer-acl.mjs',
+ // Reviewed owned-cluster documentation and isolated provider-denial fixtures.
+ 'packages/buyer-writer/OWNED_POSTGRES.md',
+ 'scripts/test-owned-source-security-postgres.mjs',
+ 'tests/buyer-writer-owned-database-evidence.test.js',
  'scripts/test-buyer-writer-postgres.mjs',
  'docs/BLACKSPIRE_ACTIVE_CONTEXT.md',
  'docs/BLACKSPIRE_DECISIONS.md',

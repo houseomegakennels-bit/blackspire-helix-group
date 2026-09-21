@@ -2196,3 +2196,7 @@ Implemented explicit terminal retirement with preserved historical mutation evid
 ### 2026-09-21 — Retirement independent review repairs
 
 Retirement now reuses the strict owned migration host quiescence observer (required loaded/inactive/dead services; absent optional store requires process-identity scan). Protected retirement proof creation validates ancestor ownership and ACLs, fsyncs the parent directory, and revalidates/fsyncs the exact retained inode on retry before journal append. A successor selector guard requires the terminal event’s exact owned backend and profile digest; activation history independently cross-checks this binding. Seven focused tests pass, including real disposable protected-file durability and wrong-profile/legacy refusal. No production retirement or other production mutation was executed.
+
+## 2026-09-21 — owned HELD wiring and integrated regression repairs
+
+Connected explicit owned candidate startup and versioned collectors. Integrated reviewed lifecycle/namespace/retirement changes and repaired legacy fixtures and exact source-audit entries. Initial full contained run had 21 failures; repaired focused lanes pass, including 36 combined lifecycle/acceptance tests. Complete updated-source CI and actual production acceptance remain pending. No production mutation.
