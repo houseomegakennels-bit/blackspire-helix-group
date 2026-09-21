@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — integration validation and deployment access restored
+
+The contained suite at 86166e3 completed all 264 intended files: 2,395 tests, 2,261 passed, 134 intentional skips and zero failures. Output drained and no descendants survived. The frontend at 3784839 passed its owned-mode production build, standalone TypeScript and 25 focused contracts without production credentials. Later preparation changes still require a final integrated exact-source gate.
+
+API writer readiness now awaits an independent repository health check while excluding only its own writer verdict. Startup derives the owned backend/profile from the protected validated repository client and passes it to the writer runtime. Nine focused API tests and build/lint/syntax gates pass. The matching asynchronous writer availability consumer is being integrated separately.
+
+Existing Vercel CLI refresh authorization restored exact project/team access. A reviewed digest-bound protected-token replacement succeeded with the old credential retained and durable intent/result; no credential was disclosed. The public verifier input was prepared in a root-only file. A read-only original Auth check confirms that the canonical acceptance owner matches the frontend's unique earliest-user admin fallback. Production database migration, retirement, service startup, application deployment and public availability remain UNVERIFIED and have not occurred in this milestone.
+
 ## 2026-09-21 — imported export owner policy remains executable
 
 The isolated repository user now receives EXECUTE on the fixed invoker auth.uid function required by the imported exports owner policy. The grant is limited to buyer_repository_user; PUBLIC and the capability reader gain nothing, and no legacy role membership is introduced. Actual disposable PostgreSQL verifies own export reads, foreign-row denial and absent capability execution privilege with PUBLIC execution revoked. Existing repository ownership, budgets and role checks also pass. No production changes occurred.

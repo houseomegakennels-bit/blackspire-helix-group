@@ -791,7 +791,7 @@ export function healthSnapshot({ includeBuyerWriter = true } = {}) {
   };
 }
 
-export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includeBuyerWriter = true, buyerWriterAvailable = false,buyerStoreAvailable=false } = {}) {
+export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includeBuyerWriter = true, includeBuyerStore = true, buyerWriterAvailable = false,buyerStoreAvailable=false } = {}) {
   let database = 'compatible';
   try { schemaCheck(); } catch { database = 'unavailable_or_incompatible'; }
   let worker = { required: false, ok: false, state: 'unknown', heartbeatAgeMs: null, activeTask: false, restartDetected: false };
@@ -809,7 +809,7 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includ
     worker: worker.ok,
     scheduler: scheduler.ok,
     deploymentIdentity: validateDeploymentIdentityForStartup(deploymentIdentityProvider.get()).ok,
-    ...(includeBuyerWriter && activeBuyerStore ? {buyerStore:buyerStoreAvailable===true}:{}),
+    ...(includeBuyerStore && activeBuyerStore ? {buyerStore:buyerStoreAvailable===true}:{}),
     ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth()?.ok === true && buyerWriterAvailable === true && healthSnapshot({ includeBuyerWriter: false }).emergencyStop === false } : {}),
   };
   return {
@@ -823,6 +823,16 @@ export function readinessSnapshot({ schemaCheck = assertSchemaCompatible, includ
     dependencies: { worker, scheduler, ...(includeBuyerWriter && activeBuyerWriter ? { buyerWriter: buyerWriterHealth() } : {}) },
     deploymentIdentity: serializeDeploymentIdentity(deploymentIdentityProvider.get()),
   };
+}
+
+// Writer availability excludes its own verdict, but retains a fresh independent
+// store observation. The captured component cannot attest a replacement runtime.
+export async function buyerWriterBaseReadinessSnapshot() {
+  const store = activeBuyerStore;
+  let available = false;
+  try { available = store ? await store.checkAvailability() === true : false; } catch {}
+  return readinessSnapshot({ includeBuyerWriter: false,
+    buyerStoreAvailable: store === activeBuyerStore && available });
 }
 
 export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
@@ -858,6 +868,7 @@ export function beginGracefulShutdown(server, { deadlineMs = 10_000 } = {}) {
 
 if (IS_ENTRY_POINT) {
   let shutdownRequested = false;
+  let startupBuyerStore = null;
   const lifecycle = createBuyerWriterApiLifecycle({
     initialize: async () => {
       if (!process.env.BUYER_WRITER_MODE) return null;
@@ -872,7 +883,12 @@ if (IS_ENTRY_POINT) {
         throw new Error('Buyer writer runtime unavailable');
       }
       assertSchemaCompatible();
+      if(process.env.BUYER_STORE_MODE){
+        if(process.env.BUYER_STORE_MODE!=='owned-postgres-v1')throw new Error('Buyer store API unavailable');
+        startupBuyerStore=loadBuyerStoreApiClient({releaseSha:identity.build.value});
+      }
       return createBuyerWriterRuntime({
+        ...(startupBuyerStore?{backendProfile:startupBuyerStore.backendProfile,profileDigest:startupBuyerStore.profileDigest}:{}),
         clientConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG,
         ingressConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG,
         signerConfigurationFile: process.env.BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG,
@@ -890,14 +906,14 @@ if (IS_ENTRY_POINT) {
           port: resolveBindTarget().port,
         },
         getHealth: () => healthSnapshot({ includeBuyerWriter: false }),
-        getReadiness: () => readinessSnapshot({ includeBuyerWriter: false }),
+        getReadiness: buyerWriterBaseReadinessSnapshot,
       });
     },
     listen: (buyerWriter) => {
       let buyerStore=null;
       if(process.env.BUYER_STORE_MODE){
         if(process.env.BUYER_STORE_MODE!=='owned-postgres-v1'||process.env.NODE_ENV!=='production'||TEST_MODE.enabled)throw new Error('Buyer store API unavailable');
-        buyerStore=loadBuyerStoreApiClient({releaseSha:deploymentIdentityProvider.get().build.value});
+        buyerStore=startupBuyerStore??loadBuyerStoreApiClient({releaseSha:deploymentIdentityProvider.get().build.value});
       }
       const server = start(undefined, undefined, { buyerWriter,buyerStore });
       server.once('error', () => { process.exitCode = 1; void shutdown(); });
