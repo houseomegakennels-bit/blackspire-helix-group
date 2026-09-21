@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       .select("id,access_days,expires_at,claimed_at")
       .eq("token_hash", hashToken(token))
       .maybeSingle();
-    if (inviteError || !invite || invite.claimed_at || Date.parse(invite.expires_at) <= Date.now()) {
+    if (inviteError || !invite || invite.claimed_at || !Number.isFinite(Date.parse(invite.expires_at)) || Date.parse(invite.expires_at) <= Date.now()) {
       return NextResponse.json({ ok: false, error: "This invitation is invalid, expired, or has already been used." }, { status: 410 });
     }
 
@@ -47,9 +47,10 @@ export async function POST(request: NextRequest) {
     const { data: created, error: createError } = await admin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: { full_name: fullName || null, access_source: "private_demo_invite" },
-      app_metadata: { blackspire_role: "demo_viewer", demo_expires_at: demoExpiresAt },
+      // No demo authority exists until the one-time invitation is claimed.
+      app_metadata: { blackspire_role: "client_only" },
     });
     if (createError || !created.user) {
       const existing = createError?.message.toLowerCase().includes("already");
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       .update({ claimed_at: claimedAt, claimed_by: created.user.id })
       .eq("id", invite.id)
       .is("claimed_at", null)
+      .gt("expires_at", claimedAt)
       .select("id")
       .maybeSingle();
     if (claimError || !claimed) {
@@ -70,6 +72,17 @@ export async function POST(request: NextRequest) {
       createdUserId = null;
       return NextResponse.json({ ok: false, error: "This invitation was already used." }, { status: 409 });
     }
+
+    const { error: activationError } = await admin.auth.admin.updateUserById(created.user.id, {
+      email_confirm: true,
+      app_metadata: { blackspire_role: "demo_viewer", demo_expires_at: demoExpiresAt },
+    });
+    if (activationError) {
+      throw new Error("Demo access could not be activated.");
+    }
+    // A successful claim and promotion are durable; sign-in failure must not
+    // delete the valid account or orphan its consumed invitation.
+    createdUserId = null;
 
     const publicAuth = createPublicSupabaseAuthClient();
     const { data: signedIn, error: signInError } = await publicAuth.auth.signInWithPassword({ email, password });

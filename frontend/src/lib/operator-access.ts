@@ -32,7 +32,8 @@ async function resolveRole(): Promise<OperatorContext> {
   const expiresAt = typeof operator.app_metadata?.demo_expires_at === "string"
     ? operator.app_metadata.demo_expires_at
     : null;
-  const expired = explicitRole === "demo_viewer" && Boolean(expiresAt && Date.parse(expiresAt) <= Date.now());
+  const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
+  const expired = explicitRole === "demo_viewer" && (!Number.isFinite(expiry) || expiry <= Date.now());
   if (explicitRole) return { role: explicitRole, operatorId: operator.id, expiresAt, expired };
   const users = await listAuthUsers().catch(() => []);
   const isAdmin = users.length > 0 && users[0]?.id === operator.id;
