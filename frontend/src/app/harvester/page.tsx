@@ -5,10 +5,12 @@ import { DivisionWatermark } from "@/components/division-watermark";
 import { HarvesterIdentity } from "@/components/harvester-identity";
 import { MarketingShell } from "@/components/marketing-shell";
 import { getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function HarvesterPage() {
+  await requireWorkspacePage();
   const snapshot = await getHarvesterWorkspaceSnapshot();
   const style = {
     "--project-accent": "#d6a84f",

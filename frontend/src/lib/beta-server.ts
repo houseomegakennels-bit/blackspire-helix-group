@@ -3,7 +3,8 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { getAuthenticatedOperator, listAuthUsers } from "@/lib/buyer-engine-auth";
+import { listAuthUsers } from "@/lib/buyer-engine-auth";
+import { getOperatorContext } from "@/lib/operator-access";
 
 /**
  * Beta program server logic: activity logging, soft per-tester rate limits,
@@ -22,11 +23,10 @@ function admin(): SupabaseClient | null {
 const DAILY_LIMITS: Record<string, number> = { sweep: 25, export: 50 };
 
 async function resolveOperator() {
-  const operator = await getAuthenticatedOperator();
-  if (!operator?.id) return { operatorId: null as string | null, email: null as string | null, isAdmin: false };
+  const context = await getOperatorContext();
   const users = await listAuthUsers().catch(() => []);
-  const isAdmin = users.length > 0 && users[0]?.id === operator.id;
-  return { operatorId: operator.id, email: operator.email ?? null, isAdmin };
+  const operator = context.operatorId ? users.find((user) => user.id === context.operatorId) : null;
+  return { operatorId: context.operatorId, email: operator?.email ?? null, role: context.role, isAdmin: context.role === "admin" };
 }
 
 export async function logBetaActivity(userId: string | null, action: string, metadata: Record<string, unknown> = {}) {
@@ -48,9 +48,12 @@ type GateResult =
  * operator context to proceed.
  */
 export async function guardBetaAction(action: "sweep" | "export"): Promise<GateResult> {
-  const { operatorId, isAdmin } = await resolveOperator();
+  const { operatorId, isAdmin, role } = await resolveOperator();
   if (!operatorId) {
     return { response: NextResponse.json({ ok: false, error: "Please sign in to run this." }, { status: 401 }) };
+  }
+  if (role !== "admin" && role !== "beta_tester") {
+    return { response: NextResponse.json({ ok: false, error: "Beta workspace access is required." }, { status: 403 }) };
   }
   if (isAdmin) {
     await logBetaActivity(operatorId, action, {});

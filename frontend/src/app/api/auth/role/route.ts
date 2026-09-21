@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { getOperatorRole } from "@/lib/operator-access";
+import { getOperatorContext } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const role = await getOperatorRole();
-    return NextResponse.json({ ok: true, role });
+    const context = await getOperatorContext();
+    return NextResponse.json({ ok: true, role: context.role, expiresAt: context.expiresAt, expired: context.expired });
   } catch {
     return NextResponse.json({ ok: true, role: "anonymous" });
   }
