@@ -2170,3 +2170,6 @@ Moved complete database unit/TLS/container/network checks before service start a
 ## 2026-09-21 — refuse foreign stopped Buyer store rootfs contents
 
 Fixed the independently observed namespace inventory gap. Exact empty mount scaffolding and release symlink remain accepted; foreign content refuses before preparation. Three focused tests pass; no production effects.
+## 2026-09-21 — owned migration quiescence review repair
+
+Corrected the API unit identity, added strict four-service quiescence and absent-store process proof, and held the global release guard across native migration. Three focused regressions pass; acceptance fixtures also pass with the corrected guard. Production execution remains pending independent review.

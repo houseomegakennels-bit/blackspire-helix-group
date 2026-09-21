@@ -37,11 +37,28 @@ function publish(filename,value){
  const parent=fs.openSync(path.dirname(filename),fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(parent);}finally{fs.closeSync(parent);}
 }
 function retained(filename){try{fs.lstatSync(filename);}catch(error){if(error.code==='ENOENT')return null;throw error;}return rootRecord(filename);}
-function hostStopped(){
- for(const unit of ['blackspire-command-api.service','blackspire-command-worker.service','blackspire-buyer-writer-gateway.service']){
-  const r=spawnSync('/usr/bin/systemctl',['show',unit,'-p','ActiveState','-p','MainPID'],{encoding:'utf8',timeout:3000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
-  if(r.status!==0||r.stderr!==''||r.error||r.signal)reject();const fields=Object.fromEntries(r.stdout.trim().split('\n').map(v=>v.split('=')));
-  if(Object.keys(fields).length!==2||fields.ActiveState!=='inactive'||fields.MainPID!=='0')reject();
+export function verifyOwnedBuyerMigrationQuiescence({run=spawnSync,io=fs}={}){
+ const units=['blackspire-command.service','blackspire-command-worker.service','blackspire-buyer-writer-gateway.service','blackspire-buyer-store.service'];
+ for(const unit of units){
+  const r=run('/usr/bin/systemctl',['show',unit,'-p','LoadState','-p','ActiveState','-p','SubState','-p','MainPID'],{encoding:'utf8',timeout:3000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
+  if(r.status!==0||r.stderr!==''||r.error||r.signal)reject();
+  const lines=r.stdout.trim().split('\n'),fields=Object.fromEntries(lines.map(v=>v.split('=')));
+  if(lines.length!==4||Object.keys(fields).sort().join(',')!=='ActiveState,LoadState,MainPID,SubState'||fields.ActiveState!=='inactive'||fields.SubState!=='dead'||fields.MainPID!=='0')reject();
+  if(fields.LoadState==='loaded')continue;
+  if(unit!=='blackspire-buyer-store.service'||fields.LoadState!=='not-found')reject();
+  // An absent optional unit is safe only with a complete process-identity scan.
+  const passwd=run('/usr/bin/getent',['passwd','blackspire-buyer-store'],{encoding:'utf8',timeout:3000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
+  if(passwd.error||passwd.signal||passwd.stderr!==''||![0,2].includes(passwd.status))reject();
+  let uid=null;
+  if(passwd.status===0){const row=passwd.stdout.trim().split(':');if(row.length!==7||row[0]!=='blackspire-buyer-store'||!/^\d+$/.test(row[2]))reject();uid=row[2];}
+  else if(passwd.stdout!=='')reject();
+  for(const pid of io.readdirSync('/proc').filter(v=>/^\d+$/.test(v))){
+   let status,command;
+   try{status=io.readFileSync(`/proc/${pid}/status`,'utf8');command=io.readFileSync(`/proc/${pid}/cmdline`,'utf8');}
+   catch(error){if(error.code==='ENOENT')continue;reject();}
+   const ids=status.match(/^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$/m);if(!ids)reject();
+   if((uid!==null&&ids.slice(1).includes(uid))||command.includes('buyer-store'))reject();
+  }
  }
 }
 async function connectDefault(config,ssl){
@@ -64,12 +81,17 @@ function sourceProof(proof,{releaseSha,operationId,profileDigest}){
 
 // Production paths are fixed; test substitutes are explicit dependency injection.
 // No business process startup, credential creation or source grant mutation here.
-export async function runOwnedBuyerMigration({releaseSha,operationId,mode},deps={}){
+export async function runOwnedBuyerMigration(input,deps={}){
+ const open=deps.openReleaseGuard??(await import('../zola-release/commander-journal.js')).openReleaseJournal;
+ const guard=open();
+ try{return await runOwnedBuyerMigrationLocked(input,deps);}finally{guard.close();}
+}
+async function runOwnedBuyerMigrationLocked({releaseSha,operationId,mode},deps={}){
  if(!/^[a-f0-9]{40}$/.test(releaseSha??'')||!uuid(operationId)||!['apply','reconcile'].includes(mode)||(deps.uid??process.getuid)()!==0)reject();
  const db=deps.database??await import('./database-profile.js');
  const security=deps.security??await import('./owned-source-security.js');
  const read=deps.read??rootRecord,put=deps.publish??publish,get=deps.retained??retained,makeDir=deps.directory??directory;
- const stopped=deps.stopped??hostStopped,connect=(config)=>(deps.connect??connectDefault)(config,db.databaseTlsOptions(config));
+ const stopped=deps.stopped??verifyOwnedBuyerMigrationQuiescence,connect=(config)=>(deps.connect??connectDefault)(config,db.databaseTlsOptions(config));
  const verifySource=deps.verifySource??(await import('../zola-release/commander-host.js')).verifyReleaseSource;
  verifySource(releaseSha);stopped();
  const profile=db.readOwnedDatabaseProfile(),profileDigest=db.databaseProfileDigest(profile);
