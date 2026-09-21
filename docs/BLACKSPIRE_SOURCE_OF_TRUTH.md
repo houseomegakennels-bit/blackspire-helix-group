@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — reviewed-main memory reconciliation and integrated checks
+
+The recorded implementation anchor now identifies independently reviewed main `2775fd5043ad422418a4177f686671961e9a9738`, including the marketing, demo-access and operator-boundary delta from the prior anchor. This review found three invitation/expiry defects; the anchor is not a clean-main or production-acceptance certification. Their integrated repair `2304bca` was independently approved, runtime/test diff digest `dd5280de4c0be688a997daaa08bdf651259625bfba68ec9580442a76eb7daa3d`. Deployed main remains unfixed for those findings until that repair is published. The checker and its allowlist are unchanged.
+
+The contained suite for `b00754d` passes 2,193 total / 2,116 passed / 77 intended skips / zero failures, all 224 files complete, zero tree mutation and zero surviving descendants. The frontend Webpack build and TypeScript pass. After deterministic dependency installation, the integrated fixed recovery HTTP rehearsal passes with the required `2c0b600c268faa0571f08322e16d7f81f37789be` artifact digest; it explicitly does not establish production acceptance. Later runtime-identity, denial-principal and candidate-lifecycle changes require fresh integrated validation. A read-only provider catalog capture validates 17 fixed objects and creator OID 16388 without database mutation.
+
 ## 2026-09-21 — runtime acceptance identity separated from release coordinator
 
 The fixed production acceptance identity is now `blackspire-operator` in `blackspire-command`, distinct from the root release journal identity `blackspire-release-root` in `zola-production`. HELD minting, collector configuration checks, health/smoke, zero-effect proofs and rollback permit checks consistently enforce the runtime identity while preserving the exact enclosing release operation, attempts, epoch and generations. The collector's existing protected process bearer, active authorization, task ownership and receiver-proof validation remain unchanged. No new operator identity or grant is provisioned.
@@ -658,7 +664,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `726b54a89b0e871531a12d1421f58c3e47d256be`
+- Last verified implementation commit: `2775fd5043ad422418a4177f686671961e9a9738`
 
 ## 2026-09-04 — Activation recovery delta
 
