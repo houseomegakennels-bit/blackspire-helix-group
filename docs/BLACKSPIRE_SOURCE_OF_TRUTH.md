@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — owned Buyer API integration prepared
+
+The API now forwards bounded named Buyer operations to the authenticated local repository service and connects consumed Buyer read authority to isolated profile reads and signed, bounded frontend deal context. Protected credentials use the fixed private API supplementary group. Readiness probes the authenticated daemon; the public operation path remains subject to ordinary release admission. Fatal UTF-8 decoding preserves exact request bytes across HTTP chunks.
+
+The integrated API, authority and admission lane passes 24/24. Independent review identified missing daemon readiness, private-group loading, readiness grammar and backend mutation budgets; their fixes are integrated or tracked with their owning release adapters. Production service transitions, final composed acceptance and deployment remain UNVERIFIED. No production mutation occurred.
+
 ## 2026-09-21 — owned Buyer read callback boundary in development
 
 The approved separate-cluster implementation adds a dedicated asynchronous receiver-read lease for Buyer profile/match reads while preserving the synchronous legacy consumer contract. The new optional callback request must hash to the original issued authority before consumption. Consumed authority is revalidated before and after bounded reads against the current task, grant, worker, generation, expiry and started attempt; responses after revocation are refused. The asynchronous scope retains the shared release lease and tombstones its context on settlement, without granting ordinary task or writer admission.

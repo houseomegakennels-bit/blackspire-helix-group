@@ -2143,3 +2143,7 @@ The executor requires a durable dedicated intent before SQL, records its exact b
 ## 2026-09-21 — backend beta mutation enforcement
 
 Added owner-serialized rolling creation budgets and verified-role enforcement, preserved exact-ID reconciliation, and aligned minimum-purchase bounds. Nine focused groups and actual concurrent PostgreSQL quota tests pass, as do root gates. No production mutation.
+
+## 2026-09-21 — owned Buyer API integration
+
+Connected the API to isolated user and consumed-capability read clients, fixed private supplementary-group credential reads, and bounded signed frontend deal lookups. Integrated API/authority/admission tests pass 24/24. Production deployment and complete service lifecycle remain pending; no production mutation.
