@@ -23,7 +23,7 @@ import {FINAL_RELEASE_RECORD_ROOT,inspectFinalReleaseRecord,writeAcceptedHeldRel
 import {RELEASE_ADMISSION_ROOT} from '../shared/release-admission.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {readCases,requireProductionCollectorReport,validateCollectorConfig} from '../zola-six-reads/collector.js';
-import {inspectSealedBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
+import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js';
 import {activateBuyerWriterBeforeHeld} from './buyer-writer-activation.js';
 
 export const FIXED_PREMERGE_SIX_READ_CONFIGURATION='/var/lib/blackspire-operator/preparation/six-read-premerge-config.json';
@@ -77,7 +77,7 @@ async function collectFixed(config){
  const configPath=premerge?FIXED_PREMERGE_SIX_READ_CONFIGURATION:FIXED_LIVE_SIX_READ_CONFIGURATION;
  if(hash(protectedConfig(configPath))!==hash(config))reject();
  const artifactRoot=`/opt/blackspire-command/releases/${config.releaseSha}`;
- await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:config.releaseSha,environment:'production'});
+ await inspectBuyerWriterArtifact({artifactRoot,releaseSha:config.releaseSha,environment:'production'});
  const bytes=execFileSync('/opt/nodejs/node-v22.23.1-linux-x64/bin/node',[`${artifactRoot}/scripts/zola-six-read-collect.js`,premerge?'--premerge-held':'--production',configPath],
   {cwd:artifactRoot,encoding:'utf8',timeout:180000,maxBuffer:1024*1024,env:{PATH:'/usr/bin:/bin',LC_ALL:'C'},stdio:['ignore','pipe','pipe']});
  if(hash(protectedConfig(configPath))!==hash(config))reject();

@@ -2325,3 +2325,7 @@ Implemented separate configuration/unit activation receipts under the exact pend
 ## 2026-09-21 — successor activation integration
 
 Integrated independently reviewed final-input recovery, shared artifact-phase classifier, activation coordinator and retained candidate store handoff. Wired schema-three operator/default activation to its exact journal and runtime store manifest publication to deployed verification. Independent review and 28 focused tests pass; full integration gates and production execution remain pending. Production unchanged and HELD.
+
+## 2026-09-21 — deployed acceptance artifact authority
+
+Running six-read collection and denial issuance now require deployed artifact evidence, resolving the contradiction where they previously demanded an absent deployment record before reading installed runtime evidence. Preparation still requires sealed artifacts. Seventeen focused tests pass, including real digest/tree/deployment-record verification composed with running denial and collector source authority, rejecting undeployed or tampered artifacts. Production execution remains UNVERIFIED; no production changes.

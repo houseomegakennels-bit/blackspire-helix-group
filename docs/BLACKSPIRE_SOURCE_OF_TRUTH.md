@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-21 — deployed acceptance artifact authority
+
+Running six-read collection and denial issuance now require deployed artifact evidence, resolving the contradiction where they previously demanded an absent deployment record before reading installed runtime evidence. Preparation still requires sealed artifacts. Seventeen focused tests pass, including real digest/tree/deployment-record verification composed with running denial and collector source authority, rejecting undeployed or tampered artifacts. Production execution remains UNVERIFIED; no production changes.
+
 ## 2026-09-21 — successor activation integrated
 
 The owned operator and default production admission operation now dispatch schema-three releases through the reviewed successor activation coordinator, preserving the current admission journal and exact operation/attempt binding. Candidate preparation reuses its retained store transition; runtime manifest publication verifies the deployed artifact at both inspection layers. Independent review approved the composed dispatch and existing 28 focused regressions. Final integrated suite and release publication remain pending; production remains HELD on candidate2636. No successor deployment or public opening occurred.

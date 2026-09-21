@@ -48,16 +48,16 @@ test('real installed v4 profile composes with actual bounded denial session at c
  for(const releaseSha of ['a'.repeat(40),'b'.repeat(40)]){
   const fixture=await installedFixture(t,releaseSha),root='/opt/blackspire-command/releases/'+releaseSha;
   const state={version:1,mode:'held',releaseSha,runId:randomUUID(),apiGeneration:null,workerGeneration:null};
-  let held=false,closed=0,sealed=0;const proof=()=>({releaseSha,environment:'production',artifactDigest:fixture.artifactDigest});
+  let held=false,closed=0,deployed=0;const proof=()=>({releaseSha,environment:'production',artifactDigest:fixture.artifactDigest});
   const dependencies={sourceRoot:root,groupId:0,collect:fixture.collect,readState:()=>structuredClone(state),
    acquire:options=>{assert.equal(options.exclusive,false);assert.equal(options.allowPending,true);held=true;return{assertIdentity(){assert.ok(held);},close(){held=false;closed++;}};},
-   verifySource:()=>assert.fail('sealed artifact must not require Git checkout'),inspectSealed:async()=>{sealed++;return proof();},inspectArtifact:async()=>proof()};
+   verifySource:()=>assert.fail('deployed artifact must not require Git checkout'),inspectArtifact:async()=>{deployed++;return proof();}};
   const runtime=await openDenialSessionRuntime(releaseSha,dependencies);let receipt;
   try{
    assert.equal(runtime.profile.context.releaseSha,releaseSha);assert.equal(Object.hasOwn(runtime.profile,'preparationCredential'),false);
    await runtime.assertCurrent();
    const result=service.issue({operatorPrincipal:'operator',deniedPrincipal:'denied',workspace:'blackspire-command',runId:randomUUID(),releaseSha},value=>{runtime.assertHeld();receipt=value;});
-   await runtime.assertCurrent();assert.equal(result.status,'DELEGATED_DENIAL_ISSUED');assert.equal(receipt.releaseSha,releaseSha);assert.ok(sealed>=4);
+   await runtime.assertCurrent();assert.equal(result.status,'DELEGATED_DENIAL_ISSUED');assert.equal(receipt.releaseSha,releaseSha);assert.ok(deployed>=8);
    assert.equal(service.revoke(receipt).status,'DELEGATED_DENIAL_REVOKED');
    state.apiGeneration='f'.repeat(32);state.workerGeneration=fixture.workerGeneration;await assert.rejects(runtime.assertCurrent());
   }finally{runtime.close();}assert.equal(closed,1);

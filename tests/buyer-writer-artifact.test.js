@@ -1,3 +1,5 @@
+import {assertProductionCollectorSource} from '../packages/zola-six-reads/collector-host.js';
+import {openDenialSessionRuntime} from '../packages/zola-six-reads/denial-runtime.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -51,4 +53,19 @@ test('sealed preparation rejects additional evidence gaps, unsafe records and ch
     f=>{const p=path.join(f.root,'RELEASE_EVIDENCE.json'),m=JSON.parse(fs.readFileSync(p));m.buildId='';fs.writeFileSync(p,JSON.stringify(m));},
     f=>{f.options.verifyEvidence=args=>{const r=verifyReleaseEvidence(args);fs.writeFileSync(path.join(f.root,'app.js'),'changed');return r;};},
   ]){const f=fixture();try{fs.unlinkSync(path.join(f.root,'.deployment-record.json'));mutate(f);assert.throws(()=>verifySealedBuyerWriterArtifact(f.options));}finally{f.cleanup();}}
+});
+
+test('running denial authority composes with real deployed evidence and refuses sealed or tampered artifacts',async()=>{
+ for(const mutate of [null,'undeployed','tampered']){const f=fixture();let closed=0;try{
+  const releaseSha=f.options.releaseSha,artifactDigest=verifyBuyerWriterArtifact(f.options).artifactDigest,artifactRoot='/opt/blackspire-command/releases/'+releaseSha;
+  const state={version:1,mode:'held',releaseSha,runId:'11111111-1111-4111-8111-111111111111',apiGeneration:null,workerGeneration:null};
+  const profile={context:{releaseSha,artifactRoot,environment:'production',workspace:'blackspire-command',apiGeneration:'b'.repeat(32)},workerGeneration:'c'.repeat(32),artifactDigest,configurationDigest:'d'.repeat(64)};
+  const options={sourceRoot:artifactRoot,groupId:0,readState:()=>state,acquire:()=>({assertIdentity(){},close(){closed++;}}),verifySource:()=>assert.fail('runtime artifact needs no Git checkout'),collect:async()=>profile,
+   inspectArtifact:async input=>{assert.deepEqual(input,{artifactRoot,releaseSha,environment:'production'});return verifyBuyerWriterArtifact(f.options);}};
+  if(mutate==='undeployed')fs.unlinkSync(path.join(f.root,'.deployment-record.json'));
+  if(mutate==='tampered')fs.writeFileSync(path.join(f.root,'app.js'),'changed');
+  const collector=()=>assertProductionCollectorSource(releaseSha,{sourceRoot:artifactRoot,verifyArtifact:input=>{assert.deepEqual(input,{artifactRoot,releaseSha,environment:'production'});return verifyBuyerWriterArtifact(f.options);}});
+  if(mutate){assert.throws(collector);await assert.rejects(openDenialSessionRuntime(releaseSha,options));}else{collector();const runtime=await openDenialSessionRuntime(releaseSha,options);await runtime.assertCurrent();fs.writeFileSync(path.join(f.root,'app.js'),'changed while running');await assert.rejects(runtime.assertCurrent());runtime.close();}
+  assert.equal(closed,1);
+ }finally{f.cleanup();}}
 });
