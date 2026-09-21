@@ -26,7 +26,7 @@ export function createBuyerStoreAttestation(configuration,{read=readRootOwnedJso
    const proof=await inspect({artifactRoot,releaseSha,environment:'production'});
    if(proof.artifactDigest!==before.value.artifactDigest)fail();verifiedDigest=proof.artifactDigest;
   }
-  const generations=run('/usr/bin/systemctl',['show','--property=InvocationID','--value','blackspire-command.service','blackspire-command-worker.service'],{encoding:'utf8',timeout:1000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin'}}).trim().split(/\s+/);
+  const generations=run('/usr/bin/systemctl',['show','--property=InvocationID','--value','blackspire-command.service','blackspire-command-worker.service'],{encoding:'utf8',timeout:1000,maxBuffer:4096,env:{PATH:'/usr/bin:/bin',SYSTEMD_IGNORE_CHROOT:'1'}}).trim().split(/\s+/);
   if(generations.length!==2||generations[0]!==before.value.apiGeneration||generations[1]!==before.value.workerGeneration)fail();
   const after=snapshot();if(JSON.stringify(before)!==JSON.stringify(after))fail();
   return before.digest;

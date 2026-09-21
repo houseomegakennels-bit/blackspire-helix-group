@@ -19,7 +19,12 @@ export function createBuyerStoreAdmissionFence({attestation,groupId=admissionGro
    const verify=()=>{
     lease.assertIdentity();const state=validateReleaseAdmissionState(readState());
     if(lane==='user'&&state.mode!=='open')fail();
-    if(!['user','profiles-read','ready'].includes(lane)||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId||state.apiGeneration!==binding.apiGeneration||state.workerGeneration!==binding.workerGeneration)fail();
+    if(!['user','profiles-read','ready'].includes(lane)||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId)fail();
+    if(state.mode==='held'){
+     if(lane!=='profiles-read'||state.apiGeneration!==null||state.workerGeneration!==null)fail();
+     // Installed manifest and actual systemd generations are verified by the
+     // dispatcher. HELD state deliberately retains null generation fields.
+    }else if(state.apiGeneration!==binding.apiGeneration||state.workerGeneration!==binding.workerGeneration)fail();
     const current=attestation.binding();
     if(JSON.stringify(current)!==JSON.stringify(binding))fail();
    };

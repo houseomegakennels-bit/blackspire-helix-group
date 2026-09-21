@@ -31,7 +31,7 @@ test('daemon lease survives actual IPC disconnect until handler commit/drain fin
 });
 test('HELD rejects user writes before handler but allows bound read-only lane',async()=>{
  let called=0,closed=0;
- const fence=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},readState:()=>({version:1,mode:'held',...binding}),acquire:()=>({assertIdentity(){},close(){closed++;}})});
+ const fence=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},readState:()=>({version:1,mode:'held',...binding,apiGeneration:null,workerGeneration:null}),acquire:()=>({assertIdentity(){},close(){closed++;}})});
  await assert.rejects(fence.run('user',async()=>{called++;}));assert.equal(called,0);
  await fence.run('profiles-read',async()=>{called++;});assert.equal(called,1);assert.equal(closed,2);
  const wrong=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},readState:()=>({version:1,mode:'open',...binding,runId:'00000000-0000-0000-0000-000000000002'}),acquire:()=>({assertIdentity(){},close(){}})});

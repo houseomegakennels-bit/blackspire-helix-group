@@ -2147,3 +2147,6 @@ Added owner-serialized rolling creation budgets and verified-role enforcement, p
 ## 2026-09-21 — owned Buyer API integration
 
 Connected the API to isolated user and consumed-capability read clients, fixed private supplementary-group credential reads, and bounded signed frontend deal lookups. Integrated API/authority/admission tests pass 24/24. Production deployment and complete service lifecycle remain pending; no production mutation.
+## 2026-09-21 — store namespace and HELD composition verification
+
+Replaced finite credential blacklists with an empty root and explicit read-only mounts. Actual isolated non-root filesystem denial and actual systemd observation tests pass. Fixed identity-only readiness under cutover exclusive locks and capability reads under established HELD null-generation state. No production service or configuration changed.

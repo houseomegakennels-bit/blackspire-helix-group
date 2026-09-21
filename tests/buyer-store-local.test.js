@@ -21,7 +21,7 @@ test('IPC exact authenticated binding and replay denial',()=>{
 test('actual Unix socket only dispatches validated user and readonly capability operations',async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bs-')),socket=path.join(dir,'s');
  const calls=[];
- const server=createBuyerStoreLocalServer({configuration,readiness:async()=>({status:'ready',releaseSha:configuration.releaseSha,profileDigest:configuration.profileDigest,rolesVerified:true}),validateInput:(operation,input)=>{if(operation!=='profiles-list'&&operation!=='counts'||Object.keys(input).length)throw new Error();return input;},
+ const server=createBuyerStoreLocalServer({configuration,fence:{run:async(lane,handler)=>{assert.notEqual(lane,'ready');return handler();}},readiness:async()=>({status:'ready',releaseSha:configuration.releaseSha,profileDigest:configuration.profileDigest,rolesVerified:true}),validateInput:(operation,input)=>{if(operation!=='profiles-list'&&operation!=='counts'||Object.keys(input).length)throw new Error();return input;},
   userHandler:async body=>{calls.push(body);return {ok:true,data:3};},readCapabilityProfiles:async input=>{calls.push(input);return {rows:[],count:0};}});
  await new Promise(resolve=>server.listen(socket,resolve));
  const connect=options=>{assert.equal(options.path,BUYER_STORE_SOCKET);return net.createConnection({path:socket});};

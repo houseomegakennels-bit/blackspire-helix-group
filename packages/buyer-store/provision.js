@@ -1,3 +1,4 @@
+import {prepareBuyerStoreNamespace} from './namespace.js';
 import {databaseTlsOptions} from '../buyer-writer/database-profile.js';
 import {provisionBuyerStorePasswords} from './password-provision.js';
 import {observeFreshOwnedRepositoryCredentials} from '../buyer-writer/owned-postgres-materializer.js';
@@ -79,6 +80,7 @@ export async function provisionBuyerStore(releaseSha,{Client}={}){
   fs.chownSync('/etc/blackspire-buyer-store',0,gid);fs.chmodSync('/etc/blackspire-buyer-store',0o750);
   publish(BUYER_STORE_CONFIGURATION,config,gid,0o640);
   publish(BUYER_STORE_CLIENT_CONFIGURATION,config.client,apiGid,0o640);
+  await prepareBuyerStoreNamespace(releaseSha);
   return {status:'BUYER_STORE_CREDENTIALS_PREPARED',releaseSha,artifactDigest:artifact.artifactDigest};
  }finally{if(lock!==undefined){fs.closeSync(lock);fs.unlinkSync(ROOT+'/lock');}}
 }

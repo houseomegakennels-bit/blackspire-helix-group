@@ -24,7 +24,9 @@ export function createBuyerStoreLocalServer({configuration,userHandler,readCapab
     if(attestation)await attestation.verifyUnchanged(proof);
     return result;
     };
-    const result=fence?await fence.run(request.lane,dispatch):await dispatch();
+    // Ready has no business query or mutation; cutover may hold the exclusive
+    // admission lease while probing it. Artifact/generation attestation still runs.
+    const result=fence&&request.lane!=='ready'?await fence.run(request.lane,dispatch):await dispatch();
     if(socket.destroyed)return;
     const unsigned={version:1,id:request.id,ok:true,result},response=Buffer.from(JSON.stringify({...unsigned,mac:mac(unsigned,config.key)})+'\n');
     if(response.length>BUYER_STORE_MAX_BYTES)fail();socket.end(response);
