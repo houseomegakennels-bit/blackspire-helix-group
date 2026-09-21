@@ -24,3 +24,12 @@ test('protected profile snapshot rejects replacement and non-root ownership',()=
  let calls=0;assert.throws(()=>readOwnedDatabaseProfile({readSnapshot:()=>++calls===1?snapshot:{...snapshot,value:{...profile,creatorOid:16402}}}),/rejected/);
  assert.throws(()=>readOwnedDatabaseProfile({readSnapshot:()=>({...snapshot,identity:{uid:0,gid:1,mode:0o600}})}),/rejected/);
 });
+
+test('owned TLS verifies the configured IP despite pg omitting IP SNI',async()=>{
+ const {databaseTlsOptions}=await import('../packages/buyer-writer/database-profile.js');
+ const tls=databaseTlsOptions(validateManagementCredential(credential,{ownedProfile:profile}));
+ assert.equal(tls.rejectUnauthorized,true);assert.equal(tls.ca,ca);
+ assert.equal(tls.checkServerIdentity('localhost',{subjectaltname:'IP Address:127.0.0.1'}),undefined);
+ assert.ok(tls.checkServerIdentity('localhost',{subjectaltname:'DNS:localhost'}) instanceof Error);
+ assert.ok(tls.checkServerIdentity('127.0.0.1',{subjectaltname:'IP Address:127.0.0.2'}) instanceof Error);
+});

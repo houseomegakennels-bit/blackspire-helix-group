@@ -1,4 +1,4 @@
-import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
+import {databaseTlsOptions,ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import {BUYER_WRITER_ENTRYPOINTS,BUYER_WRITER_ROUTINES} from './routine-policy.js';
 
 // Explicit credentials only. No environment, credential file, database URL or
@@ -264,7 +264,7 @@ function configuration(value,kind) {
     ||(value.ca!==undefined&&(typeof value.ca!=='string'||value.ca.length>65536||!value.ca.includes('-----BEGIN CERTIFICATE-----'))))throw unavailable();
   return {
     host:value.host,port:value.port,database:value.database,password:value.password,
-    user:`buyer_writer_${kind}`,ssl:{rejectUnauthorized:true,...(value.ca===undefined?{}:{ca:value.ca})},
+    user:`buyer_writer_${kind}`,ssl:databaseTlsOptions(value),
     application_name:`blackspire-buyer-writer-${kind}`,client_encoding:'UTF8',
     options:'-c statement_timeout=10000 -c lock_timeout=5000 -c search_path=pg_catalog -c idle_in_transaction_session_timeout=10000',
     connectionTimeoutMillis:2000,query_timeout:11000,idleTimeoutMillis:10000,

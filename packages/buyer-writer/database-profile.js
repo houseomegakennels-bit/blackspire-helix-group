@@ -1,3 +1,4 @@
+import {checkServerIdentity} from 'node:tls';
 import {createHash} from 'node:crypto';
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {validateOwnedPostgresProfile,ownedPostgresProfileDigest} from './owned-postgres.js';
@@ -55,5 +56,16 @@ export async function verifyOwnedDatabaseIdentity(client,profile){
  profile=validateOwnedPostgresProfile(profile);const result=await client.query(OWNED_DATABASE_IDENTITY_SQL,[]),row=result?.rows?.[0];
  if(result?.rows?.length!==1||!exact(row,['systemIdentifier','database','actor','creatorOid','version','recovery'])
   ||row.systemIdentifier!==profile.systemIdentifier||row.database!==profile.database||row.actor!==profile.managementUser||row.creatorOid!==profile.creatorOid
-  ||row.version<170000||row.version>=180000||row.recovery!==false)fail();return true;
+  ||!Number.isInteger(row.version)||row.version<170000||row.version>=180000||row.recovery!==false)fail();return true;
+}
+
+// pg omits SNI for an IP host. Preserve CA verification and bind certificate
+// identity to the fixed validated IP instead of Node's implicit localhost.
+export function databaseTlsOptions(connection){
+ const owned=ownedDatabaseConnection(connection)||(connection?.host==='127.0.0.1'&&connection?.port===55432);
+ if(owned){
+  if(connection.host!=='127.0.0.1'||connection.port!==55432||!pem(connection.ca))fail();
+  return {rejectUnauthorized:true,ca:connection.ca,checkServerIdentity:(_hostname,certificate)=>checkServerIdentity('127.0.0.1',certificate)};
+ }
+ return {rejectUnauthorized:true,...(connection.ca===undefined?{}:{ca:connection.ca})};
 }

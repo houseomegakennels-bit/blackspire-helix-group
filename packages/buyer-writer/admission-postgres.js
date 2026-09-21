@@ -1,4 +1,4 @@
-import {ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
+import {databaseTlsOptions,ownedDatabaseConnection,validateOwnedConnectionShape} from './database-profile.js';
 import {X509Certificate} from 'node:crypto';
 import {
  ADMISSION_READINESS_SQL,AdmissionUnavailableError,admissionIdentityValues,createAttestedAdmissionExecutor,
@@ -68,7 +68,7 @@ function poolConfiguration(connection){
  return Object.freeze({
   host:connection.host,port:connection.port,database:connection.database,
   user:BUYER_WRITER_ADMISSION_LOGIN,password:connection.password,
-  ssl:Object.freeze({rejectUnauthorized:true,ca:connection.ca}),
+  ssl:Object.freeze(databaseTlsOptions(connection)),
   application_name:'blackspire-buyer-writer-admission',
   client_encoding:'UTF8',
   options:`-c role=${BUYER_WRITER_ADMISSION_ROLE} -c statement_timeout=10000 -c lock_timeout=5000 -c search_path=pg_catalog -c idle_in_transaction_session_timeout=10000`,
