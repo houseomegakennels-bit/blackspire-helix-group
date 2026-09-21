@@ -1,6 +1,9 @@
+import {queryFixedProviderAcl,createProviderAclCheckOperation} from '../packages/zola-release/production-acl-writer.js';
+import {createPgNetIsolationProof} from '../packages/zola-release/pg-net-isolation.js';
+import {createOwnedAclObserverPool,verifyOwnedOperatorAclResult} from '../packages/zola-release/owned-acl-operator-observer.js';
 // This root-only operator entry is separately reviewed. The canonical CLI's
-// test seam is not itself authorization: all adapters below remain fixed native
-// implementations, with only the exact workflow transport credential gate added.
+// test seam is not itself authorization. Fixed owned gateway/provisioning and
+// catalog adapters supplement the native phases, alongside the credential gate.
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
@@ -24,6 +27,8 @@ try{
  const {loadProductionReleaseInput}=await load('packages/zola-release/production-release-input.js');
  const {runProductionRelease}=await load('packages/zola-release/production-release.js');
  const {createFixedProductionOperations}=await load('packages/zola-release/production-adapters.js');
+ const {Pool}=await import('pg');
+ const {observeBuyerWriterRuntimeIsolation}=await load('packages/zola-release/pg-net-host-observer.js');
  const {readReleaseProtectedBytes,verifyReleaseSource}=await load('packages/zola-release/commander-host.js');
  const {openReleaseJournal}=await load('packages/zola-release/commander-journal.js');
  const {inspectReleaseSequenceHistory}=await load('packages/zola-release/commander-sequence.js');
@@ -124,12 +129,17 @@ try{
    run:(script,args)=>{
     verifyReleaseSource(release.releaseSha);
     if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
-    const replacements={'scripts/prepare-buyer-writer-gateway-v4.js':'scripts/prepare-owned-gateway-transition.js','scripts/upgrade-buyer-writer-gateway-configuration.js':'scripts/upgrade-owned-gateway-transition.js'};
+    const replacements={'scripts/prepare-buyer-writer-gateway-v4.js':'scripts/prepare-owned-gateway-transition.js','scripts/upgrade-buyer-writer-gateway-configuration.js':'scripts/upgrade-owned-gateway-transition.js','scripts/provision-buyer-writer-production.js':'scripts/provision-owned-buyer-writer-production.js'};
     const selected=replacements[script]?operatorRoot+replacements[script]:script;
     const stdout=execFileSync('/bin/bash',['scripts/with-node.sh',selected,...args],{cwd:canonical,encoding:'utf8',timeout:120000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',LANG:'C'}});
     verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return JSON.parse(stdout);
    }});
-  return createFixedProductionOperations({...context,journal:scopedJournal},{n8nMigration:{n8n:{request:routed}},held:{activate}});
+  const providerQuery=async(sql,values)=>{verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();
+   const result=await queryFixedProviderAcl('/etc/blackspire-buyer-writer-gateway/gateway.json',sql,values,{Pool:createOwnedAclObserverPool(Pool,profile),verifyAcl:verifyOwnedOperatorAclResult});
+   verifyReleaseSource(release.releaseSha);if(git(operatorRoot,['rev-parse','HEAD'])!==operatorSha||git(operatorRoot,['status','--porcelain']))fail();return result;};
+  const fixed=createFixedProductionOperations({...context,journal:scopedJournal},{providerQuery,n8nMigration:{n8n:{request:routed}},held:{activate}});
+  const isolationProof=createPgNetIsolationProof({query:providerQuery,verifyRuntimeIsolation:()=>observeBuyerWriterRuntimeIsolation({releaseSha:release.releaseSha,gatewayConfigurationFile:'/etc/blackspire-buyer-writer-gateway/gateway.json'})});
+  return {...fixed,provider_acl_check:createProviderAclCheckOperation({query:providerQuery,isolationProof,backendProfile:release.backendProfile,profileDigest:release.profileDigest,verifyAcl:verifyOwnedOperatorAclResult})};
  };
  const result=await runProductionRelease({loadedInput:input,journal},{operations});
  process.stdout.write(JSON.stringify(result)+'\n');if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;

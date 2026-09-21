@@ -53,7 +53,7 @@ function apiGroupId(){
 // Operator-only catalog observer. The canonical root:writer 0640 gateway file
 // is deliberately unreadable by API/worker identities. Only these two exact
 // catalog statements are reachable, and both run inside a read-only transaction.
-export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,lookup=execFileSync,readSnapshot=readRootOwnedJsonSnapshot,readOwnedProfile=readOwnedDatabaseProfile}={}){
+export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,lookup=execFileSync,readSnapshot=readRootOwnedJsonSnapshot,readOwnedProfile=readOwnedDatabaseProfile,verifyAcl=verifyOwnedDatabaseAclResult}={}){
  let pool,client;
  try{
   if(configurationFile!==BUYER_WRITER_GATEWAY_CONFIG||![PROVIDER_ACL_CHECK_SQL,APPLICATION_FUNCTION_PG_NET_SQL].includes(sql)
@@ -75,7 +75,7 @@ export async function queryFixedProviderAcl(configurationFile,sql,values,{Pool,l
     options:'-c default_transaction_read_only=on -c statement_timeout=7000 -c lock_timeout=1000 -c search_path=pg_catalog'});
    client=await pool.connect();await client.query('begin isolation level repeatable read read only');
    const observation=await client.query(OWNED_DATABASE_ACL_SQL,ownedDatabaseAclParameters(profile));
-   const evidence=verifyOwnedDatabaseAclResult(observation,profile);
+   const evidence=verifyAcl(observation,profile);
    const result=sql===PROVIDER_ACL_CHECK_SQL?{backendProfile:'owned-postgres-v1',profile,profileDigest,observation,evidence}:await client.query(sql,values);
    await client.query('rollback');
    if(JSON.stringify(snapshot)!==JSON.stringify(readSnapshot(configurationFile,{groupId,maxBytes:65536}))
@@ -156,7 +156,7 @@ function completeIsolationEvidence(value){
   &&digest(value.sourceScanDigest)&&digest(value.functionBodyDigest);
 }
 
-export function createProviderAclCheckOperation({query,isolationProof,backendProfile,profileDigest}){
+export function createProviderAclCheckOperation({query,isolationProof,backendProfile,profileDigest,verifyAcl=verifyOwnedDatabaseAclResult}){
  if(typeof query!=='function'||(backendProfile===undefined?profileDigest!==undefined:backendProfile!=='owned-postgres-v1'||!digest(profileDigest)))reject();
  const observe=async args=>{
   const bound=binding(args);
@@ -167,7 +167,7 @@ export function createProviderAclCheckOperation({query,isolationProof,backendPro
    if(result?.backendProfile!==backendProfile)reject();
    if(result?.backendProfile==='owned-postgres-v1'){
     if(result.profileDigest!==profileDigest||!exact(result,['backendProfile','profile','profileDigest','observation','evidence'])||result.profileDigest!==databaseProfileDigest(result.profile))reject();
-    const evidence=verifyOwnedDatabaseAclResult(result.observation,result.profile);
+    const evidence=verifyAcl(result.observation,result.profile);
     if(JSON.stringify(evidence)!==JSON.stringify(result.evidence))reject();
     provider=Object.freeze({...bound,...evidence,backendProfile:result.backendProfile,backendProfileDigest:result.profileDigest,
      providerAclObserved:false,ownedBackendObserved:true,publicExecuteCount:0});

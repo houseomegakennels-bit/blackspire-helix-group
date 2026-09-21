@@ -1,3 +1,5 @@
+import {proveOwnedWriterProvisioning} from './test-owned-writer-provision-helper.mjs';
+import {createHash} from 'node:crypto';
 import {createBuyerStoreRepository} from '../packages/buyer-store/repository.js';
 import {prepareOwnedTargetHardening,executeOwnedTargetHardening} from '../packages/buyer-writer/owned-target-hardening.js';
 import {databaseProfileDigest,verifyOwnedDatabaseIdentity} from '../packages/buyer-writer/database-profile.js';
@@ -15,7 +17,8 @@ import {prepareOwnedBuyerSchema} from '../packages/buyer-writer/owned-schema.js'
 import {inspectOwnedBuyerDataSnapshot} from '../packages/buyer-writer/owned-data-copy-postgres.js';
 assert.equal(process.env.ZOLA_DISPOSABLE_EXECUTOR,'1');assert.equal(process.versions.node,'22.23.1');
 const ports=JSON.parse(fs.readFileSync(0,'utf8'));assert.ok([ports.source,ports.target].every(p=>/^172\.[0-9]+\.[0-9]+\.[0-9]+$/.test(p)));assert.notEqual(ports.source,ports.target);
-const clients=[];const connect=async (database,user='postgres')=>{const c=new pg.Client({host:['owned_fixture','template1'].includes(database)?ports.target:ports.source,port:5432,user,database:database==='template1'?'template1':'postgres',connectionTimeoutMillis:2000,query_timeout:35000});await c.connect();clients.push(c);return c;};
+const rolePasswords=new Map();
+const clients=[];const connect=async (database,user='postgres')=>{const c=new pg.Client({host:['owned_fixture','template1'].includes(database)?ports.target:ports.source,port:5432,user,password:rolePasswords.get(user),database:database==='template1'?'template1':'postgres',connectionTimeoutMillis:2000,query_timeout:35000});await c.connect();clients.push(c);return c;};
 try{
  const sourceAdminBoot=await connect('postgres','blackspire_cluster_admin');await sourceAdminBoot.query('CREATE ROLE postgres LOGIN SUPERUSER CREATEDB CREATEROLE REPLICATION BYPASSRLS;ALTER DATABASE postgres OWNER TO postgres');
  const targetAdminBoot=await connect('owned_fixture','blackspire_cluster_admin'),template=await connect('template1','blackspire_cluster_admin');await template.query(OWNED_POSTGRES_TEMPLATE_SQL);await template.end();await targetAdminBoot.query(OWNED_POSTGRES_BOOTSTRAP_SQL);await targetAdminBoot.query('ALTER ROLE postgres LOGIN');await targetAdminBoot.end();
@@ -70,7 +73,8 @@ try{
  const schemaEffective=(await sourceAdmin.query(`select jsonb_agg(jsonb_build_array(rolname,s,has_schema_privilege(rolname,s,'USAGE'),has_schema_privilege(rolname,s,'CREATE')) order by rolname,s) AS value from pg_roles cross join unnest(array['extensions','net']) s`)).rows[0].value;
  const providerManifest=prepareBuyerWriterExtensionAcl({inventory,columns:inventory,effective:{effective,schemaEffective}}).manifest;
  const releaseSha='a'.repeat(40),operationId='00000000-0000-4000-8000-000000000099';
- const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:targetCreatorOid,systemIdentifier:targetId,caSha256:'a'.repeat(64)},profileDigest=databaseProfileDigest(profile),sourceInput={releaseSha,operationId,profileDigest,sourceSystemIdentifier:sourceId,sourceCreatorOid,providerManifest},migrationVersion='20260921000000';
+ const ca=fs.readFileSync(new URL('../tests/fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
+ const profile={version:1,...OWNED_POSTGRES_TARGET,creatorOid:targetCreatorOid,systemIdentifier:targetId,caSha256:createHash('sha256').update(ca).digest('hex')},profileDigest=databaseProfileDigest(profile),sourceInput={releaseSha,operationId,profileDigest,sourceSystemIdentifier:sourceId,sourceCreatorOid,providerManifest},migrationVersion='20260921000000';
  const sourcePlan=security.prepareOwnedSourceSecurityPackage(sourceInput).plan,events=[];
  assert.equal((await security.executeOwnedSourceSecurity({client:sourceAdmin,plan:sourcePlan,mode:'apply',migrationVersion,journal:{events:()=>structuredClone(events),append:v=>events.push(structuredClone(v))},fence:async()=>{}})).status,'OWNED_SOURCE_SECURITY_COMMITTED');
  assert.equal((await security.observeOwnedSourceSecurity(sourceAdmin,sourcePlan,migrationVersion)).status,'OWNED_SOURCE_SECURITY_VERIFIED');await sourceAdmin.end();
@@ -117,7 +121,7 @@ try{
  const creatorOid=(await verify.query("SELECT oid::int AS id FROM pg_roles WHERE rolname='postgres'")).rows[0].id;
  await verify.query("SELECT set_config('blackspire.buyer_writer_creator_oid',$1,false)",[String(creatorOid)]);
  const installer=fs.readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');await verify.query(installer);
- await verify.query('CREATE ROLE buyer_writer_admission_login LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;GRANT buyer_writer_admission TO buyer_writer_admission_login WITH ADMIN FALSE,INHERIT FALSE,SET TRUE GRANTED BY postgres;ALTER ROLE buyer_writer_runtime LOGIN;ALTER ROLE buyer_writer_issuer LOGIN;GRANT CONNECT ON DATABASE postgres TO buyer_writer_runtime,buyer_writer_issuer;');
+ await proveOwnedWriterProvisioning({connect,profile,ca,owner,host:ports.target,releaseSha,operationId,rolePasswords});
  const identity=async kind=>{const c=await connect('owned_fixture',`buyer_writer_${kind}`);try{await c.query("SET search_path=pg_catalog;SET statement_timeout='10s';SET lock_timeout='5s'");assert.equal((await c.query(WRITER_IDENTITY_SQL,[`buyer_writer_${kind}`,BUYER_WRITER_ENTRYPOINTS[kind],JSON.stringify(BUYER_WRITER_ROUTINES),creatorOid])).rows[0].safe,true);}finally{await c.end();}};
  await identity('runtime');await identity('issuer');
  await verify.query(fs.readFileSync(new URL('../packages/buyer-store/repository-schema.sql',import.meta.url),'utf8'));
