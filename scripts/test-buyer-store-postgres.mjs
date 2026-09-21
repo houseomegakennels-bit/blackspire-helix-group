@@ -19,18 +19,35 @@ try{
  const repository=createBuyerStoreRepository({connect:()=>connect('buyer_repository_login'),connectCapability:()=>connect('buyer_capability_login')});
  const owner='00000000-0000-4000-8000-000000000001',foreign='00000000-0000-4000-8000-000000000002';
  const job={id:randomUUID(),state:'NC',county:'Wake',property_type:'land',date_range_start:'2026-01-01',date_range_end:'2026-01-02',min_purchases:1,cash_buyers_only:false,llc_buyers_only:false};
- const created=await repository.execute('job-create',job,owner);assert.equal(created.user_id,owner);assert.equal(created.date_range_start,job.date_range_start);assert.match(created.updated_at,/\.\d{6}Z$/);
- assert.equal((await repository.execute('job-create',job,owner)).id,job.id);
- await assert.rejects(repository.execute('job-create',{...job,county:'changed'},owner));
+ const created=await repository.execute('job-create',job,owner,'admin');assert.equal(created.user_id,owner);assert.equal(created.date_range_start,job.date_range_start);assert.match(created.updated_at,/\.\d{6}Z$/);
+ assert.equal((await repository.execute('job-create',job,owner,'admin')).id,job.id);
+ await assert.rejects(repository.execute('job-create',{...job,county:'changed'},owner,'admin'));
  assert.equal(await repository.execute('job-get',{id:job.id},foreign),null);
  assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},owner)).length,1);
  assert.equal((await repository.execute('jobs-list',{ids:[],limit:10},foreign)).length,0);
  const exp={id:randomUUID(),searchJobId:job.id,fileName:'fixture.csv',rowCount:0};
- await assert.rejects(repository.execute('export-create',exp,foreign));
- assert.equal((await repository.execute('export-create',exp,owner)).storage_path,`client-downloads/${owner}/${exp.id}/fixture.csv`);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);
+ await assert.rejects(repository.execute('export-create',exp,foreign,'admin'));
+ assert.equal((await repository.execute('export-create',exp,owner,'admin')).storage_path,`client-downloads/${owner}/${exp.id}/fixture.csv`);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);
  assert.deepEqual((await repository.execute('reports-list',{searchJobId:null,limit:5,offset:0},foreign)).reports,[]);
  const profiles=await repository.readCapabilityProfiles({county:null,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:5});assert.equal(profiles.observation.requests,2);
  const cap=await connect('buyer_capability_login');try{await cap.query('SET ROLE buyer_capability_reader');await assert.rejects(cap.query('SELECT * FROM public."SearchJob"'));await assert.rejects(cap.query('INSERT INTO public."BuyerProfile"(buyer_name) VALUES(\'forbidden\')'));}finally{await cap.end();}
  const actor=await connect('buyer_repository_login');try{await actor.query('SET ROLE buyer_repository_user');await assert.rejects(actor.query('DELETE FROM public."SearchJob"'));await assert.rejects(actor.query('SET ROLE buyer_capability_reader'));}finally{await actor.end();}
+ // Fill each rolling window to one remaining slot, then race independent
+ // native connections. RLS+owner advisory serialization admits exactly one.
+ const freshJob=()=>({...job,id:randomUUID()});
+ for(let i=1;i<24;i++)await repository.execute('job-create',freshJob(),owner,'beta_tester');
+ const racedJobs=Array.from({length:5},freshJob);
+ const jobResults=await Promise.allSettled(racedJobs.map(value=>repository.execute('job-create',value,owner,'beta_tester')));
+ assert.equal(jobResults.filter(value=>value.status==='fulfilled').length,1);
+ const winner=racedJobs[jobResults.findIndex(value=>value.status==='fulfilled')];
+ assert.equal((await repository.execute('job-create',winner,owner,'beta_tester')).id,winner.id);
+ await assert.rejects(repository.execute('job-create',freshJob(),owner));
+ await repository.execute('job-create',freshJob(),foreign,'beta_tester');
+ await repository.execute('job-create',freshJob(),owner,'admin');
+ for(let i=1;i<49;i++)await repository.execute('export-create',{...exp,id:randomUUID()},owner,'beta_tester');
+ const racedExports=Array.from({length:4},()=>({...exp,id:randomUUID()}));
+ const exportResults=await Promise.allSettled(racedExports.map(value=>repository.execute('export-create',value,owner,'beta_tester')));
+ assert.equal(exportResults.filter(value=>value.status==='fulfilled').length,1);
+ await repository.execute('export-create',{...exp,id:randomUUID()},owner,'admin');
  console.log('PASS: actual native repository ownership, stable IDs, foreign export denial, read-only capability role and separate role grants');
 }finally{if(container){const info=JSON.parse(run(['inspect',container]))[0];assert.equal(info.Config.Labels['blackspire.test-owner'],label);run(['rm','-f',container]);}rmSync(socket,{recursive:true,force:true});}

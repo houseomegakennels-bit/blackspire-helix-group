@@ -7,11 +7,13 @@ const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}
 const escapeLike=v=>v===null?null:v.replace(/[\\%_]/g,'\\$&');
 export function createBuyerStoreRepository({connect,connectCapability}){
  if(typeof connect!=='function')refuse();
- const execute=async (operation,raw,ownerId)=>{
+ const execute=async (operation,raw,ownerId,role)=>{
   const input=validateBuyerStoreInput(operation,raw);if(!uuid(ownerId)&&!(ownerId===null&&operation==='profiles-list'))refuse();
+  const mutation=['job-create','export-create'].includes(operation);
+  if(mutation&&!['admin','beta_tester'].includes(role))refuse();
   let client,begun=false;
   try{
-   client=await (ownerId===null?connectCapability():connect());await client.query(['job-create','export-create'].includes(operation)?'BEGIN':'BEGIN READ ONLY');begun=true;
+   client=await (ownerId===null?connectCapability():connect());await client.query(mutation?'BEGIN ISOLATION LEVEL READ COMMITTED':'BEGIN READ ONLY');begun=true;
    const identity=(await client.query('SELECT current_user,session_user')).rows[0];
    const login=ownerId===null?'buyer_capability_login':'buyer_repository_login';
    if(identity.current_user!==login||identity.session_user!==login)refuse();
@@ -21,6 +23,18 @@ export function createBuyerStoreRepository({connect,connectCapability}){
    let data;
    let requests=0,responseBytes=0;const started=Date.now();
    const q=async(sql,args)=>{const rows=(await client.query(sql,args)).rows;if(/^SELECT/.test(sql)){requests++;responseBytes+=Buffer.byteLength(JSON.stringify(rows));}return rows;};
+   if(mutation){
+    // Same owner/action writes serialize before the current committed count is
+    // observed. Stable identifier reconciliation never spends another slot.
+    await client.query('SELECT pg_advisory_xact_lock(206995,hashtext($1))',[ownerId]);
+    if(role==='beta_tester'){
+     const sql=operation==='job-create'
+      ? 'SELECT EXISTS(SELECT 1 FROM public."SearchJob" WHERE id=$1::uuid AND user_id=$2::uuid) AS existing,(SELECT count(*)::integer FROM public."SearchJob" WHERE user_id=$2::uuid AND created_at>clock_timestamp()-interval \'24 hours\') AS count'
+      : 'SELECT EXISTS(SELECT 1 FROM public.exports WHERE id=$1::uuid AND user_id=$2::uuid) AS existing,(SELECT count(*)::integer FROM public.exports WHERE user_id=$2::uuid AND created_at>clock_timestamp()-interval \'24 hours\') AS count';
+     const budget=(await client.query(sql,[input.id,ownerId])).rows[0];
+     if(!budget||typeof budget.existing!=='boolean'||!Number.isSafeInteger(budget.count)||budget.count<0||!budget.existing&&budget.count>=(operation==='job-create'?25:50))refuse();
+    }
+   }
    if(operation==='jobs-list')data=await q(`SELECT ${JOB} FROM public."SearchJob" WHERE user_id=$1::uuid AND (cardinality($2::uuid[])=0 OR id=ANY($2::uuid[])) ORDER BY created_at DESC,id LIMIT $3`,[ownerId,input.ids,input.limit]);
    if(operation==='job-get')data=(await q(`SELECT ${JOB} FROM public."SearchJob" WHERE user_id=$1::uuid AND id=$2::uuid`,[ownerId,input.id]))[0]??null;
    if(operation==='job-create'){
@@ -51,5 +65,5 @@ export function createBuyerStoreRepository({connect,connectCapability}){
   }catch{if(begun)try{await client.query('ROLLBACK');}catch{}refuse();}
   finally{if(client)await client.end();}
  };
- return Object.freeze({execute(operation,input,ownerId){if(!uuid(ownerId))refuse();return execute(operation,input,ownerId);},readCapabilityProfiles(input){return execute('profiles-list',input,null);}});
+ return Object.freeze({execute(operation,input,ownerId,role){if(!uuid(ownerId))refuse();return execute(operation,input,ownerId,role);},readCapabilityProfiles(input){return execute('profiles-list',input,null);}});
 }

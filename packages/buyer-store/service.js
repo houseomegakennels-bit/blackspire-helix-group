@@ -13,7 +13,7 @@ export function validateBuyerStoreInput(operation,input){
  switch(operation){
  case 'jobs-list':valid=shape(input,['limit','ids'])&&integer(input.limit,1,200)&&Array.isArray(input.ids)&&input.ids.length<=200&&input.ids.every(uuid);break;
  case 'job-get':valid=shape(input,['id'])&&uuid(input.id);break;
- case 'job-create':valid=shape(input,['id','state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only'])&&uuid(input.id)&&/^[A-Z]{2}$/.test(input.state)&&string(input.county,128)&&string(input.property_type,64)&&date(input.date_range_start)&&date(input.date_range_end)&&(!input.date_range_start||!input.date_range_end||input.date_range_start<=input.date_range_end)&&integer(input.min_purchases,1,10000)&&typeof input.cash_buyers_only==='boolean'&&typeof input.llc_buyers_only==='boolean';break;
+ case 'job-create':valid=shape(input,['id','state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only'])&&uuid(input.id)&&/^[A-Z]{2}$/.test(input.state)&&string(input.county,128)&&string(input.property_type,64)&&date(input.date_range_start)&&date(input.date_range_end)&&(!input.date_range_start||!input.date_range_end||input.date_range_start<=input.date_range_end)&&integer(input.min_purchases,1,5)&&typeof input.cash_buyers_only==='boolean'&&typeof input.llc_buyers_only==='boolean';break;
  case 'reports-list':valid=shape(input,['searchJobId','limit','offset'])&&(input.searchJobId===null||uuid(input.searchJobId))&&integer(input.limit,1,200)&&integer(input.offset,0,100000);break;
  case 'exports-list':valid=shape(input,['searchJobId','limit'])&&(input.searchJobId===null||uuid(input.searchJobId))&&integer(input.limit,1,200);break;
  case 'export-create':valid=shape(input,['id','searchJobId','fileName','rowCount'])&&uuid(input.id)&&(input.searchJobId===null||uuid(input.searchJobId))&&string(input.fileName,256)&&!/[\\/]/.test(input.fileName)&&!['.','..'].includes(input.fileName)&&integer(input.rowCount,0,1000000);break;
@@ -29,7 +29,7 @@ export function createBuyerStoreHandler({repository,verifyUser}){
   try{
    const validated=validateBuyerStoreInput(operation,input),user=await verifyUser(accessToken);
    if(!uuid(user?.ownerId)||!['admin','beta_tester'].includes(user.role))refuse();
-   const data=await repository.execute(operation,validated,user.ownerId);
+   const data=await repository.execute(operation,validated,user.ownerId,user.role);
    if(Buffer.byteLength(JSON.stringify(data))>512*1024)refuse();
    return {ok:true,data};
   }catch{refuse();}

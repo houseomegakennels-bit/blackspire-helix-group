@@ -18,7 +18,7 @@ test('fresh fixed-project authentication derives owner and never trusts metadata
  assert.throws(()=>createSupabaseBuyerUserVerifier({publicKey:`x.${Buffer.from('{"role":"service_role"}').toString('base64url')}.x`,operatorOwnerId:owner}));
 });
 test('operation schemas reject foreign owner SQL input and bound all lists',async()=>{
- let calls=0;const handler=createBuyerStoreHandler({verifyUser:async()=>({ownerId:owner,role:'admin'}),repository:{execute:async(op,input,id)=>{calls++;assert.equal(id,owner);return [];}}});
+ let calls=0;const handler=createBuyerStoreHandler({verifyUser:async()=>({ownerId:owner,role:'admin'}),repository:{execute:async(op,input,id,role)=>{calls++;assert.equal(id,owner);assert.equal(role,"admin");return [];}}});
  assert.deepEqual(await handler({operation:'jobs-list',accessToken:token,input:{ids:[],limit:12}}),{ok:true,data:[]});
  for(const input of [{ids:[],limit:201},{ids:[],limit:12,ownerId:owner},{ids:['bad'],limit:12}])await assert.rejects(handler({operation:'jobs-list',accessToken:token,input}));
  assert.equal(calls,1);assert.throws(()=>validateBuyerStoreInput('export-create',{id:owner,searchJobId:null,fileName:'file.csv',rowCount:0,storagePath:'foreign/file.csv'}));assert.throws(()=>validateBuyerStoreInput('export-create',{id:owner,searchJobId:null,fileName:'../foreign.csv',rowCount:0}));assert.throws(()=>validateBuyerStoreInput('sql',{query:'DELETE FROM anything'}));
@@ -44,4 +44,15 @@ test('signed deal context binds purpose, task, deployment, request and bounded a
  assert.throws(()=>verifyResponse({...response,deal:{city:null,county:'foreign',property_address:null,property_type:null}},request,key,now));
  assert.throws(()=>verifyResponse(response,request,key,now+10001));
  assert.throws(()=>verifyRequest(request,key,'d'.repeat(40),now));
+});
+
+
+test('job criteria preserve frontend purchase bound and mutation roles come only from fresh verifier',async()=>{
+ const input={id:owner,state:'NC',county:'Wake',property_type:'land',date_range_start:null,date_range_end:null,min_purchases:5,cash_buyers_only:false,llc_buyers_only:false};
+ assert.equal(validateBuyerStoreInput('job-create',input).min_purchases,5);
+ assert.throws(()=>validateBuyerStoreInput('job-create',{...input,min_purchases:6}));
+ let observed;
+ const handler=createBuyerStoreHandler({verifyUser:async()=>({ownerId:owner,role:'beta_tester'}),repository:{execute:async(...args)=>{observed=args;return {};}}});
+ await handler({operation:'job-create',accessToken:token,input});assert.equal(observed[3],'beta_tester');
+ await assert.rejects(handler({operation:'job-create',accessToken:token,input:{...input,role:'admin'}}));
 });
