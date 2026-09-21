@@ -263,3 +263,17 @@ for (const version of [3,4]) test(`v${version} connected queries durably bracket
   baseline.observation.snapshot.tables[0].rows=2;
   await assert.rejects(collectSixReads(v3,f.host,f.store),/CONNECTED_OBSERVER_BASELINE_MISMATCH/);assert.equal(f.posts(),6);
 });
+
+test('owned candidate and live Buyer receipts require v2 native transport with exact persisted authority',async()=>{
+ const f=await fixture();await collectSixReads(config,f.host,f.store);
+ const key=`zola-six:${config.runId}:1`,base=structuredClone(f.records.get(key)),entry=readCases(config.dealId)[1];
+ for(const version of [6,7]){
+  const owned={...config,version,backendProfile:'owned-postgres-v1',profileDigest:'d'.repeat(64),acceptanceSearchJobId:'33333333-3333-4333-8333-333333333333',ownedObserverDatabaseConfigPath:'/etc/blackspire/owned-postgres/management.json',observerDatabaseConfigPath:'/etc/blackspire-buyer-writer-gateway/management.json',denialReceiptPath:'/protected/denial',...(version===7?{releaseRunId:'live-owned-run'}:{})};
+  validateCollectorConfig(owned);const record=structuredClone(base),request=JSON.parse(record.attempts[0].request_packet),input=validateCapabilityInput(blackspireCapabilityRegistry.get(entry.capability),cases[1].input),canonical=receiverRequest(entry.capability,config.workspace,input),issuedAt=Date.now();
+  request.input=input;request.receiverAuthority={version:1,releaseSha:config.releaseSha,releaseRunId:version===6?owned.runId:owned.releaseRunId,apiGeneration:generation.apiGeneration,workerGeneration:generation.workerGeneration,workspaceId:config.workspace,principalId:config.principal,principalSecurityVersion:1,grantId:'collector-grant',grantVersion:1,grantSecurityVersion:1,capabilityId:entry.capability,permission:entry.permissions[0],taskId:record.task.id,attemptId:record.attempts[0].id,workerId:generation.workerId,claimDigest:request.claimDigest,method:canonical.method,path:canonical.path,bodySha256:canonical.bodySha256,issuedAt,expiresAt:issuedAt+15000,proofDigest:'e'.repeat(64)};
+  record.attempts[0].request_packet=JSON.stringify(request);const evidence=JSON.parse(record.task.evidence);
+  evidence.readObservation={...evidence.readObservation,version:2,transport:'bounded owned PostgreSQL SELECT and Supabase GET/HEAD',scope:'authority-bound Buyer read only',receiverAuthorityDigest:persistedReceiverAuthorityBindingDigest(request.receiverAuthority)};record.task.evidence=JSON.stringify(evidence);
+  assert.equal(verifyCollectedTask(record,owned,entry,key,generation).authorityVersion,1);
+  evidence.readObservation.version=1;evidence.readObservation.transport='bounded PostgREST GET/HEAD';evidence.readObservation.scope='supplied read client only';record.task.evidence=JSON.stringify(evidence);assert.throws(()=>verifyCollectedTask(record,owned,entry,key,generation),/OWNED_BUYER_TRANSPORT_REQUIRED/);
+ }
+});
