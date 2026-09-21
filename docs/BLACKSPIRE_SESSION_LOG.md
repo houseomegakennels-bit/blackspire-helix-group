@@ -2126,3 +2126,7 @@ Prepared authenticated owned-mode frontend routing, signed deal context, version
 ## 2026-09-21 — Buyer daemon identity, attestation and provisioner
 
 Added IPC-only group isolation, fixed OS identity, exact installed artifact and actual process-generation checks, and protected retained-credential provisioning. Three focused tests and build/lint/syntax/security checks pass. Provisioner connected execution and release manifest publication remain UNVERIFIED pending integration. No production mutation.
+
+## 2026-09-21 — Buyer credential reconciliation and installed manifest tests
+
+Disposable PostgreSQL 17.6 SCRAM tests prove initial-password refusal and uncertain-commit reconciliation without repeat rotation. Added authenticated readiness and concrete retained installed-manifest publication/restoration. Four focused tests pass; the root-filesystem publisher test intentionally skips without root. Full production adapter execution remains UNVERIFIED. No production mutations.

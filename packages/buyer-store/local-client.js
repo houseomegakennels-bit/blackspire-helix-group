@@ -21,5 +21,6 @@ export function createBuyerStoreLocalClient({configuration,connect=net.createCon
    socket.once('close',()=>{if(!settled)finish(true);});
   }catch{finish(true);}
  });
- return Object.freeze({userRequest:body=>request('user',body),readCapabilityProfiles:input=>request('profiles-read',{input})});
+ const readiness=async()=>{const result=await request('ready',{});if(!exact(result,['status','releaseSha','profileDigest','rolesVerified'])||result.status!=='ready'||result.releaseSha!==config.releaseSha||result.profileDigest!==config.profileDigest||result.rolesVerified!==true)fail();return result;};
+ return Object.freeze({readiness,checkAvailability:async()=>{try{await readiness();return true;}catch{return false;}},userRequest:body=>request('user',body),readCapabilityProfiles:input=>request('profiles-read',{input})});
 }

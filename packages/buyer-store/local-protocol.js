@@ -15,6 +15,8 @@ export function validateRequest(value,configuration,{now=Date.now,seen}={}){
  if(value.version!==1||value.releaseSha!==configuration.releaseSha||value.profileDigest!==configuration.profileDigest||!/^[a-f0-9]{32}$/.test(value.id)||!Number.isSafeInteger(value.timestamp)||Math.abs(now()-value.timestamp)>15000||!equalMac(signature,mac(unsigned,configuration.key)))fail();
  if(value.lane==='user'){
   if(!exact(value.body,['operation','accessToken','input'])||typeof value.body.accessToken!=='string'||value.body.accessToken.length>8192)fail();
+ }else if(value.lane==='ready'){
+  if(!exact(value.body,[]))fail();
  }else if(value.lane==='profiles-read'){
   if(!exact(value.body,['input']))fail();
  }else fail();

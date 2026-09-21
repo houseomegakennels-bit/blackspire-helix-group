@@ -18,6 +18,14 @@ export async function startBuyerStoreRuntime({configuration=loadBuyerStoreConfig
  const repository=createBuyerStoreRepository({connect:connect('buyer_repository_login'),connectCapability:connect('buyer_capability_login')});
  const verifyUser=createSupabaseBuyerUserVerifier({publicKey:config.publicKey,operatorOwnerId:config.operatorOwnerId});
  const server=createBuyerStoreLocalServer({configuration:config.client,attestation:createBuyerStoreAttestation(config),userHandler:createBuyerStoreHandler({repository,verifyUser}),
-  readCapabilityProfiles:input=>repository.readCapabilityProfiles(input),validateInput:validateBuyerStoreInput});
+  readCapabilityProfiles:input=>repository.readCapabilityProfiles(input),readiness:async()=>{
+   for(const user of ['buyer_repository_login','buyer_capability_login']){
+    const client=await connect(user)();try{
+     const r=await client.query('select current_user as actor,session_user as session');
+     if(r.rows?.length!==1||r.rows[0].actor!==user||r.rows[0].session!==user)fail();
+    }finally{await client.end().catch(()=>{});}
+   }
+   return {status:'ready',releaseSha:config.client.releaseSha,profileDigest:config.client.profileDigest,rolesVerified:true};
+  },validateInput:validateBuyerStoreInput});
  await listen(server,{ipcGroupId:config.ipcGroupId});return server;
 }

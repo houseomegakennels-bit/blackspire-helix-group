@@ -2,7 +2,7 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import {BUYER_STORE_SOCKET,BUYER_STORE_MAX_BYTES,BUYER_STORE_TIMEOUT_MS,validateClientConfiguration,validateRequest,mac,fail} from './local-protocol.js';
-export function createBuyerStoreLocalServer({configuration,userHandler,readCapabilityProfiles,validateInput,attestation,now=Date.now}={}){
+export function createBuyerStoreLocalServer({configuration,userHandler,readCapabilityProfiles,validateInput,attestation,readiness,now=Date.now}={}){
  const config=validateClientConfiguration(configuration),seen=new Map();
  if(typeof userHandler!=='function'||typeof readCapabilityProfiles!=='function'||typeof validateInput!=='function')fail();
  const server=net.createServer({allowHalfOpen:true},socket=>{
@@ -15,7 +15,9 @@ export function createBuyerStoreLocalServer({configuration,userHandler,readCapab
     const bytes=Buffer.concat(chunks);if(bytes.at(-1)!==10||bytes.subarray(0,-1).includes(10))fail();
     const request=validateRequest(JSON.parse(bytes.toString('utf8')),config,{now,seen});
     const proof=attestation?await attestation.verify():null;
-    const result=request.lane==='user'
+    const result=request.lane==='ready'
+     ?await (typeof readiness==='function'?readiness:fail)()
+     :request.lane==='user'
      ?await userHandler({...request.body,input:validateInput(request.body.operation,request.body.input)})
      :await readCapabilityProfiles(validateInput('profiles-list',request.body.input));
     if(attestation)await attestation.verifyUnchanged(proof);

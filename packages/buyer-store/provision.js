@@ -1,3 +1,5 @@
+import {provisionBuyerStorePasswords} from './password-provision.js';
+import {observeFreshOwnedRepositoryCredentials} from '../buyer-writer/owned-postgres-materializer.js';
 import fs from 'node:fs';
 import {randomBytes,createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
@@ -62,28 +64,16 @@ export async function provisionBuyerStore(releaseSha,{Client}={}){
     finally{await client.end().catch(()=>{});}
    }
   };
-  if(!existing(INTENT)){
-   const management=new Driver(options(credential.user,credential.password));
-   try{
-    await management.connect();await verifyOwnedDatabaseIdentity(management,profile);
-    await management.query('BEGIN');
-    await management.query("SELECT pg_advisory_xact_lock(hashtextextended('blackspire-buyer-store-provision-v1',0))");
-    const r=await management.query('SELECT rolname,rolcanlogin,rolsuper,rolcreaterole,rolcreatedb,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=ANY($1::text[])',[roles]);
-    if(r.rows.length!==2||r.rows.some(v=>!v.rolcanlogin||v.rolsuper||v.rolcreaterole||v.rolcreatedb||v.rolreplication||v.rolbypassrls))fail();
-    publish(INTENT,intent);
-    for(const [index,user] of roles.entries()){
-     const password=index===0?config.repositoryPassword:config.capabilityPassword;
-     // Password alphabet is generated base64url; no query text is logged.
-     if(!/^[A-Za-z0-9_-]{43}$/.test(password))fail();
-     await management.query('ALTER ROLE '+user+" PASSWORD '"+password+"'");
-    }
-    await management.query('COMMIT');
-   }catch{await management.query('ROLLBACK').catch(()=>{});fail();}
-   finally{await management.end().catch(()=>{});}
-  }else if(JSON.stringify(readRootOwnedJson(INTENT,{groupId:0}))!==JSON.stringify(intent))fail();
-  // An interrupted intent never repeats ALTER ROLE. Only successful independent
-  // login with the retained passwords can reconcile the unknown result.
-  await verify();publish(DONE,{version:1,planDigest:digest(plan),status:'VERIFIED'});
+  const management=new Driver(options(credential.user,credential.password));
+  try{
+   await management.connect();
+   await provisionBuyerStorePasswords({management,verifyIdentity:()=>verifyOwnedDatabaseIdentity(management,profile),
+    observeFresh:async()=>{const result=await observeFreshOwnedRepositoryCredentials();return result.fresh===true;},
+    passwords:[config.repositoryPassword,config.capabilityPassword],verifyPasswords:verify,
+    journal:{hasIntent:()=>existing(INTENT),writeIntent:()=>publish(INTENT,intent),
+     verifyIntent:()=>{if(JSON.stringify(readRootOwnedJson(INTENT,{groupId:0}))!==JSON.stringify(intent))fail();},
+     writeResult:()=>publish(DONE,{version:1,planDigest:digest(plan),status:'VERIFIED'})}});
+  }finally{await management.end().catch(()=>{});}
   directory('/etc/blackspire-buyer-store');
   fs.chownSync('/etc/blackspire-buyer-store',0,gid);fs.chmodSync('/etc/blackspire-buyer-store',0o750);
   publish(BUYER_STORE_CONFIGURATION,config,gid,0o640);
