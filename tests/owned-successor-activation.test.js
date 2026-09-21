@@ -53,7 +53,7 @@ test('candidate handoff rejects internally rehashed invalid envelopes and missin
  }
 });
 
-test('actual gateway publication composes with activation and every interrupted deployed phase without replaying effects',async()=>{
+test('actual gateway publication composes with activation and every interrupted deployed phase without replaying effects',{skip:process.getuid?.()!==0},async()=>{
  const {createOwnedSuccessorGatewayUnitFixture}=await import('./owned-successor-gateway-unit-fixture.js');
  const unit=await import('../packages/buyer-writer/owned-successor-gateway-unit.js'),g=createOwnedSuccessorGatewayUnitFixture();
  try{
