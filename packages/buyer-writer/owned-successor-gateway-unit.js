@@ -1,3 +1,5 @@
+import {inspectCandidateDeploymentHistory} from '../zola-release/candidate-deployment.js';
+import {hash as journalHash} from '../zola-release/commander-journal.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
@@ -35,7 +37,8 @@ function host(input,deps){
   if(proof.releaseSha!==sha||proof.environment!=='production'||!digest(proof.artifactDigest)||sealed&&(proof.status!=='SEALED_ARTIFACT_VERIFIED'||proof.deployed!==false||proof.productionAccepted!==false))fail();return proof;};
  const template=sha=>{const value=read(path.join(paths.releases,sha,'ops/runtime-ownership',GATEWAY_SERVICE),{gid:deps.artifactGid??fs.statSync(path.join(paths.releases,sha,'ops/runtime-ownership',GATEWAY_SERVICE)).gid,mode:0o644});if(value===null)fail();return value;};
  const stopped=deps.stopped??verifyOwnedBuyerMigrationQuiescence;
- function phase(){files.directory(path.dirname(paths.current));const st=fs.lstatSync(paths.current);if(!st.isSymbolicLink()||st.uid!==0||st.nlink!==1)fail();const target=fs.realpathSync(paths.current),releaseSha=path.basename(target);if(![P.releaseSha,input.releaseSha].includes(releaseSha)||target!==path.join(paths.releases,releaseSha))fail();return {releaseSha,target,link:fs.readlinkSync(paths.current),identity:Object.fromEntries(['dev','ino','uid','gid','nlink','mode','mtimeMs','ctimeMs'].map(k=>[k,st[k]]))};}
+ const phase=()=>captureOwnedSuccessorRuntimePhase(input,{...deps,paths,files,held});
+
  async function evidence(sealed){const before=stable();if(sealed)await stopped();
   const retirement=await deps.verifyRetirement(input);validatePartialRetirementEvent(retirement);
   if(!same(rootValue(paths.retirement),retirement)||retirement.successorReleaseSha!==input.releaseSha||retirement.successorOperationId!==input.operationId||retirement.profileDigest!==input.profileDigest)fail();
@@ -83,10 +86,12 @@ export async function installOwnedSuccessorGatewayUnit(plan){
  h.retain('result',result);h.loaded();h.stable();if(h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
 }
 export async function observeOwnedSuccessorGatewayUnit(raw,deps={}){
- const input=validate(raw),h=host(input,deps),before=h.phase(),sealed=before.releaseSha===P.releaseSha;
- const oldHeld=()=>{const state=h.stable().state;if(state.releaseSha!==P.releaseSha||state.runId!==P.runId||state.apiGeneration!==null||state.workerGeneration!==null)fail();};
- if(sealed)oldHeld();const e=await h.evidence(sealed),plan=h.retained('plan');h.checkPlan(plan,e);
- if(sealed)oldHeld();if(!same(h.phase(),before)||!same(h.retained('intent'),h.intent(plan))||h.unit()!==plan.afterUnit)fail();const result=h.checkResult(plan,h.retained('result'));h.loaded();if(!same(h.phase(),before)||h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
+ const input=validate(raw),h=host(input,deps),before=h.phase();
+ if(before.requiresStopped)await h.stopped();if(!same(h.phase(),before))fail();
+ const e=await h.evidence(before.sealed),plan=h.retained('plan');h.checkPlan(plan,e);
+ if(before.artifactDigest!==null&&before.artifactDigest!==e.dependencies.artifactDigest)fail();
+ if(before.requiresStopped)await h.stopped();
+ if(!same(h.phase(),before)||!same(h.retained('intent'),h.intent(plan))||h.unit()!==plan.afterUnit)fail();const result=h.checkResult(plan,h.retained('result'));h.loaded();if(!same(h.phase(),before)||h.unit()!==plan.afterUnit)fail();return Object.freeze(result);
 }
 // Postmerge reads this distinct completed receipt by the candidate gateway's
 // operation authority. It never reinterprets the original installation state.
@@ -105,4 +110,30 @@ export function readOwnedSuccessorGatewayUnitReceipt({releaseSha,operationId,art
  if(filenames.some((p,i)=>read(p)!==contents[i])||read(paths.oldState)!==oldBytes||read(paths.retirement)!==retirementBytes)fail();
  return Object.freeze({status:'OWNED_SUCCESSOR_GATEWAY_UNIT_RECEIPT_VERIFIED',sha:releaseSha,operationId,attemptId:input.attemptId,artifactDigest,profileDigest:input.profileDigest,
   installedUnitSha256:result.unitDigest,planDigest,dependencies:[...filenames.map((filename,i)=>({filename,uid:0,gid:0,mode:0o600,digest:hash(contents[i])})),{filename:paths.oldState,uid:0,gid:0,mode:0o600,digest:hash(oldBytes)},{filename:paths.retirement,uid:0,gid:0,mode:0o600,digest:hash(retirementBytes)}]});
+}
+
+// Shared, observation-only phase classifier. Callers fence its full serializable
+// result across awaited evidence and enforce requiresStopped before accepting it.
+// Record presence selects deployed verification; verifier errors never fall back.
+export function captureOwnedSuccessorRuntimePhase(raw,{paths=defaults,files=createBuyerStoreProtectedFiles(),held,verifySuccessorHeld,releaseEvents}={}){
+ const input=validate(raw);if(process.getuid()!==0)fail();files.directory(path.dirname(paths.current));
+ const st=fs.lstatSync(paths.current);if(!st.isSymbolicLink()||st.uid!==0||st.nlink!==1)fail();
+ const target=fs.realpathSync(paths.current),currentSha=path.basename(target);
+ if(![P.releaseSha,input.releaseSha].includes(currentSha)||target!==path.join(paths.releases,currentSha))fail();
+ const pointer={currentSha,target,link:fs.readlinkSync(paths.current),identity:Object.fromEntries(['dev','ino','uid','gid','nlink','mode','mtimeMs','ctimeMs'].map(k=>[k,st[k]]))};
+ const state=validateReleaseAdmissionState(held?held():readRootOwnedJsonSnapshot(paths.admission,{groupId:fs.lstatSync(paths.admission).gid,maxBytes:2048}).value);
+ if(state.mode!=='held')fail();const oldHeld=state.releaseSha===P.releaseSha;
+ if(oldHeld){if(currentSha!==P.releaseSha||state.runId!==P.runId||state.apiGeneration!==null||state.workerGeneration!==null)fail();}
+ else if(state.releaseSha!==input.releaseSha||typeof verifySuccessorHeld!=='function'||verifySuccessorHeld(input,state)!==true)fail();
+ const record=path.join(paths.releases,input.releaseSha,'.deployment-record.json');files.directory(path.dirname(record));
+ let deployment=null;try{const s=fs.lstatSync(record);if(!s.isFile()||s.isSymbolicLink()||s.uid!==0||s.nlink!==1||(s.mode&0o7777)!==0o644)fail();const bytes=readOwnedConfigurationBytes(record,{gid:s.gid,mode:0o644,maxBytes:4096}),after=fs.lstatSync(record),keys=['uid','gid','mode','nlink','size','dev','ino','mtimeMs','ctimeMs'];if(bytes===null||keys.some(k=>s[k]!==after[k]))fail();deployment={identity:Object.fromEntries(keys.map(k=>[k,s[k]])),digest:hash(bytes)};}catch(error){if(error.code!=='ENOENT')throw error;}
+ if(typeof releaseEvents!=='function')fail();const candidate=inspectCandidateDeploymentHistory(releaseEvents());if(oldHeld&&candidate.plan)fail();
+ if(!oldHeld){
+  if(candidate.plan){const p=candidate.plan;if(p.operationId!==input.operationId||p.releaseSha!==input.releaseSha||p.previousSha!==P.releaseSha||p.backendProfile!=='owned-postgres-v1'||p.profileDigest!==input.profileDigest||p.runId!==state.runId||p.stateDigest!==journalHash({...state,apiGeneration:null,workerGeneration:null}))fail();}
+ }
+ if(deployment!==null){if(oldHeld||!candidate?.plan)fail();if(currentSha===P.releaseSha){if(candidate.pending!=='pointer'||candidate.next!==0||candidate.completed||state.apiGeneration!==null||state.workerGeneration!==null)fail();}
+  else if(!(candidate.pending==='pointer'&&candidate.next===0||candidate.next>=1))fail();
+ }else{if(currentSha!==P.releaseSha)fail();if(candidate?.plan&&(candidate.next!==0||candidate.completed||candidate.pending!==null&&candidate.pending!=='pointer'))fail();}
+ if(currentSha===P.releaseSha&&(state.apiGeneration!==null||state.workerGeneration!==null))fail();
+ return {sealed:deployment===null,requiresStopped:currentSha===P.releaseSha,pointer,deployment,state,candidate,artifactDigest:candidate?.plan?.artifactDigest??null};
 }
