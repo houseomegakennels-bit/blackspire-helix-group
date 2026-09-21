@@ -1,10 +1,13 @@
+import {resolveBuyerStoreIdentity} from './identity.js';
+import {createBuyerStoreAttestation} from './attestation.js';
 import {createBuyerStoreHandler,createSupabaseBuyerUserVerifier,validateBuyerStoreInput} from './service.js';
 import {createBuyerStoreRepository} from './repository.js';
 import {loadBuyerStoreConfiguration,validateBuyerStoreConfiguration} from './configuration.js';
 import {createBuyerStoreLocalServer,listenBuyerStore} from './local-server.js';
 import {fail} from './local-protocol.js';
-export async function startBuyerStoreRuntime({configuration=loadBuyerStoreConfiguration(),Client,listen=listenBuyerStore}={}){
- const config=validateBuyerStoreConfiguration(configuration);
+export async function startBuyerStoreRuntime({configuration=loadBuyerStoreConfiguration(),Client,listen=listenBuyerStore,resolveIdentity=resolveBuyerStoreIdentity}={}){
+ const config=validateBuyerStoreConfiguration(configuration),identity=resolveIdentity();
+ if(identity.ipcGroupId!==config.ipcGroupId)fail();
  const Driver=Client??(await import('pg')).Client;
  const connect=user=>async()=>{
   const client=new Driver({host:config.profile.host,port:config.profile.port,database:config.profile.database,user,
@@ -14,7 +17,7 @@ export async function startBuyerStoreRuntime({configuration=loadBuyerStoreConfig
  };
  const repository=createBuyerStoreRepository({connect:connect('buyer_repository_login'),connectCapability:connect('buyer_capability_login')});
  const verifyUser=createSupabaseBuyerUserVerifier({publicKey:config.publicKey,operatorOwnerId:config.operatorOwnerId});
- const server=createBuyerStoreLocalServer({configuration:config.client,userHandler:createBuyerStoreHandler({repository,verifyUser}),
+ const server=createBuyerStoreLocalServer({configuration:config.client,attestation:createBuyerStoreAttestation(config),userHandler:createBuyerStoreHandler({repository,verifyUser}),
   readCapabilityProfiles:input=>repository.readCapabilityProfiles(input),validateInput:validateBuyerStoreInput});
- await listen(server,{apiGroupId:config.apiGroupId});return server;
+ await listen(server,{ipcGroupId:config.ipcGroupId});return server;
 }

@@ -2122,3 +2122,7 @@ A namespace-entry harness generation attempt was rejected by the remote tool; a 
 ## 2026-09-21 — owned Buyer frontend and repository hardening
 
 Prepared authenticated owned-mode frontend routing, signed deal context, version-two read evidence, captured-session dispatch, owner-derived export metadata, restrictive RLS and exact timestamp formatting. Thirty-four focused tests, actual isolated PostgreSQL, frontend build/TypeScript and root gates pass. No production mutation; integration and live acceptance remain pending.
+
+## 2026-09-21 — Buyer daemon identity, attestation and provisioner
+
+Added IPC-only group isolation, fixed OS identity, exact installed artifact and actual process-generation checks, and protected retained-credential provisioning. Three focused tests and build/lint/syntax/security checks pass. Provisioner connected execution and release manifest publication remain UNVERIFIED pending integration. No production mutation.

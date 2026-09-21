@@ -5,8 +5,8 @@ import {validateClientConfiguration,exact,fail} from './local-protocol.js';
 export const BUYER_STORE_CONFIGURATION='/etc/blackspire-buyer-store/runtime.json';
 export const BUYER_STORE_CLIENT_CONFIGURATION='/etc/blackspire/command-buyer-store-client.json';
 export function validateBuyerStoreConfiguration(value){
- if(!exact(value,['version','client','profile','ca','repositoryPassword','capabilityPassword','publicKey','operatorOwnerId','apiGroupId'])||value.version!==1)fail();
- if(!Number.isInteger(value.apiGroupId)||value.apiGroupId<=0)fail();
+ if(!exact(value,['version','client','profile','ca','repositoryPassword','capabilityPassword','publicKey','operatorOwnerId','ipcGroupId'])||value.version!==1)fail();
+ if(!Number.isInteger(value.ipcGroupId)||value.ipcGroupId<=0)fail();
  const client=validateClientConfiguration(value.client),profile=validateOwnedPostgresProfile(value.profile);
  if(ownedPostgresProfileDigest(profile)!==client.profileDigest||typeof value.ca!=='string'||value.ca.length>16384||createHash('sha256').update(value.ca).digest('hex')!==profile.caSha256)fail();
  for(const key of ['repositoryPassword','capabilityPassword'])if(typeof value[key]!=='string'||value[key].length<32||value[key].length>4096||value[key].includes('\0'))fail();
