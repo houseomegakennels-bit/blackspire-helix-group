@@ -75,8 +75,9 @@ test('health and smoke fail closed for stale SHA, worker, collector or caller bi
  assert.throws(()=>createHealthSmokeProductionOperations(api.context).api_health.execute({...api.call,attemptId:'wrong'}),/rejected/);
 });
 
-function transport(responseSpec){
+function transport(responseSpec,observeOptions=()=>{}){
  return{request(options,onResponse){
+  observeOptions(options);
   const request=new EventEmitter();request.end=()=>queueMicrotask(()=>{
    if(responseSpec==='timeout'){request.emit('timeout');return;}
    const response=Readable.from([Buffer.from(responseSpec.body??'')]);response.statusCode=responseSpec.status;response.headers=responseSpec.headers;
@@ -86,8 +87,12 @@ function transport(responseSpec){
 }
 
 test('fixed health transport accepts bounded JSON and rejects redirects and timeout',async()=>{
- const good=transport({status:200,headers:{'content-type':'application/json'},body:JSON.stringify(health())});
+ let observed;
+ const good=transport({status:200,headers:{'content-type':'application/json'},body:JSON.stringify(health())},options=>{observed=options;});
  assert.deepEqual(await requestFixedProductionHealth({timeoutMs:100,transport:good}),health());
+ assert.equal(observed.hostname,'127.0.0.1');assert.equal(observed.port,8789);
+ assert.equal(observed.path,'/health');assert.equal(observed.method,'GET');
+ assert.equal(PRODUCTION_HEALTH_URL,'http://127.0.0.1:8789/health');
  const redirect=transport({status:302,headers:{location:'http://example.invalid/','content-type':'application/json'}});
  await assert.rejects(()=>requestFixedProductionHealth({timeoutMs:100,transport:redirect}),/REJECTED/);
  await assert.rejects(()=>requestFixedProductionHealth({timeoutMs:25,transport:transport('timeout')}),/TIMEOUT/);
