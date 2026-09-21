@@ -49,3 +49,8 @@ test('busy remote execution or changed HELD fence stops before PATCH and native 
 test('foreign attempt deactivation cannot authorize synchronization',async()=>{
  const f=fixture();await f.run('deactivate');f.b.stageAttemptId=randomUUID();await assert.rejects(f.run('update'));assert.equal(f.calls.some(c=>c.method==='PATCH'),false);
 });
+test('candidate resume refuses missing credential receipt without publication or resynchronization',async()=>{
+ const f=fixture();await f.run('deactivate');await f.run('update');delete f.records.result;f.restart();
+ await assert.rejects(f.run('reconcile'));await assert.rejects(f.run('publish'));
+ assert.equal(f.calls.filter(c=>c.method==='PATCH').length,1);assert.equal(f.calls.some(c=>c.path.endsWith('/activate')),false);
+});
