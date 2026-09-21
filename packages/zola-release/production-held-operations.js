@@ -58,6 +58,10 @@ function admissionOptions(context,root=RELEASE_ADMISSION_ROOT){
   return{apiGeneration:current.apiGeneration,workerGeneration:current.workerGeneration};
  }};
 }
+function matchesCollectorBinding(config,{version,releaseSha,epochRunId}){
+ return config?.version===version&&config.releaseSha===releaseSha&&isProductionAcceptanceIdentity(config)
+  &&(version!==5||config.releaseRunId===epochRunId);
+}
 function protectedConfig(filename){return validateCollectorConfig(readRootOwnedJson(filename,{groupId:0,maxBytes:16384}));}
 async function collectFixed(config){
  let host,journal;try{journal=openCollectorJournal(config.journalDirectory,config.runId);host=createProductionCollectorHost(config);
@@ -173,9 +177,11 @@ export function createHeldProductionOperations(context,overrides={}){
    return pass({stage:'generation_revalidation',releaseSha:context.input.releaseSha,epochRunId:prior.epochRunId,apiGeneration:prior.apiGeneration,workerGeneration:prior.workerGeneration,
     artifactDigest:prior.artifactDigest,generationCurrent:true});},async observe(call){return revalidation.check(call);}};
  const premergeReads={check(call){invocation(context,call,'six_reads');let config;try{config=deps.premergeConfig();}catch{return blocked();}
-   if(config.version!==4||config.releaseSha!==context.input.releaseSha||!isProductionAcceptanceIdentity(config))return blocked();
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha}))return blocked();
    return pass({stage:'six_reads',fixedCollector:true});},execute(call){invocation(context,call,'six_reads',{attempt:true});},
-  async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{report=await deps.collect(deps.premergeConfig());}catch{return blocked();}
+  async reconcile(call){invocation(context,call,'six_reads',{attempt:true});let report;try{const config=deps.premergeConfig();
+   if(!matchesCollectorBinding(config,{version:4,releaseSha:context.input.releaseSha}))return blocked();
+   report=await deps.collect(config);}catch{return blocked();}
    const evidence=safeCollector(report,false,context.input.releaseSha);return pass({stage:'six_reads',...evidence});},observe(){reject();}};
  const postmerge={check:call=>deps.observePostMerge(context,call),execute:call=>{deps.observePostMerge(context,call);},
   reconcile:call=>deps.observePostMerge(context,call),observe:call=>deps.observePostMerge(context,call)};
@@ -202,9 +208,11 @@ export function createHeldProductionOperations(context,overrides={}){
    const core={stage:name,newMainSha:binding.mergeMainSha,epochRunId:binding.epochRunId,apiGeneration:binding.apiGeneration,workerGeneration:binding.workerGeneration,
     artifactDigest:first.artifactDigest,workerReady:true,generationCurrent:true};return pass({...core,observationDigest:hash(core)});},observe(){reject();}});
  const liveReads=Object.freeze({check(call){invocation(context,call,'six_live_reads');let config;try{config=deps.liveConfig();}catch{return blocked();}
-   const binding=heldBinding(context,{...call,attemptId:null});if(config.version!==5||!isProductionAcceptanceIdentity(config)||config.releaseSha!==binding.mergeMainSha||config.releaseRunId!==binding.epochRunId)return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
+   const binding=heldBinding(context,{...call,attemptId:null});if(!matchesCollectorBinding(config,{version:5,releaseSha:binding.mergeMainSha,epochRunId:binding.epochRunId}))return blocked();return pass({stage:'six_live_reads',fixedCollector:true});},
   execute(call){invocation(context,call,'six_live_reads',{attempt:true});},async reconcile(call){invocation(context,call,'six_live_reads',{attempt:true});let report;
-   try{report=await deps.collect(deps.liveConfig());}catch{return blocked();}return pass({stage:'six_live_reads',...safeCollector(report,true,merged(call))});},observe(){reject();}});
+   const binding=heldBinding(context,call);
+   try{const config=deps.liveConfig();if(!matchesCollectorBinding(config,{version:5,releaseSha:binding.mergeMainSha,epochRunId:binding.epochRunId}))return blocked();
+    report=await deps.collect(config);}catch{return blocked();}return pass({stage:'six_live_reads',...safeCollector(report,true,merged(call))});},observe(){reject();}});
 
  function openEvidence(call){
   const o=call.state.outputs,h=inspectHeldAcceptanceHistory(context.journal.stream('release').events()),main=merged(call),vps=o.journaled_vps_cutover;

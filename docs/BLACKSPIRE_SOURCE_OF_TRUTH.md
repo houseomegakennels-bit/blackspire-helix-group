@@ -10,6 +10,10 @@ The recorded implementation anchor now identifies independently reviewed main `2
 
 The contained suite for `b00754d` passes 2,193 total / 2,116 passed / 77 intended skips / zero failures, all 224 files complete, zero tree mutation and zero surviving descendants. The frontend Webpack build and TypeScript pass. After deterministic dependency installation, the integrated fixed recovery HTTP rehearsal passes with the required `2c0b600c268faa0571f08322e16d7f81f37789be` artifact digest; it explicitly does not establish production acceptance. Later runtime-identity, denial-principal and candidate-lifecycle changes require fresh integrated validation. A read-only provider catalog capture validates 17 fixed objects and creator OID 16388 without database mutation.
 
+## 2026-09-21 — resumed collector configuration binding
+
+Both premerge and live six-read reconciliation now repeat the same configuration binding checks used before intent: fixed runtime workspace/principal, configuration version and exact release SHA, plus the journal-bound HELD epoch for live reads. Configuration drift is refused before collection when resuming an existing intent. A composed regression reproduced dispatch with the prior implementation and now checks workspace, principal, version, SHA and epoch drift with zero collector calls. Twenty-two focused HELD, health, zero-effect, rollback and authority tests pass; no production configuration or journal changed.
+
 ## 2026-09-21 — sealed recovery package verification
 
 Rollback acceptance and verification now inspect the pinned recovery package as a sealed artifact, without requiring a deployment record for a package that has not been deployed. Exact recovery SHA/digest, repeated artifact observations, protected backup checks and live HELD generation observation remain enforced. Twelve focused rollback and artifact tests pass, including the separation between sealed evidence and deployed runtime evidence. This correction does not claim a deployment or production acceptance and does not change any production record.

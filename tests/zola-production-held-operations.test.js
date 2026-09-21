@@ -99,3 +99,27 @@ test('mint maps fixed runtime identity without substituting release journal auth
   assert.equal(minted,null);
  }
 });
+
+test('resumed six-read intents revalidate fixed identity, version, release and live epoch before collection',{skip:process.getuid()!==0},async t=>{
+ for(const stage of ['six_reads','six_live_reads']){
+  const f=fixture(t),live=stage==='six_live_reads',context={input,release:{},journal:f.journal};
+  const good={version:live?5:4,workspace:'blackspire-command',principal:'blackspire-operator',releaseSha:live?merged:candidate,
+   ...(live?{releaseRunId:epochRunId}:{})};
+  let config=good,collections=0;
+  const operation=createHeldProductionOperations(context,{premergeConfig:()=>config,liveConfig:()=>config,
+   collect:async observed=>{collections++;assert.deepEqual(observed,good);throw new Error('collector reached');}})[stage];
+  const call={...f.call,state:{...f.call.state,pending:{stage,attemptId:f.call.attemptId}}};
+  assert.equal(operation.check({...call,attemptId:null}).status,'PASS');
+  operation.execute(call);
+  const mutations=[{workspace:input.workspace},{principal:input.principal},{version:live?4:5},{releaseSha:'9'.repeat(40)},
+   ...(live?[{releaseRunId:randomUUID()}]:[])];
+  for(const mutation of mutations){
+   config={...good,...mutation};
+   assert.equal((await operation.reconcile(call)).status,'BLOCKED_EXTERNAL');
+   assert.equal(collections,0,`${stage} must reject configuration drift before dispatch`);
+  }
+  config=good;
+  assert.equal((await operation.reconcile(call)).status,'BLOCKED_EXTERNAL');
+  assert.equal(collections,1,'unchanged configuration reaches the collector');
+ }
+});
