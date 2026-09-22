@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-22 — retirement observation deadline
+
+The first attempt-four retirement stopped before retaining any observation or deletion intent. A subsequent read-only diagnostic opened its recovery context in 7.1 seconds and completed the combined fence in 8.9 seconds; the original timeout remains plausible but UNVERIFIED. Only the not-ready recovery lane now allows twenty-five seconds for its combined sequential observation fence. Individual GET/native checks and ordinary proof-request fences retain ten seconds; no retry or repeated DELETE is introduced. Retirement and fifth credential proof remain UNVERIFIED.
+
 ## 2026-09-22 — failed startup retirement and fifth proof window
 
 Attempt four published the temporary proxy and then exited before durable READY. Its records establish failure after proxy publication, without identifying whether the fence or READY publication failed. Separate retirement requires its exact failed supervisor identity, restored proxy, absent listener and READY/proof/rejection, exact inactive workflow and zero execution inventory. Unknown deletion is observed without replay; all prior records remain immutable.
