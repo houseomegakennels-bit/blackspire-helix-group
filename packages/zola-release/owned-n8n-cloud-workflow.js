@@ -10,19 +10,20 @@ const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).
 export function validateOwnedN8nCloudPlan(p){
  if(p?.version!==1||p.kind!=='owned-n8n-cloud-proof-plan'||p.releaseSha!==N8N_REASSERTION.releaseSha||p.operationId!==N8N_REASSERTION.operationId||p.stageAttemptId!=='f163d812-3711-471b-863a-038e85d59137'||!/^[a-f0-9]{40}$/.test(p.operatorSha??'')||p.credentialId!==N8N_REASSERTION.credentialId||!hex(p.challenge)||!(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/).test(p.receiptId??'')||p.origin!=='https://jarvis.blackspirehelix.com'||p.path!=='/__zola_credential_proof/'+p.challenge)fail();
  for(const key of ['authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','sourceDigest','profileDigest','ingressDigest','proxyBeforeDigest','proxyCandidateDigest'])if(!hex(p[key]))fail();
- if(p.attempt!==undefined&&(![2,3,4,5].includes(p.attempt)||!hex(p.predecessorFailureDigest)))fail();
+ if(p.attempt!==undefined&&(![2,3,4,5,6].includes(p.attempt)||!hex(p.predecessorFailureDigest)))fail();
  if(p.attempt===undefined&&p.predecessorFailureDigest!==undefined)fail();
- if([3,4,5].includes(p.attempt)?!hex(p.predecessorInterruptionDigest):p.predecessorInterruptionDigest!==undefined)fail();
- if([4,5].includes(p.attempt)?!hex(p.predecessorExpiryDigest):p.predecessorExpiryDigest!==undefined)fail();
- if(p.attempt===5?!hex(p.predecessorNotReadyDigest):p.predecessorNotReadyDigest!==undefined)fail();
+ if([3,4,5,6].includes(p.attempt)?!hex(p.predecessorInterruptionDigest):p.predecessorInterruptionDigest!==undefined)fail();
+ if([4,5,6].includes(p.attempt)?!hex(p.predecessorExpiryDigest):p.predecessorExpiryDigest!==undefined)fail();
+ if([5,6].includes(p.attempt)?!hex(p.predecessorNotReadyDigest):p.predecessorNotReadyDigest!==undefined)fail();
+ if(p.attempt===6?!hex(p.predecessorFifthExpiryDigest):p.predecessorFifthExpiryDigest!==undefined)fail();
  const start=Date.parse(p.createdAt),end=Date.parse(p.expiresAt);if(!Number.isFinite(start)||!Number.isFinite(end)||end-start!==15*60*1000)fail();return p;
 }
 export function buildOwnedN8nCloudWorkflow(plan){
  const p=validateOwnedN8nCloudPlan(plan);
- return {name:([3,4,5].includes(p.attempt)?'Zola credential proof attempt'+p.attempt+' ':'Zola credential proof ')+p.challenge,nodes:[
+ return {name:([3,4,5,6].includes(p.attempt)?'Zola credential proof attempt'+p.attempt+' ':'Zola credential proof ')+p.challenge,nodes:[
  {parameters:{},id:'owned-proof-manual',name:'Manual Trigger',type:'n8n-nodes-base.manualTrigger',typeVersion:1,position:[0,0]},
- {parameters:{method:'GET',url:p.origin+p.path,authentication:'genericCredentialType',genericAuthType:'httpHeaderAuth',options:{redirect:{redirect:{followRedirects:false}},timeout:p.attempt===5?70000:40000,response:{response:{responseFormat:'json'}}}},id:'owned-proof-request',name:'Verify stored credential',type:'n8n-nodes-base.httpRequest',typeVersion:4.2,position:[240,0],credentials:{httpHeaderAuth:{id:p.credentialId,name:'ZOLA Buyer writer'}},retryOnFail:false,onError:'stopWorkflow'}
- ],connections:{'Manual Trigger':{main:[[{node:'Verify stored credential',type:'main',index:0}]]}},settings:{executionOrder:'v1',saveDataSuccessExecution:'all',saveDataErrorExecution:'all',saveManualExecutions:true,executionTimeout:p.attempt===5?90:60}};
+ {parameters:{method:'GET',url:p.origin+p.path,authentication:'genericCredentialType',genericAuthType:'httpHeaderAuth',options:{redirect:{redirect:{followRedirects:false}},timeout:[5,6].includes(p.attempt)?70000:40000,response:{response:{responseFormat:'json'}}}},id:'owned-proof-request',name:'Verify stored credential',type:'n8n-nodes-base.httpRequest',typeVersion:4.2,position:[240,0],credentials:{httpHeaderAuth:{id:p.credentialId,name:'ZOLA Buyer writer'}},retryOnFail:false,onError:'stopWorkflow'}
+ ],connections:{'Manual Trigger':{main:[[{node:'Verify stored credential',type:'main',index:0}]]}},settings:{executionOrder:'v1',saveDataSuccessExecution:'all',saveDataErrorExecution:'all',saveManualExecutions:true,executionTimeout:[5,6].includes(p.attempt)?90:60}};
 }
 export function normalizeOwnedN8nCloudWorkflow(plan,raw){
  const expected=buildOwnedN8nCloudWorkflow(plan);
@@ -57,7 +58,7 @@ export async function prepareOwnedN8nCloudWorkflow(plan,{request,store,fence,now
  if(prior&&!same(prior,intent)||(created||ack)&&!prior)fail();
  if(created){
   const w=validateOwnedN8nCloudWorkflowCreated(plan,created);
-  if([2,3,4,5].includes(plan.attempt)&&!same(validateOwnedN8nCloudWorkflowAcknowledgment(plan,ack),w))fail();
+  if([2,3,4,5,6].includes(plan.attempt)&&!same(validateOwnedN8nCloudWorkflowAcknowledgment(plan,ack),w))fail();
   if(!same(w,await getWorkflow(plan,request,w.id)))fail();await fence();
   store.record('workflow-intent',intent);if(ack)store.record('workflow-create-ack',ack);store.record('workflow-created',created);return created;
  }
@@ -74,7 +75,7 @@ export async function prepareOwnedN8nCloudWorkflow(plan,{request,store,fence,now
  store.record('workflow-intent',intent);store.record('workflow-create-ack',ack);store.record('workflow-created',result);return result;
 }
 export function normalizeOwnedN8nCloudExecutionWorkflow(plan,workflow,raw){
- if(![2,3,4,5].includes(plan.attempt))return normalizeOwnedN8nCloudWorkflow(plan,raw);
+ if(![2,3,4,5,6].includes(plan.attempt))return normalizeOwnedN8nCloudWorkflow(plan,raw);
  const w=normalizeOwnedN8nCloudWorkflow(plan,workflow);
  if(!exact(raw,'id,name,nodes,connections,settings,nodeGroups')||raw.id!==w.id||!isDeepStrictEqual(raw.nodeGroups,[]))fail();
  const expected={id:w.id,name:w.name,nodes:structuredClone(w.nodes),connections:w.connections,settings:w.settings,nodeGroups:[]};

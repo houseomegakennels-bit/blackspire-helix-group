@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-22 — fresh cloud verification after browser recovery
+
+The new session retrieved the Blackspire Drive handoff and verified Commander access, clean frozen fifth source, current candidate pointer a8e05ef, original proxy digest and absent temporary listener. The authenticated fifth execution inventory is HTTP200 with zero rows and no cursor; protected cleanup is complete with no receipt or rejection. Browser control and n8n sign-in now work. Fifth possession remains UNVERIFIED and its expired workflow must never execute.
+
+A separate sixth operator preserves the frozen fifth tree and all retained records. Exact expired-fifth retirement requires its successful supervisor, restored proxy, absent listener and complete zero-execution inventories. The systemd exit timestamp has second precision; the classifier pins the actual observed second and separately requires current time past expiry. Unknown deletion never redispatches. A fresh sixth plan and explicit matching release continuation require prior retirement plus their own successful cloud execution, authenticated server receipt and complete cleanup. Implementation tests and review are separate from production execution and public OPEN.
+
 ## 2026-09-22 — confirmed aggregate preflight deadline corrected
 
 Attempt-four retirement completed and deleted its unused workflow with zero executions. Fifth preparation then stopped before publishing its plan; a sanitized diagnostic confirmed Cloud fence elapsed deadline in its final combined preflight. Fifth-attempt aggregate fences now allow 25 seconds, retaining individual GET/native checks at 10 seconds except the existing startup-only native allowance. Two sequential proof fences fit inside 60-second proxy/socket limits, a 70-second HTTP-node limit and a 90-second workflow limit. Prior attempts retain their exact values and rendered bytes. No request retry, identity relaxation or expiry extension is introduced. Fifth possession and release remain UNVERIFIED.

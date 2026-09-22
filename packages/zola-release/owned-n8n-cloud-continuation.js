@@ -1,3 +1,4 @@
+import {validateExpired5OwnedN8nRetirement} from './owned-n8n-cloud-expired5.js';
 import {validateNotReadyOwnedN8nRetirement} from './owned-n8n-cloud-not-ready.js';
 import {validateExpiredOwnedN8nRetirement} from './owned-n8n-cloud-expired.js';
 import {validateInterruptedOwnedN8nAbandonment} from './owned-n8n-cloud-interrupted.js';
@@ -88,9 +89,18 @@ function validateExpiredContinuation(input,attempt){
  return {...validateInterruptedContinuation(input,attempt),predecessorExpiryDigest:hash(result),priorAttempt3Outcome:'EXPIRED_BEFORE_REQUEST'};
 }
 
-export function validateOwnedN8nCloudAttempt5Continuation(input){
+export const validateOwnedN8nCloudAttempt5Continuation=input=>validateNotReadyContinuation(input,5);
+function validateNotReadyContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,n=complete?.notReady,result=validateNotReadyOwnedN8nRetirement(n?.records,n??{});
  if(p?.predecessorNotReadyDigest!==hash(result)||p.challenge===n.records.plan.challenge||p.receiptId===n.records.plan.receiptId||p.path===n.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest'])if(p[k]!==n.records.plan[k])fail();
- if(!same(p.credentialMetadata,n.records.plan.credentialMetadata))fail();return {...validateExpiredContinuation(input,5),predecessorNotReadyDigest:hash(result),priorAttempt4Outcome:'FAILED_AFTER_PROXY_BEFORE_READY'};
+ if(!same(p.credentialMetadata,n.records.plan.credentialMetadata))fail();return {...validateExpiredContinuation(input,attempt),predecessorNotReadyDigest:hash(result),priorAttempt4Outcome:'FAILED_AFTER_PROXY_BEFORE_READY'};
+}
+
+export function validateOwnedN8nCloudAttempt6Continuation(input){
+ const {complete}=input,p=complete?.plan,e=complete?.expired5,result=validateExpired5OwnedN8nRetirement(e?.records,e??{});
+ if(p?.predecessorFifthExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest','predecessorNotReadyDigest'])if(p[k]!==e.records.plan[k])fail();
+ if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
+ return {...validateNotReadyContinuation(input,6),predecessorFifthExpiryDigest:hash(result),priorAttempt5Outcome:'EXPIRED_WITHOUT_EXECUTION'};
 }

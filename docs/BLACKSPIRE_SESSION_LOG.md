@@ -2410,3 +2410,7 @@ Attempt-four retirement stopped with an empty retirement directory before deleti
 ## 2026-09-22 — fifth diagnostic aggregate deadline alignment
 
 Retired the unused fourth workflow successfully. Fifth preflight remained empty and its sanitized diagnostic confirmed aggregate elapsed-deadline rejection. Aligned fifth aggregate and transport budgets while retaining individual bounds, original-attempt bytes, no request retry and absolute expiry. Added aggregate elapsed success/refusal and transport/history regressions. Production proof and release remain UNVERIFIED.
+
+## 2026-09-22 — browser recovered and sixth cloud-proof operator implemented
+
+Retrieved the Drive handoff, restored authenticated browser control, and verified original proxy bytes, absent listener, completed fifth cleanup, zero authenticated fifth executions and no receipt/rejection. Isolated sixth code adds exact expired-fifth retirement, distinct protected identity and full prior-attempt lineage, plus explicit native release continuation. The frozen fifth tree remains untouched. Focused retirement, supervisor, real HTTP verifier, workflow and continuation checks pass; build/lint/syntax, living-memory, secret scan and diff gates pass. Independent source review found no blocking issues after repairing the outer sixth launcher allowlist and inner dispatch. Commander quota briefly paused finalization, then user restored it. No sixth production proof or public OPEN has occurred; both remain UNVERIFIED.

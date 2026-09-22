@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-22 — fresh cloud verification after browser recovery
+
+The new session retrieved the Blackspire Drive handoff and verified Commander access, clean frozen fifth source, current candidate pointer a8e05ef, original proxy digest and absent temporary listener. The authenticated fifth execution inventory is HTTP200 with zero rows and no cursor; protected cleanup is complete with no receipt or rejection. Browser control and n8n sign-in now work. Fifth possession remains UNVERIFIED and its expired workflow must never execute.
+
+A separate sixth operator preserves the frozen fifth tree and all retained records. Exact expired-fifth retirement requires its successful supervisor, restored proxy, absent listener and complete zero-execution inventories. The systemd exit timestamp has second precision; the classifier pins the actual observed second and separately requires current time past expiry. Unknown deletion never redispatches. A fresh sixth plan and explicit matching release continuation require prior retirement plus their own successful cloud execution, authenticated server receipt and complete cleanup. Implementation tests and review are separate from production execution and public OPEN.
+
 ## 2026-09-21 — current successor continuation
 
 The user grants standing authority for all Zola release changes, merges and deployments, including production; earlier entries retain historical approval state. Commander is connected. Zola remains HELD on candidate2636 with four application services running and its writer binding incomplete. Successor code and acceptance fixes are reviewed, and draft PR154 is open. Concurrent main3019785 and docs-onlyf3ac are reconciled locally; their restrictive source demo policy requires a separate current-security compatibility proof before successor lineage preparation. Original migration, copy and hardening receipts and all journals remain untouched. No successor retirement or production switch has executed.
