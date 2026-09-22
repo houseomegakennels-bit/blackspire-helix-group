@@ -1,3 +1,5 @@
+import {expired6Fixture} from './helpers/owned-n8n-cloud-expired6-fixture.js';
+import {retireExpired6OwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-expired6.js';
 import {expired5Fixture} from './helpers/owned-n8n-cloud-expired5-fixture.js';
 import {retireExpired5OwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-expired5.js';
 import {notReadyFixture} from './helpers/owned-n8n-cloud-not-ready-fixture.js';
@@ -9,7 +11,7 @@ import {abandonInterruptedOwnedN8nAttempt} from '../packages/zola-release/owned-
 import {buildOwnedN8nCloudWorkflow,cloudProofDigest} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import test from 'node:test';import assert from 'node:assert/strict';
-import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation,validateOwnedN8nCloudAttempt4Continuation,validateOwnedN8nCloudAttempt5Continuation,validateOwnedN8nCloudAttempt6Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation,validateOwnedN8nCloudAttempt4Continuation,validateOwnedN8nCloudAttempt5Continuation,validateOwnedN8nCloudAttempt6Continuation,validateOwnedN8nCloudAttempt7Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
 function fixture(){
  const fixed={releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137'},authority={...fixed,operatorSha:'5c7cc20350025db8339d8210a496a78cb51f6af4',sourceDigest:'a'.repeat(64),profileDigest:'b'.repeat(64),namespace:'fixed'},source={authority:fixed,writerCredential:'z'.repeat(43)},originalIntent={binding:{releaseSha:fixed.releaseSha,sourceDigest:authority.sourceDigest,profileDigest:authority.profileDigest,namespace:authority.namespace,credentialId:'RzOyDmXYmx58yZHi'},before:{id:'RzOyDmXYmx58yZHi'}};
@@ -98,5 +100,14 @@ test('attempt5 continuation binds immutable failed4 and every earlier outcome',a
  const unchanged=JSON.stringify(sixth);
  for(const change of [v=>v.complete.plan.predecessorFifthExpiryDigest='0'.repeat(64),v=>v.complete.plan.challenge=fifthFixture.records.plan.challenge,v=>v.complete.plan.receiptId=fifthFixture.records.plan.receiptId,v=>v.complete.plan.path=fifthFixture.records.plan.path,v=>v.complete.expired5.records['server-ready']=null,v=>v.complete.expired5.records['server-receipt']={},v=>v.complete.expired5.result.zeroExecutions=false,v=>v.complete.workflowCreated.workflow.id=fifthFixture.records['workflow-created'].workflow.id,v=>v.complete.plan.predecessorNotReadyDigest='0'.repeat(64),v=>v.complete.plan.predecessorExpiryDigest='0'.repeat(64),v=>v.complete.plan.predecessorInterruptionDigest='0'.repeat(64),v=>v.complete.plan.predecessorFailureDigest='0'.repeat(64)]){const v=structuredClone(sixth);change(v);assert.throws(()=>validateOwnedN8nCloudAttempt6Continuation(v));}
  assert.equal(JSON.stringify(sixth),unchanged);assert.throws(()=>validateOwnedN8nCloudAttempt5Continuation(sixth));
+ const sixthOverrides=Object.fromEntries([...Object.keys(fifthOverrides),'predecessorFifthExpiryDigest'].map(k=>[k,sixth.complete.plan[k]]));
+ const sixthFixture=expired6Fixture({planOverrides:sixthOverrides}),sixthOutcome=await retireExpired6OwnedN8nAttempt(sixthFixture.records,sixthFixture);
+ const expired6={records:sixthFixture.records,observation:sixthFixture.rows.get('observation'),intent:sixthFixture.rows.get('intent'),result:sixthOutcome};
+ const seventh={complete:{...sixth.complete,expired6,plan:{...sixth.complete.plan,attempt:7,predecessorSixthExpiryDigest:hash(sixthOutcome),challenge:'4'.repeat(64),path:'/__zola_credential_proof/'+'4'.repeat(64),receiptId:'77777777-7777-4777-8777-777777777777'},workflowCreated:{workflow:{id:'fresh-seventh-workflow'}}},currentOperatorSha:prior.currentOperatorSha};
+ assert.equal(validateOwnedN8nCloudAttempt7Continuation(seventh).attempt,7);
+ const unchanged7=JSON.stringify(seventh);
+ for(const change of [v=>v.complete.plan.predecessorSixthExpiryDigest='0'.repeat(64),v=>v.complete.plan.challenge=sixthFixture.records.plan.challenge,v=>v.complete.plan.receiptId=sixthFixture.records.plan.receiptId,v=>v.complete.plan.path=sixthFixture.records.plan.path,v=>v.complete.expired6.records['server-ready']=null,v=>v.complete.expired6.records['server-receipt']={},v=>v.complete.expired6.result.zeroExecutions=false,v=>v.complete.workflowCreated.workflow.id=sixthFixture.records['workflow-created'].workflow.id,...['predecessorFifthExpiryDigest','predecessorNotReadyDigest','predecessorExpiryDigest','predecessorInterruptionDigest','predecessorFailureDigest'].map(k=>v=>{v.complete.plan[k]='0'.repeat(64);})]){const v=structuredClone(seventh);change(v);assert.throws(()=>validateOwnedN8nCloudAttempt7Continuation(v));}
+ assert.equal(JSON.stringify(seventh),unchanged7);assert.throws(()=>validateOwnedN8nCloudAttempt6Continuation(seventh));
+
 
 });

@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-22 — current seventh continuation
+
+Finish seventh focused validation and independent review, retire exact expired sixth through reviewed code, then create/serve/READY-check and execute the fresh seventh once under the user's explicit credential-check approval. Reconcile server and cloud proof, cleanup, then resume explicit seventh native release continuation. Preserve ordered collector/denial, exact-source CI/merge, merged-main deployment, acceptance and guarded OPEN gates. The earlier sixth sequence below is historical and must not be rerun.
+
 ## 2026-09-22 — current cloud-proof continuation
 
 Complete focused sixth implementation checks and independent review. Retire the exact unused fifth workflow through its reviewed lane. With working authenticated browser, prepare the fresh sixth proof, verify supervised READY and future expiry, execute once, reconcile complete provider evidence and cleanup, and use only the explicit sixth continuation. Then resume native migration, premerge collectors/denial, exact-source CI and PR125 merge, actual merged-main deployment, postmerge acceptance and guarded OPEN. Existing user authority for production changes, releases and deployments persists. Do not rewrite earlier evidence or infer successful possession from browser interaction alone.

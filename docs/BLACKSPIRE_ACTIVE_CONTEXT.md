@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-22 — sixth expiry after blocked click; seventh continuation
+
+Sixth operator 1d329762ee2c90c1b18f1518fb299789d2dad124 retired fifth successfully and prepared workflow Sx1U1E7g7K2UWH9B. Its verifier reached READY, but automatic browser approval review rejected the sole requested execution before dispatch. The user subsequently explicitly approved the requested credential verification and future work; by then sixth expired at 20:06:21.580Z. Read-only verification at 21:41Z found complete cleanup, original proxy, absent listener, no receipt/rejection and complete HTTP200 zero-execution inventory. No sixth execution or possession success occurred.
+
+A separate seventh operator preserves the frozen sixth tree and every prior record. Sixth retirement pins the exact workflow/version, operator and successful supervisor invocation/exit with zero-execution checks and no uncertain DELETE replay. Seventh binds that distinct retirement digest alongside all earlier lineage and requires its own fresh paired cloud execution/server receipt and complete cleanup before explicit native continuation. Do not execute expired sixth or rewrite its plan. Production OPEN remains UNVERIFIED.
+
 ## 2026-09-22 — fresh cloud verification after browser recovery
 
 The new session retrieved the Blackspire Drive handoff and verified Commander access, clean frozen fifth source, current candidate pointer a8e05ef, original proxy digest and absent temporary listener. The authenticated fifth execution inventory is HTTP200 with zero rows and no cursor; protected cleanup is complete with no receipt or rejection. Browser control and n8n sign-in now work. Fifth possession remains UNVERIFIED and its expired workflow must never execute.

@@ -37,7 +37,7 @@ function execute(mode){
  const child=spawnSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',harness,'--',mode],{cwd:new URL('../',import.meta.url),encoding:'utf8',timeout:10000,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',NODE_NO_WARNINGS:'1'}});
  assert.equal(child.status,0,child.stderr);return JSON.parse(child.stdout);
 }
-for(const mode of ['--release-cloud-proof-attempt5','--release-cloud-proof-attempt6'])test(`actual successor launcher dispatches ${mode} only after source gates`,()=>{
+for(const mode of ['--release-cloud-proof-attempt5','--release-cloud-proof-attempt6','--release-cloud-proof-attempt7'])test(`actual successor launcher dispatches ${mode} only after source gates`,()=>{
  const result=execute(mode);assert.equal(result.exitCode,0);assert.deepEqual(result.output,[]);
  assert.deepEqual(result.events.map(e=>e[0]),['git','git','verify','register','inner']);
  assert.deepEqual(result.events.at(-1),['inner',mode]);
@@ -45,6 +45,6 @@ for(const mode of ['--release-cloud-proof-attempt5','--release-cloud-proof-attem
  assert.match(result.events[3][1],/\/packages\/zola-release\/owned-sequence-loader\.js$/);
 });
 test('actual successor launcher rejects unknown mode before git or dynamic dispatch',()=>{
- const result=execute('--release-cloud-proof-attempt7');assert.equal(result.exitCode,1);assert.deepEqual(result.events,[]);
+ const result=execute('--release-cloud-proof-attempt8');assert.equal(result.exitCode,1);assert.deepEqual(result.events,[]);
  assert.deepEqual(JSON.parse(result.output.join('')),{status:'STOPPED',reason:'OWNED_SUCCESSOR_OPERATOR_REJECTED',releaseReady:false});
 });
