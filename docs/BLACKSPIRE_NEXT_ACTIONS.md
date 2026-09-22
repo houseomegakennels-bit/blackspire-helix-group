@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-22 — current eighth continuation
+
+After final memory/security checks and commit, retire only exact failed seventh execution 3 through the reviewed lane after preserving its rejection. Bind the user's confirmed credential metadata update, prepare a new eighth workflow, establish supervised READY and execute once before expiry. Require positive server and cloud evidence plus cleanup before explicit eighth native continuation. Then finish ordered collector/denial, exact-source CI/merge, merged-main deployment, public acceptance and guarded OPEN. Earlier numbered attempts below are historical and must not execute again.
+
 ## 2026-09-22 — current seventh continuation
 
 Finish seventh focused validation and independent review, retire exact expired sixth through reviewed code, then create/serve/READY-check and execute the fresh seventh once under the user's explicit credential-check approval. Reconcile server and cloud proof, cleanup, then resume explicit seventh native release continuation. Preserve ordered collector/denial, exact-source CI/merge, merged-main deployment, acceptance and guarded OPEN gates. The earlier sixth sequence below is historical and must not be rerun.

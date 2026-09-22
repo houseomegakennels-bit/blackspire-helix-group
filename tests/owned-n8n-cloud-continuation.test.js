@@ -1,3 +1,6 @@
+import {failed7Fixture} from './helpers/owned-n8n-cloud-failed7-fixture.js';
+import {retireFailed7OwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-failed7.js';
+import {validateOwnedN8nCredentialSave8,SAVED8_UPDATED_AT} from '../packages/zola-release/owned-n8n-credential-save8.js';
 import {expired6Fixture} from './helpers/owned-n8n-cloud-expired6-fixture.js';
 import {retireExpired6OwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-expired6.js';
 import {expired5Fixture} from './helpers/owned-n8n-cloud-expired5-fixture.js';
@@ -11,7 +14,7 @@ import {abandonInterruptedOwnedN8nAttempt} from '../packages/zola-release/owned-
 import {buildOwnedN8nCloudWorkflow,cloudProofDigest} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import test from 'node:test';import assert from 'node:assert/strict';
-import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation,validateOwnedN8nCloudAttempt4Continuation,validateOwnedN8nCloudAttempt5Continuation,validateOwnedN8nCloudAttempt6Continuation,validateOwnedN8nCloudAttempt7Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation,validateOwnedN8nCloudAttempt4Continuation,validateOwnedN8nCloudAttempt5Continuation,validateOwnedN8nCloudAttempt6Continuation,validateOwnedN8nCloudAttempt7Continuation,validateOwnedN8nCloudAttempt8Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
 function fixture(){
  const fixed={releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137'},authority={...fixed,operatorSha:'5c7cc20350025db8339d8210a496a78cb51f6af4',sourceDigest:'a'.repeat(64),profileDigest:'b'.repeat(64),namespace:'fixed'},source={authority:fixed,writerCredential:'z'.repeat(43)},originalIntent={binding:{releaseSha:fixed.releaseSha,sourceDigest:authority.sourceDigest,profileDigest:authority.profileDigest,namespace:authority.namespace,credentialId:'RzOyDmXYmx58yZHi'},before:{id:'RzOyDmXYmx58yZHi'}};
@@ -70,8 +73,8 @@ test('attempt4 continuation requires exact expired3 retirement and all prior att
  assert.throws(()=>validateOwnedN8nCloudAttempt3Continuation(fourth));
 });
 
-test('attempt5 continuation binds immutable failed4 and every earlier outcome',async()=>{
- const second=interruptedFixture(),abandoned=await abandonInterruptedOwnedN8nAttempt(second.records,second),prior=attempt2Fixture(),old=prior.complete.predecessor.plan;
+test('attempt5 through8 continuation binds immutable outcomes and exact manual credential save',async()=>{
+ const second=interruptedFixture();Object.assign(second.records.plan.credentialMetadata,{name:'ZOLA Buyer writer',type:'httpHeaderAuth'});const prior=attempt2Fixture(),old=prior.complete.predecessor.plan;
  // Use one exact lineage across all three attempts while keeping receipt identities distinct.
  for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])old[key]=second.records.plan[key];
  old.credentialMetadata={...second.records.plan.credentialMetadata,updatedAt:'2026-09-21T20:00:00.000Z'};prior.complete.predecessor.result.binding.planDigest=hash(old);second.records.plan.predecessorFailureDigest=hash(prior.complete.predecessor.result);
@@ -108,6 +111,16 @@ test('attempt5 continuation binds immutable failed4 and every earlier outcome',a
  const unchanged7=JSON.stringify(seventh);
  for(const change of [v=>v.complete.plan.predecessorSixthExpiryDigest='0'.repeat(64),v=>v.complete.plan.challenge=sixthFixture.records.plan.challenge,v=>v.complete.plan.receiptId=sixthFixture.records.plan.receiptId,v=>v.complete.plan.path=sixthFixture.records.plan.path,v=>v.complete.expired6.records['server-ready']=null,v=>v.complete.expired6.records['server-receipt']={},v=>v.complete.expired6.result.zeroExecutions=false,v=>v.complete.workflowCreated.workflow.id=sixthFixture.records['workflow-created'].workflow.id,...['predecessorFifthExpiryDigest','predecessorNotReadyDigest','predecessorExpiryDigest','predecessorInterruptionDigest','predecessorFailureDigest'].map(k=>v=>{v.complete.plan[k]='0'.repeat(64);})]){const v=structuredClone(seventh);change(v);assert.throws(()=>validateOwnedN8nCloudAttempt7Continuation(v));}
  assert.equal(JSON.stringify(seventh),unchanged7);assert.throws(()=>validateOwnedN8nCloudAttempt6Continuation(seventh));
+ const seventhOverrides=Object.fromEntries([...Object.keys(sixthOverrides),'predecessorSixthExpiryDigest'].map(k=>[k,seventh.complete.plan[k]]));
+ const seventhFixture=failed7Fixture({planOverrides:seventhOverrides}),seventhOutcome=await retireFailed7OwnedN8nAttempt(seventhFixture.records,seventhFixture);
+ const failed7={records:seventhFixture.records,observation:seventhFixture.rows.get('observation'),intent:seventhFixture.rows.get('intent'),result:seventhOutcome};
+ const savedMetadata={...seventh.complete.plan.credentialMetadata,updatedAt:SAVED8_UPDATED_AT},credentialSave=validateOwnedN8nCredentialSave8(seventhFixture.records.plan.credentialMetadata,savedMetadata);
+ const eighth={complete:{...seventh.complete,failed7,credentialSave,credentialMetadata:savedMetadata,plan:{...seventh.complete.plan,attempt:8,credentialSaveDigest:hash(credentialSave),credentialMetadata:savedMetadata,predecessorSeventhFailureDigest:hash(seventhOutcome),challenge:'3'.repeat(64),path:'/__zola_credential_proof/'+'3'.repeat(64),receiptId:'88888888-8888-4888-8888-888888888888'},workflowCreated:{workflow:{id:'fresh-eighth-workflow'}}},currentOperatorSha:prior.currentOperatorSha};
+ assert.equal(validateOwnedN8nCloudAttempt8Continuation(eighth).attempt,8);const unchanged8=JSON.stringify(eighth);
+ for(const change of [v=>v.complete.plan.predecessorSeventhFailureDigest='0'.repeat(64),v=>v.complete.plan.credentialSaveDigest='0'.repeat(64),v=>v.complete.credentialSave.afterUpdatedAt='foreign',v=>v.complete.plan.credentialMetadata.updatedAt='2026-09-22T23:16:50.000Z',v=>v.complete.plan.credentialMetadata.name='foreign',v=>v.complete.plan.challenge=seventhFixture.records.plan.challenge,v=>v.complete.failed7.records['server-rejection'].code='AUTH_HEADER_MISSING',v=>v.complete.failed7.observation.execution.id='4',...['predecessorSixthExpiryDigest','predecessorFifthExpiryDigest','predecessorNotReadyDigest','predecessorExpiryDigest','predecessorInterruptionDigest','predecessorFailureDigest'].map(k=>v=>{v.complete.plan[k]='0'.repeat(64);})]){const v=structuredClone(eighth);change(v);assert.throws(()=>validateOwnedN8nCloudAttempt8Continuation(v));}
+ assert.equal(JSON.stringify(eighth),unchanged8);assert.throws(()=>validateOwnedN8nCloudAttempt7Continuation(eighth));
+ const wronglyUpdated7=structuredClone(seventh);wronglyUpdated7.complete.plan.credentialMetadata=savedMetadata;wronglyUpdated7.complete.credentialMetadata=savedMetadata;assert.throws(()=>validateOwnedN8nCloudAttempt7Continuation(wronglyUpdated7));
+
 
 
 });

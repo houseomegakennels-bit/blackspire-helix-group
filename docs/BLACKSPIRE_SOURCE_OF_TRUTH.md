@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-22 — failed credential proof and operator-confirmed correction
+
+Seventh workflow D1xx9Mal5UA9iLsb executed once as execution 3. Its exact request reached the verifier and received AUTH_LENGTH_MISMATCH, so possession failed. The error execution and rejection are retained; proxy restoration and listener closure are verified. The frozen seventh operator remains unchanged and its workflow must never execute again. Production remains HELD; OPEN is UNVERIFIED.
+
+The user manually replaced the saved ZOLA Buyer writer credential and reported Saved. An authenticated metadata-only observation confirms updatedAt 2026-09-22T23:16:49.971Z; no secret was read or logged. This confirms an update, not correct possession. A separate eighth operator implements retirement of only the exact failed seventh workflow, preserving its failed evidence and binding the explicit old-to-new public metadata transition. Sixty-one focused tests, normal build/lint/syntax checks and independent source review pass. Actual protected seventh records pass the failure classifier. Fresh paired cloud execution and verifier receipt, complete cleanup and native release gates are still required.
+
 ## 2026-09-22 — sixth expiry after blocked click; seventh continuation
 
 Sixth operator 1d329762ee2c90c1b18f1518fb299789d2dad124 retired fifth successfully and prepared workflow Sx1U1E7g7K2UWH9B. Its verifier reached READY, but automatic browser approval review rejected the sole requested execution before dispatch. The user subsequently explicitly approved the requested credential verification and future work; by then sixth expired at 20:06:21.580Z. Read-only verification at 21:41Z found complete cleanup, original proxy, absent listener, no receipt/rejection and complete HTTP200 zero-execution inventory. No sixth execution or possession success occurred.

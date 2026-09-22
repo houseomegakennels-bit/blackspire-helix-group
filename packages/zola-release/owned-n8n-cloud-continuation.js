@@ -1,3 +1,5 @@
+import {validateFailed7OwnedN8nRetirement} from './owned-n8n-cloud-failed7.js';
+import {validateOwnedN8nCredentialSave8,SAVED8_UPDATED_AT} from './owned-n8n-credential-save8.js';
 import {validateExpired6OwnedN8nRetirement} from './owned-n8n-cloud-expired6.js';
 import {validateExpired5OwnedN8nRetirement} from './owned-n8n-cloud-expired5.js';
 import {validateNotReadyOwnedN8nRetirement} from './owned-n8n-cloud-not-ready.js';
@@ -59,7 +61,7 @@ function validateInterruptedContinuation(input,attempt){
  const result=validateInterruptedOwnedN8nAbandonment(i?.records,i??{});
  if(p?.predecessorInterruptionDigest!==hash(result)||p.challenge===i.records.plan.challenge||p.receiptId===i.records.plan.receiptId||p.path===i.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])if(p[key]!==i.records.plan[key])fail();
- if(!same(p.credentialMetadata,i.records.plan.credentialMetadata))fail();
+ if(attempt===8)validateOwnedN8nCredentialSave8(i.records.plan.credentialMetadata,p.credentialMetadata);else if(!same(p.credentialMetadata,i.records.plan.credentialMetadata))fail();
  return {...validateNumberedContinuation(input,attempt),predecessorInterruptionDigest:hash(result),priorAttempt2Outcome:'INTERRUPTED_BEFORE_READY'};
 }
 function validateNumberedContinuation({complete,currentOperatorSha},attempt){
@@ -75,7 +77,7 @@ function validateNumberedContinuation({complete,currentOperatorSha},attempt){
  if(Object.entries(fixed).some(([k,v])=>p[k]!==v)||p.challenge===old.challenge||p.receiptId===old.receiptId||p.path===old.path
   ||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  const before=old.credentialMetadata,after=p.credentialMetadata;
- if(!before||!after||after.updatedAt!=='2026-09-21T22:55:51.254Z'||!same({...before,updatedAt:null},{...after,updatedAt:null})||!same(after,complete.credentialMetadata)
+ if(!before||!after||after.updatedAt!==(attempt===8?SAVED8_UPDATED_AT:'2026-09-21T22:55:51.254Z')||!same({...before,updatedAt:null},{...after,updatedAt:null})||!same(after,complete.credentialMetadata)
   ||!Number.isFinite(Date.parse(before.updatedAt))||!Number.isFinite(Date.parse(after.updatedAt))||Date.parse(after.updatedAt)<=Date.parse(before.updatedAt))fail();
  return Object.freeze({attempt,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
 }
@@ -86,7 +88,7 @@ function validateExpiredContinuation(input,attempt){
  const result=validateExpiredOwnedN8nRetirement(e?.records,e??{});
  if(p?.predecessorExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest'])if(p[key]!==e.records.plan[key])fail();
- if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
+ if(attempt===8)validateOwnedN8nCredentialSave8(e.records.plan.credentialMetadata,p.credentialMetadata);else if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
  return {...validateInterruptedContinuation(input,attempt),predecessorExpiryDigest:hash(result),priorAttempt3Outcome:'EXPIRED_BEFORE_REQUEST'};
 }
 
@@ -95,7 +97,7 @@ function validateNotReadyContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,n=complete?.notReady,result=validateNotReadyOwnedN8nRetirement(n?.records,n??{});
  if(p?.predecessorNotReadyDigest!==hash(result)||p.challenge===n.records.plan.challenge||p.receiptId===n.records.plan.receiptId||p.path===n.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest'])if(p[k]!==n.records.plan[k])fail();
- if(!same(p.credentialMetadata,n.records.plan.credentialMetadata))fail();return {...validateExpiredContinuation(input,attempt),predecessorNotReadyDigest:hash(result),priorAttempt4Outcome:'FAILED_AFTER_PROXY_BEFORE_READY'};
+ if(attempt===8)validateOwnedN8nCredentialSave8(n.records.plan.credentialMetadata,p.credentialMetadata);else if(!same(p.credentialMetadata,n.records.plan.credentialMetadata))fail();return {...validateExpiredContinuation(input,attempt),predecessorNotReadyDigest:hash(result),priorAttempt4Outcome:'FAILED_AFTER_PROXY_BEFORE_READY'};
 }
 
 export const validateOwnedN8nCloudAttempt6Continuation=input=>validateFifthExpiredContinuation(input,6);
@@ -103,14 +105,23 @@ function validateFifthExpiredContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,e=complete?.expired5,result=validateExpired5OwnedN8nRetirement(e?.records,e??{});
  if(p?.predecessorFifthExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest','predecessorNotReadyDigest'])if(p[k]!==e.records.plan[k])fail();
- if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
+ if(attempt===8)validateOwnedN8nCredentialSave8(e.records.plan.credentialMetadata,p.credentialMetadata);else if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
  return {...validateNotReadyContinuation(input,attempt),predecessorFifthExpiryDigest:hash(result),priorAttempt5Outcome:'EXPIRED_WITHOUT_EXECUTION'};
 }
 
-export function validateOwnedN8nCloudAttempt7Continuation(input){
+export const validateOwnedN8nCloudAttempt7Continuation=input=>validateSixthExpiredContinuation(input,7);
+function validateSixthExpiredContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,e=complete?.expired6,result=validateExpired6OwnedN8nRetirement(e?.records,e??{});
  if(p?.predecessorSixthExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest','predecessorNotReadyDigest','predecessorFifthExpiryDigest'])if(p[k]!==e.records.plan[k])fail();
- if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
- return {...validateFifthExpiredContinuation(input,7),predecessorSixthExpiryDigest:hash(result),priorAttempt6Outcome:'EXPIRED_WITHOUT_EXECUTION'};
+ if(attempt===8)validateOwnedN8nCredentialSave8(e.records.plan.credentialMetadata,p.credentialMetadata);else if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
+ return {...validateFifthExpiredContinuation(input,attempt),predecessorSixthExpiryDigest:hash(result),priorAttempt6Outcome:'EXPIRED_WITHOUT_EXECUTION'};
+}
+
+export function validateOwnedN8nCloudAttempt8Continuation(input){
+ const {complete}=input,p=complete?.plan,e=complete?.failed7,result=validateFailed7OwnedN8nRetirement(e?.records,e??{});
+ const save=validateOwnedN8nCredentialSave8(e.records.plan.credentialMetadata,p?.credentialMetadata);
+ if(p?.attempt!==8||p.credentialSaveDigest!==hash(save)||!same(complete.credentialSave,save)||p.predecessorSeventhFailureDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest','predecessorNotReadyDigest','predecessorFifthExpiryDigest','predecessorSixthExpiryDigest'])if(p[k]!==e.records.plan[k])fail();
+ return {...validateSixthExpiredContinuation(input,8),predecessorSeventhFailureDigest:hash(result),credentialSaveDigest:hash(save),priorAttempt7Outcome:'AUTH_LENGTH_MISMATCH'};
 }
