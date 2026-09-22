@@ -1,3 +1,4 @@
+import {validateExpiredOwnedN8nRetirement} from './owned-n8n-cloud-expired.js';
 import {validateInterruptedOwnedN8nAbandonment} from './owned-n8n-cloud-interrupted.js';
 import {validateOwnedN8nCloudWorkflowAdoption} from './owned-n8n-cloud-workflow.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from './owned-n8n-credential-reassertion.js';
@@ -49,13 +50,14 @@ export function assertOwnedN8nCloudContinuationOperator({plan,workflowCreated,ad
 }
 
 export const validateOwnedN8nCloudAttempt2Continuation=input=>validateNumberedContinuation(input,2);
-export function validateOwnedN8nCloudAttempt3Continuation(input){
+export const validateOwnedN8nCloudAttempt3Continuation=input=>validateInterruptedContinuation(input,3);
+function validateInterruptedContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,i=complete?.interrupted;
  const result=validateInterruptedOwnedN8nAbandonment(i?.records,i??{});
  if(p?.predecessorInterruptionDigest!==hash(result)||p.challenge===i.records.plan.challenge||p.receiptId===i.records.plan.receiptId||p.path===i.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])if(p[key]!==i.records.plan[key])fail();
  if(!same(p.credentialMetadata,i.records.plan.credentialMetadata))fail();
- return {...validateNumberedContinuation(input,3),predecessorInterruptionDigest:hash(result),priorAttempt2Outcome:'INTERRUPTED_BEFORE_READY'};
+ return {...validateNumberedContinuation(input,attempt),predecessorInterruptionDigest:hash(result),priorAttempt2Outcome:'INTERRUPTED_BEFORE_READY'};
 }
 function validateNumberedContinuation({complete,currentOperatorSha},attempt){
  const p=complete?.plan,old=complete?.predecessor?.plan,result=complete?.predecessor?.result;
@@ -73,4 +75,13 @@ function validateNumberedContinuation({complete,currentOperatorSha},attempt){
  if(!before||!after||after.updatedAt!=='2026-09-21T22:55:51.254Z'||!same({...before,updatedAt:null},{...after,updatedAt:null})||!same(after,complete.credentialMetadata)
   ||!Number.isFinite(Date.parse(before.updatedAt))||!Number.isFinite(Date.parse(after.updatedAt))||Date.parse(after.updatedAt)<=Date.parse(before.updatedAt))fail();
  return Object.freeze({attempt,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
+}
+
+export function validateOwnedN8nCloudAttempt4Continuation(input){
+ const {complete}=input,p=complete?.plan,e=complete?.expired;
+ const result=validateExpiredOwnedN8nRetirement(e?.records,e??{});
+ if(p?.predecessorExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest'])if(p[key]!==e.records.plan[key])fail();
+ if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
+ return {...validateInterruptedContinuation(input,4),predecessorExpiryDigest:hash(result),priorAttempt3Outcome:'EXPIRED_BEFORE_REQUEST'};
 }

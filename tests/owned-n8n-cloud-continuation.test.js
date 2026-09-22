@@ -1,9 +1,11 @@
+import {expiredFixture} from './helpers/owned-n8n-cloud-expired-fixture.js';
+import {retireExpiredOwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-expired.js';
 import {interruptedFixture} from './helpers/owned-n8n-cloud-interrupted.js';
 import {abandonInterruptedOwnedN8nAttempt} from '../packages/zola-release/owned-n8n-cloud-interrupted.js';
 import {buildOwnedN8nCloudWorkflow,cloudProofDigest} from '../packages/zola-release/owned-n8n-cloud-workflow.js';
 import {createOwnedN8nRequestGate} from '../packages/zola-release/owned-n8n-request-gate.js';
 import test from 'node:test';import assert from 'node:assert/strict';
-import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
+import {validateOwnedN8nCloudHistory,createOwnedN8nCloudContinuation,assertOwnedN8nCloudContinuationOperator,validateOwnedN8nCloudAttempt2Continuation,validateOwnedN8nCloudAttempt3Continuation,validateOwnedN8nCloudAttempt4Continuation} from '../packages/zola-release/owned-n8n-cloud-continuation.js';
 import {n8nReassertionDigest as hash,ownedN8nReassertionBody} from '../packages/zola-release/owned-n8n-credential-reassertion.js';
 function fixture(){
  const fixed={releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',stageAttemptId:'f163d812-3711-471b-863a-038e85d59137'},authority={...fixed,operatorSha:'5c7cc20350025db8339d8210a496a78cb51f6af4',sourceDigest:'a'.repeat(64),profileDigest:'b'.repeat(64),namespace:'fixed'},source={authority:fixed,writerCredential:'z'.repeat(43)},originalIntent={binding:{releaseSha:fixed.releaseSha,sourceDigest:authority.sourceDigest,profileDigest:authority.profileDigest,namespace:authority.namespace,credentialId:'RzOyDmXYmx58yZHi'},before:{id:'RzOyDmXYmx58yZHi'}};
@@ -41,4 +43,23 @@ test('attempt3 continuation binds immutable interrupted2 deletion plus failed1 l
  assert.equal(validateOwnedN8nCloudAttempt3Continuation(input).attempt,3);
  for(const mutate of [v=>v.complete.plan.predecessorInterruptionDigest='0'.repeat(64),v=>v.complete.plan.challenge=p.challenge,v=>v.complete.plan.receiptId=p.receiptId,v=>v.complete.interrupted.result.workflowDeleted=false,v=>v.complete.interrupted.records['server-receipt']={},v=>v.complete.workflowCreated.workflow.id='BJOFn01xn6KSKGlg']){const v=structuredClone(input);mutate(v);assert.throws(()=>validateOwnedN8nCloudAttempt3Continuation(v));}
  assert.throws(()=>validateOwnedN8nCloudAttempt2Continuation(input));
+});
+
+test('attempt4 continuation requires exact expired3 retirement and all prior attempt lineage',async()=>{
+ const second=interruptedFixture(),abandoned=await abandonInterruptedOwnedN8nAttempt(second.records,second),prior=attempt2Fixture(),old=prior.complete.predecessor.plan;
+ // Use one exact lineage across all three attempts while keeping receipt identities distinct.
+ for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest'])old[key]=second.records.plan[key];
+ old.credentialMetadata={...second.records.plan.credentialMetadata,updatedAt:'2026-09-21T20:00:00.000Z'};prior.complete.predecessor.result.binding.planDigest=hash(old);second.records.plan.predecessorFailureDigest=hash(prior.complete.predecessor.result);
+ // Regenerate every plan-bound protected record after constructing the synthetic source lineage.
+ const p=second.records.plan,w={...second.records['workflow-created'].workflow,...buildOwnedN8nCloudWorkflow(p)};second.records['workflow-created']={version:1,planDigest:hash(p),workflow:w};second.records['workflow-create-ack']={version:1,planDigest:hash(p),status:200,responseDigest:hash(w),body:w};second.records['workflow-intent']={version:1,planDigest:hash(p),workflow:buildOwnedN8nCloudWorkflow(p)};for(const n of ['serve-intent','cleanup-intent'])second.records[n]={version:1,planDigest:hash(p)};second.records['cleanup-result']={version:1,planDigest:hash(p),proxyRestored:true,listenerClosed:true};
+ const fresh=interruptedFixture();fresh.records=second.records;const result=await abandonInterruptedOwnedN8nAttempt(fresh.records,fresh);
+ const interrupted={records:fresh.records,observation:fresh.retained.get('observation'),intent:fresh.retained.get('intent'),result};
+ const plan={...p,attempt:3,operatorSha:prior.currentOperatorSha,predecessorInterruptionDigest:hash(result),challenge:'8'.repeat(64),path:'/__zola_credential_proof/'+'8'.repeat(64),receiptId:'33333333-3333-4333-8333-333333333333'},complete={plan,predecessor:prior.complete.predecessor,interrupted,adoption:null,credentialMetadata:plan.credentialMetadata,workflowCreated:{workflow:{id:'new-attempt3-workflow'}}},input={complete,currentOperatorSha:prior.currentOperatorSha};
+
+ const planOverrides=Object.fromEntries(['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','credentialMetadata'].map(k=>[k,plan[k]]));
+ const third=expiredFixture({planOverrides}),retired=await retireExpiredOwnedN8nAttempt(third.records,third),expired={records:third.records,observation:third.rows.get('observation'),intent:third.rows.get('intent'),result:retired};
+ const fourth={complete:{...complete,expired,plan:{...plan,attempt:4,predecessorExpiryDigest:hash(retired),challenge:'7'.repeat(64),path:'/__zola_credential_proof/'+'7'.repeat(64),receiptId:'44444444-4444-4444-8444-444444444444'},workflowCreated:{workflow:{id:'fresh-fourth-workflow'}}},currentOperatorSha:prior.currentOperatorSha};
+ assert.equal(validateOwnedN8nCloudAttempt4Continuation(fourth).attempt,4);
+ for(const change of [v=>v.complete.plan.predecessorExpiryDigest='0'.repeat(64),v=>v.complete.plan.challenge=third.records.plan.challenge,v=>v.complete.plan.receiptId=third.records.plan.receiptId,v=>v.complete.expired.result.workflowDeleted=false,v=>v.complete.expired.records['server-receipt']={},v=>v.complete.expired.observation.execution.status='success',v=>v.complete.workflowCreated.workflow.id=third.records['workflow-created'].workflow.id,v=>v.complete.plan.credentialMetadata.updatedAt='changed']){const v=structuredClone(fourth);change(v);assert.throws(()=>validateOwnedN8nCloudAttempt4Continuation(v));}
+ assert.throws(()=>validateOwnedN8nCloudAttempt3Continuation(fourth));
 });
