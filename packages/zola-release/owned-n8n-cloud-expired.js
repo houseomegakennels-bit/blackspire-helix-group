@@ -23,7 +23,7 @@ function execution(records,e){
  const p=records.plan,w=records['workflow-created'].workflow;
  if(!e||Buffer.byteLength(JSON.stringify(e))>2*1024*1024||e.id!=='2'||e.workflowId!==w.id||e.workflowVersionId!==w.versionId||e.mode!=='manual'||e.status!=='error'||e.finished!==false||e.usedPrivateCredentials!==false||e.retryOf!==null||e.retrySuccessId!==null||e.waitTill!==null||e.startedAt!=='2026-09-22T00:32:28.394Z'||e.stoppedAt!=='2026-09-22T00:32:28.689Z'||Date.parse(e.startedAt)<=Date.parse(p.expiresAt))fail();
  normalizeOwnedN8nCloudExecutionWorkflow(p,w,e.workflowData);const r=e.data?.resultData;
- if(r?.error?.httpCode!=='401'||r.error.name!=='NodeApiError'||r.lastNodeExecuted!=='Verify stored credential'||!exact(r.runData,['Manual Trigger','Verify stored credential'])||r.runData['Manual Trigger']?.length!==1||r.runData['Verify stored credential']?.length!==1||r.runData['Verify stored credential'][0]?.error?.httpCode!=='401')fail();return e;
+ if(r?.error?.httpCode!=='401'||r.error.name!=='NodeApiError'||r.lastNodeExecuted!=='Verify stored credential'||!exact(r.runData,['Manual Trigger','Verify stored credential'])||!Array.isArray(r.runData['Manual Trigger'])||!Array.isArray(r.runData['Verify stored credential'])||r.runData['Manual Trigger']?.length!==1||r.runData['Verify stored credential']?.length!==1||r.runData['Verify stored credential'][0]?.error?.httpCode!=='401')fail();return e;
 }
 function inventory(value,e){
  if(value?.status!==200||!Array.isArray(value.body?.data)||value.body.data.length!==1||value.body.nextCursor!=null&&value.body.nextCursor!=='')fail();
