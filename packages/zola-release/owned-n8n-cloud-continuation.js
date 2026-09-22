@@ -1,3 +1,4 @@
+import {validateNotReadyOwnedN8nRetirement} from './owned-n8n-cloud-not-ready.js';
 import {validateExpiredOwnedN8nRetirement} from './owned-n8n-cloud-expired.js';
 import {validateInterruptedOwnedN8nAbandonment} from './owned-n8n-cloud-interrupted.js';
 import {validateOwnedN8nCloudWorkflowAdoption} from './owned-n8n-cloud-workflow.js';
@@ -77,11 +78,19 @@ function validateNumberedContinuation({complete,currentOperatorSha},attempt){
  return Object.freeze({attempt,predecessorFailureDigest:hash(result),originalOutcome:'UNKNOWN',administrativeReassertionStatus:405,priorExecutionOutcome:'FAILED'});
 }
 
-export function validateOwnedN8nCloudAttempt4Continuation(input){
+export const validateOwnedN8nCloudAttempt4Continuation=input=>validateExpiredContinuation(input,4);
+function validateExpiredContinuation(input,attempt){
  const {complete}=input,p=complete?.plan,e=complete?.expired;
  const result=validateExpiredOwnedN8nRetirement(e?.records,e??{});
  if(p?.predecessorExpiryDigest!==hash(result)||p.challenge===e.records.plan.challenge||p.receiptId===e.records.plan.receiptId||p.path===e.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
  for(const key of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest'])if(p[key]!==e.records.plan[key])fail();
  if(!same(p.credentialMetadata,e.records.plan.credentialMetadata))fail();
- return {...validateInterruptedContinuation(input,4),predecessorExpiryDigest:hash(result),priorAttempt3Outcome:'EXPIRED_BEFORE_REQUEST'};
+ return {...validateInterruptedContinuation(input,attempt),predecessorExpiryDigest:hash(result),priorAttempt3Outcome:'EXPIRED_BEFORE_REQUEST'};
+}
+
+export function validateOwnedN8nCloudAttempt5Continuation(input){
+ const {complete}=input,p=complete?.plan,n=complete?.notReady,result=validateNotReadyOwnedN8nRetirement(n?.records,n??{});
+ if(p?.predecessorNotReadyDigest!==hash(result)||p.challenge===n.records.plan.challenge||p.receiptId===n.records.plan.receiptId||p.path===n.records.plan.path||complete.workflowCreated?.workflow?.id===result.binding.workflowId)fail();
+ for(const k of ['releaseSha','operationId','stageAttemptId','credentialId','authorityDigest','originalIntentDigest','reassertionIntentDigest','reassertionAckDigest','reassertionHeadersDigest','reassertionBodyDigest','sourceDigest','profileDigest','ingressDigest','predecessorInterruptionDigest','predecessorFailureDigest','predecessorExpiryDigest'])if(p[k]!==n.records.plan[k])fail();
+ if(!same(p.credentialMetadata,n.records.plan.credentialMetadata))fail();return {...validateExpiredContinuation(input,5),predecessorNotReadyDigest:hash(result),priorAttempt4Outcome:'FAILED_AFTER_PROXY_BEFORE_READY'};
 }

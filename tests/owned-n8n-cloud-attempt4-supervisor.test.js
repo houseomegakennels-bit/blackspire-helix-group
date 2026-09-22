@@ -10,6 +10,7 @@ test('READY and completion bind exact supervisor intent, unit, PID start and inv
  const supervisor=validateOwnedN8nAttempt4Supervisor(input),result={version:1,planDigest:hash(plan),unit:intent.unit,started:true,supervisor};assert.deepEqual(validateOwnedN8nAttempt4Supervisor({...input,result,phase:'ready'}),supervisor);
  for(const key of Object.keys(properties).filter(k=>!['Result','ExecMainStatus'].includes(k)))assert.throws(()=>validateOwnedN8nAttempt4Supervisor({...input,result,phase:'ready',properties:{...properties,[key]:'foreign'}}));
  for(const patch of [{intent:null},{result:null},{process:{...process,startTime:'999'}},{process:{...process,command:['foreign']}}])assert.throws(()=>validateOwnedN8nAttempt4Supervisor({...input,result,phase:'ready',...patch}));
+ const failed={...input,result,phase:'failed',properties:{...properties,ActiveState:'failed',SubState:'failed',MainPID:'0',Result:'exit-code',ExecMainStatus:'1'}};assert.deepEqual(validateOwnedN8nAttempt4Supervisor(failed),supervisor);assert.throws(()=>validateOwnedN8nAttempt4Supervisor({...failed,properties:{...failed.properties,ExecMainStatus:'0'}}));
  const complete={...input,result,phase:'complete',properties:{...properties,MainPID:'0',SubState:'exited'}};assert.deepEqual(validateOwnedN8nAttempt4Supervisor(complete),supervisor);assert.throws(()=>validateOwnedN8nAttempt4Supervisor({...complete,properties:{...complete.properties,ExecMainStatus:'1'}}));
 });
 

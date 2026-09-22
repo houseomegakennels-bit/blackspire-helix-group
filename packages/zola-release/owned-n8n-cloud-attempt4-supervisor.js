@@ -6,18 +6,18 @@ export function ownedN8nAttempt4SupervisorArguments({operatorRoot,root}){
 
 export function validateOwnedN8nAttempt4Supervisor({plan,operatorRoot,root,intent,result,properties,process:observed,phase}){
  const fail=()=>{throw Error('Cloud supervisor identity refused');};
- if(!['launch','ready','complete'].includes(phase)||plan?.attempt!==4||typeof properties!=='object')fail();
+ if(!['launch','ready','complete','failed'].includes(phase)||plan?.attempt!==4||typeof properties!=='object')fail();
  const args=ownedN8nAttempt4SupervisorArguments({operatorRoot,root});
  const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex'),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  const expected={version:1,planDigest:digest(plan),unit:'zola-n8n-cloud-proof-attempt4.service',argumentsDigest:digest(args)};
  if(!same(intent,expected))fail();
- for(const [k,v]of Object.entries({Type:'exec',User:'root',Group:'root',UMask:'0077',RuntimeMaxUSec:'17min',TimeoutStopUSec:'40s',Restart:'no',KillMode:'control-group',RemainAfterExit:'yes',NoNewPrivileges:'yes',ActiveState:'active'}))if(properties[k]!==v)fail();
+ for(const [k,v]of Object.entries({Type:'exec',User:'root',Group:'root',UMask:'0077',RuntimeMaxUSec:'17min',TimeoutStopUSec:'40s',Restart:'no',KillMode:'control-group',RemainAfterExit:'yes',NoNewPrivileges:'yes',ActiveState:phase==='failed'?'failed':'active'}))if(properties[k]!==v)fail();
  const command=['/opt/nodejs/node-v22.23.1-linux-x64/bin/node',operatorRoot+'/scripts/zola-n8n-cloud-proof-attempt4.js','--serve'];
  const prefix='{ path='+command[0]+' ; argv[]='+command.join(' ')+' ; ignore_errors=no ; ';
  if(typeof properties.ExecStart!=='string'||!properties.ExecStart.startsWith(prefix)||!/^start_time=[^;{}]* ; stop_time=[^;{}]* ; pid=[0-9]+ ; code=[^;{}]* ; status=[^;{}]* }$/.test(properties.ExecStart.slice(prefix.length))||!/^[a-f0-9]{32}$/.test(properties.InvocationID??''))fail();
  let identity;
- if(phase==='complete'){
-  if(properties.SubState!=='exited'||properties.MainPID!=='0'||properties.Result!=='success'||properties.ExecMainStatus!=='0')fail();
+ if(phase==='complete'||phase==='failed'){
+  if(properties.SubState!==(phase==='failed'?'failed':'exited')||properties.MainPID!=='0'||properties.Result!==(phase==='failed'?'exit-code':'success')||properties.ExecMainStatus!==(phase==='failed'?'1':'0'))fail();
   identity=result?.supervisor;if(!identity||identity.invocationId!==properties.InvocationID||!Number.isSafeInteger(identity.pid)||identity.pid<2||!(/^[0-9]+$/).test(identity.startTime??''))fail();
  }else{
   const pid=Number(properties.MainPID);if(properties.SubState!=='running'||!Number.isSafeInteger(pid)||pid<2||!observed||observed.pid!==pid||observed.uid!==0||!same(observed.command,command)||!(/^[0-9]+$/).test(observed.startTime??''))fail();identity={invocationId:properties.InvocationID,pid,startTime:observed.startTime};
