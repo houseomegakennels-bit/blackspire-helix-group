@@ -52,14 +52,16 @@ test('failed login rate limiting returns retry-after and ignores spoofed forward
   resetRateLimit('login:');
   process.env.LOGIN_RATE_LIMIT = '2';
   const headers = { 'content-type': 'application/json', 'x-forwarded-for': 'rate-ip-a' };
-  await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
-  await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
-  const limited = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
+  // These requests assert one socket-IP bucket, so keep every connection on one address family.
+  const rateLimitUrl = 'http://127.0.0.1:8893/api/auth/login';
+  await fetch(rateLimitUrl, { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
+  await fetch(rateLimitUrl, { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
+  const limited = await fetch(rateLimitUrl, { method: 'POST', headers, body: JSON.stringify({ adminToken: 'bad' }) });
   assert.equal(limited.status, 429);
   assert.ok(limited.headers.get('retry-after'));
   // TRUST_PROXY is disabled by default, so a spoofed X-Forwarded-For does NOT open a fresh bucket:
   // the real (loopback) socket IP is still over its limit even with a different claimed IP and valid credentials.
-  const spoofed = await fetch('http://localhost:8893/api/auth/login', { method: 'POST', headers: { ...headers, 'x-forwarded-for': 'rate-ip-b' }, body: JSON.stringify({ adminToken: 'hardening-token' }) });
+  const spoofed = await fetch(rateLimitUrl, { method: 'POST', headers: { ...headers, 'x-forwarded-for': 'rate-ip-b' }, body: JSON.stringify({ adminToken: 'hardening-token' }) });
   assert.equal(spoofed.status, 429);
   resetRateLimit('login:');
   process.env.LOGIN_RATE_LIMIT = '20';
