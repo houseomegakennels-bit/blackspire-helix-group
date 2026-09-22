@@ -2405,3 +2405,8 @@ Attempt five has its own root, workflow, nonce, receipt and detached unit. Only 
 ## 2026-09-22 — bounded retirement observation headroom
 
 Attempt-four retirement stopped with an empty retirement directory before deletion intent. A read-only diagnostic subsequently passed (context 7.1s, combined fence 8.9s); timeout is unconfirmed. Increased only the explicit not-ready recovery outer observation deadline to 25s, preserving individual 10s limits and no retries. Credential proof and release remain UNVERIFIED.
+
+
+## 2026-09-22 — fifth diagnostic aggregate deadline alignment
+
+Retired the unused fourth workflow successfully. Fifth preflight remained empty and its sanitized diagnostic confirmed aggregate elapsed-deadline rejection. Aligned fifth aggregate and transport budgets while retaining individual bounds, original-attempt bytes, no request retry and absolute expiry. Added aggregate elapsed success/refusal and transport/history regressions. Production proof and release remain UNVERIFIED.

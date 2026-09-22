@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-22 — confirmed aggregate preflight deadline corrected
+
+Attempt-four retirement completed and deleted its unused workflow with zero executions. Fifth preparation then stopped before publishing its plan; a sanitized diagnostic confirmed Cloud fence elapsed deadline in its final combined preflight. Fifth-attempt aggregate fences now allow 25 seconds, retaining individual GET/native checks at 10 seconds except the existing startup-only native allowance. Two sequential proof fences fit inside 60-second proxy/socket limits, a 70-second HTTP-node limit and a 90-second workflow limit. Prior attempts retain their exact values and rendered bytes. No request retry, identity relaxation or expiry extension is introduced. Fifth possession and release remain UNVERIFIED.
+
 ## 2026-09-22 — retirement observation deadline
 
 The first attempt-four retirement stopped before retaining any observation or deletion intent. A subsequent read-only diagnostic opened its recovery context in 7.1 seconds and completed the combined fence in 8.9 seconds; the original timeout remains plausible but UNVERIFIED. Only the not-ready recovery lane now allows twenty-five seconds for its combined sequential observation fence. Individual GET/native checks and ordinary proof-request fences retain ten seconds; no retry or repeated DELETE is introduced. Retirement and fifth credential proof remain UNVERIFIED.

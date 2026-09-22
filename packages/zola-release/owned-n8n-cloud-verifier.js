@@ -20,7 +20,7 @@ export function renderOwnedN8nCloudProxy(before,plan){
  if(typeof before!=='string'||cloudProofHash(before)!==plan.proxyBeforeDigest||plan.path!=='/__zola_credential_proof/'+plan.challenge||!/^[a-f0-9]{64}$/.test(plan.challenge))throw Error('Cloud proxy source refused');
  if(before.includes('/__zola_credential_proof/'))throw Error('Existing proof route refused');
  const marker='    location ~ /\\. { deny all; }';if(before.split(marker).length!==2)throw Error('Cloud proxy layout refused');
- const location='    location = '+plan.path+' {\n        if ($request_method != GET) { return 404; }\n        if ($content_length != \"\") { return 404; }\n        if ($http_transfer_encoding != \"\") { return 404; }\n        access_log off;\n        error_log /dev/null crit;\n        proxy_pass http://127.0.0.1:18947;\n        proxy_set_header Host jarvis.blackspirehelix.com;\n        proxy_pass_request_body off;\n        proxy_set_header Content-Length "";\n        proxy_connect_timeout 2s;\n        proxy_read_timeout 30s;\n    }\n';
+ const location='    location = '+plan.path+' {\n        if ($request_method != GET) { return 404; }\n        if ($content_length != \"\") { return 404; }\n        if ($http_transfer_encoding != \"\") { return 404; }\n        access_log off;\n        error_log /dev/null crit;\n        proxy_pass http://127.0.0.1:18947;\n        proxy_set_header Host jarvis.blackspirehelix.com;\n        proxy_pass_request_body off;\n        proxy_set_header Content-Length "";\n        proxy_connect_timeout 2s;\n        proxy_read_timeout '+(plan.attempt===5?'60':'30')+'s;\n    }\n';
  return before.replace(marker,location+marker);
 }
 

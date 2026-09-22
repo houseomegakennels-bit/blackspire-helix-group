@@ -21,8 +21,8 @@ export function buildOwnedN8nCloudWorkflow(plan){
  const p=validateOwnedN8nCloudPlan(plan);
  return {name:([3,4,5].includes(p.attempt)?'Zola credential proof attempt'+p.attempt+' ':'Zola credential proof ')+p.challenge,nodes:[
  {parameters:{},id:'owned-proof-manual',name:'Manual Trigger',type:'n8n-nodes-base.manualTrigger',typeVersion:1,position:[0,0]},
- {parameters:{method:'GET',url:p.origin+p.path,authentication:'genericCredentialType',genericAuthType:'httpHeaderAuth',options:{redirect:{redirect:{followRedirects:false}},timeout:40000,response:{response:{responseFormat:'json'}}}},id:'owned-proof-request',name:'Verify stored credential',type:'n8n-nodes-base.httpRequest',typeVersion:4.2,position:[240,0],credentials:{httpHeaderAuth:{id:p.credentialId,name:'ZOLA Buyer writer'}},retryOnFail:false,onError:'stopWorkflow'}
- ],connections:{'Manual Trigger':{main:[[{node:'Verify stored credential',type:'main',index:0}]]}},settings:{executionOrder:'v1',saveDataSuccessExecution:'all',saveDataErrorExecution:'all',saveManualExecutions:true,executionTimeout:60}};
+ {parameters:{method:'GET',url:p.origin+p.path,authentication:'genericCredentialType',genericAuthType:'httpHeaderAuth',options:{redirect:{redirect:{followRedirects:false}},timeout:p.attempt===5?70000:40000,response:{response:{responseFormat:'json'}}}},id:'owned-proof-request',name:'Verify stored credential',type:'n8n-nodes-base.httpRequest',typeVersion:4.2,position:[240,0],credentials:{httpHeaderAuth:{id:p.credentialId,name:'ZOLA Buyer writer'}},retryOnFail:false,onError:'stopWorkflow'}
+ ],connections:{'Manual Trigger':{main:[[{node:'Verify stored credential',type:'main',index:0}]]}},settings:{executionOrder:'v1',saveDataSuccessExecution:'all',saveDataErrorExecution:'all',saveManualExecutions:true,executionTimeout:p.attempt===5?90:60}};
 }
 export function normalizeOwnedN8nCloudWorkflow(plan,raw){
  const expected=buildOwnedN8nCloudWorkflow(plan);
