@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-23 — failed seventh retired; eighth ready for preparation
+
+Reviewed eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 is clean. After Commander reconnection, actual cloud execution 3 and saved credential metadata passed the new read-only projection and exact transition checks. The reviewed retirement completed AUTH_LENGTH_MISMATCH_RETIRED with workflowDeleted true and positiveProof false; failure evidence remains protected. Do not execute seventh. Eighth has not yet been prepared or executed. Browser control is currently unavailable; manual execution through a fresh workflow can be handed to the user after supervised READY. Production OPEN remains UNVERIFIED.
+
 ## 2026-09-22 — failed credential proof and operator-confirmed correction
 
 Seventh workflow D1xx9Mal5UA9iLsb executed once as execution 3. Its exact request reached the verifier and received AUTH_LENGTH_MISMATCH, so possession failed. The error execution and rejection are retained; proxy restoration and listener closure are verified. The frozen seventh operator remains unchanged and its workflow must never execute again. Production remains HELD; OPEN is UNVERIFIED.

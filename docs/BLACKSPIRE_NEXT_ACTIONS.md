@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-23 — failed seventh retired; eighth ready for preparation
+
+Reviewed eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 is clean. After Commander reconnection, actual cloud execution 3 and saved credential metadata passed the new read-only projection and exact transition checks. The reviewed retirement completed AUTH_LENGTH_MISMATCH_RETIRED with workflowDeleted true and positiveProof false; failure evidence remains protected. Do not execute seventh. Eighth has not yet been prepared or executed. Browser control is currently unavailable; manual execution through a fresh workflow can be handed to the user after supervised READY. Production OPEN remains UNVERIFIED.
+
 ## 2026-09-22 — current eighth continuation
 
 After final memory/security checks and commit, retire only exact failed seventh execution 3 through the reviewed lane after preserving its rejection. Bind the user's confirmed credential metadata update, prepare a new eighth workflow, establish supervised READY and execute once before expiry. Require positive server and cloud evidence plus cleanup before explicit eighth native continuation. Then finish ordered collector/denial, exact-source CI/merge, merged-main deployment, public acceptance and guarded OPEN. Earlier numbered attempts below are historical and must not execute again.
