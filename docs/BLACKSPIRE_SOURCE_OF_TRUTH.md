@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-23 — successor checks passed; first Seller read outcome unknown
+
+Clean frozen successor2 734d9ada0924a981d423111e2088a36f034500db passed actual session preflight and one-time issuance. Immediate native continuation stopped at six_reads after 34.90 seconds. All five fresh before-baseline database queries completed, including authenticated owner visibility one and foreign visibility zero. The authenticated admission-denial check was confirmed. Index zero was admitted once for seller.opportunities.search, then its task and sole provider attempt became outcome_unknown. No collected record exists; indices one through five have no tasks at the subsequent read-only observation. Release events 180 through 183 retain successor intent, active, retired UNKNOWN and sequence stop. Production remains HELD; six-read acceptance and OPEN remain UNVERIFIED.
+
+Preserve the frozen operator, original archive, both UNKNOWN permit histories, session receipt and task/attempt records. Do not reissue, archive again, replay the admitted task or rerun the collector blindly. Next action is read-only failure diagnosis and exact reconciliation; the generic stored failure does not establish the underlying transport cause or zero downstream effects. No further production mutation was performed after this stop. Existing authenticated Vercel request logs identify one HTTP503 from the Seller route on the exact candidate deployment at 05:56:11 UTC; the local authority-consumer access log records one HTTP200 in that minute. The deployment error-cluster query contains no corresponding error. The route suppresses its caught exception, so the exact internal failure branch remains UNVERIFIED.
+
 ## 2026-09-23 — collector successor source upgrade preserves completed archive
 
 Frozen successor 13b868da16f373eea06a456b5120c68c6f028605 completed archive preflight and archival successfully, preserving original claims and secret bytes/inodes and publishing the linked observation-failure terminal. Session preflight then stopped before issuance because the prior-session digest constant used JSON-quoted string bytes, while the shared hash function hashes strings directly. No new session intent or session was created.
