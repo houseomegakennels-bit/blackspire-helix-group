@@ -1,5 +1,12 @@
 # Blackspire Active Context
 
+## 2026-09-23 — owned version-six premerge permit continuation
+
+Ninth credential possession finalized successfully in frozen operator 4ea5783d25392c1975fb10fc80880f0ae62ff1b8. Native release confirmed n8n migration and reached six_reads. Protected version-six collector configuration validates, but canonical premerge permit rejects version-six before writing any permit intent.
+
+A separate wrapper preserves frozen ninth, canonical source and deployed artifact. A hash-pinned loader changes only the canonical permit version predicate: version-six requires the exact owned backend, profile, schema-three release and operation; non-owned version-four behavior remains. Original config bytes/digest, journal history, generation fencing, read limits and no-replay rules remain intact. A bounded start guard requires confirmed n8n migration and the same sequence at six_reads or later, with no unmatched current-operation n8n intent. The wrapper verifies its clean descendant source and unchanged frozen ninth source, then imports the frozen launcher. Production wrapper execution and six-read success remain UNVERIFIED at this implementation checkpoint.
+
+
 ## 2026-09-23 — ninth proof continuation prepared after exact eighth expiry
 
 A separate ninth operator preserves frozen eighth and all prior evidence. Eighth retirement pins its original workflow/version, successful supervisor invocation and second-rounded exit, completed proxy cleanup, and exactly two manual HTTP401 executions 4 and 5 after expiry. It retains only validated public execution projections and raw digests, rejects graph/inventory drift, and reconciles unknown deletion only through authenticated absence without redispatch. Actual protected eighth records and both authenticated execution projections pass read-only classification.
