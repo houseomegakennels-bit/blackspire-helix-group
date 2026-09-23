@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextResponse } from "next/server";
 
 import { getSentinelMorningBrief } from "@/lib/sentinel-server";
@@ -5,6 +6,9 @@ import { getSentinelMorningBrief } from "@/lib/sentinel-server";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const brief = await getSentinelMorningBrief();
     return NextResponse.json({ ok: true, brief });

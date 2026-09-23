@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { calculateDealAssignmentFee, updateDealAssignmentTracker } from "@/lib/deal-engine-server";
@@ -5,6 +6,9 @@ import { calculateDealAssignmentFee, updateDealAssignmentTracker } from "@/lib/d
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const dealId = request.nextUrl.searchParams.get("dealId")?.trim() || "";
     if (!dealId) return NextResponse.json({ ok: false, error: "dealId is required." }, { status: 400 });
@@ -16,6 +20,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = await request.json();
     const dealId = String(body.dealId ?? "").trim();

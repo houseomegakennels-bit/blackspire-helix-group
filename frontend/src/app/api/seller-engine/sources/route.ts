@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -9,13 +10,21 @@ import {
   syncSellerSourcesFromBuyerRegistry,
   toggleSellerSourceActive,
 } from "@/lib/seller-engine-server";
-import { guardAdminApi } from "@/lib/operator-access";
+import { guardAdminApi, guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
+  const denied = await guardWorkspaceApi();
+  if (denied) return denied;
   return NextResponse.json({ ok: true, sources: await listSellerSources() });
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardAdminApi();
     if (denied) return denied;
@@ -48,6 +57,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const denied = await guardAdminApi();
     if (denied) return denied;

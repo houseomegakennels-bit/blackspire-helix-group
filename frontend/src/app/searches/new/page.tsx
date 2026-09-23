@@ -1,8 +1,10 @@
 import { NewSearchForm } from "@/components/new-search-form";
 import { fallbackCountyCapabilities } from "@/lib/buyer-engine-data";
 import { getLiveCountyCapabilities, getOperatorShellStatus } from "@/lib/buyer-engine-server";
+import { requireWorkspacePage } from "@/lib/operator-access";
 
 export default async function NewSearchPage() {
+  await requireWorkspacePage();
   const [counties, operatorStatus] = await Promise.all([
     getLiveCountyCapabilities(true),
     getOperatorShellStatus().catch(() => null),

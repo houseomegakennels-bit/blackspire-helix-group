@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createHelixLawnLead, listHelixLawnLeads } from "@/lib/helix-lawn-command-server";
@@ -5,6 +6,9 @@ import { createHelixLawnLead, listHelixLawnLeads } from "@/lib/helix-lawn-comman
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const leads = await listHelixLawnLeads(24);
     return NextResponse.json({
@@ -24,6 +28,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const lead = await createHelixLawnLead(body);

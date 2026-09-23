@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -8,6 +9,9 @@ import {
 import { guardBetaAction } from "@/lib/beta-server";
 
 export async function GET(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const exports = await listExports({ searchJobId });
@@ -30,6 +34,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const gate = await guardBetaAction("export");
     if ("response" in gate) return gate.response;

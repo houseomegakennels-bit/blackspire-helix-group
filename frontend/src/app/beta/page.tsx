@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { BetaFeedback } from "@/components/beta-feedback";
-import { requireSignedInPage } from "@/lib/operator-access";
+import { getOperatorContext, requireSignedInPage } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,8 @@ const CHECKLIST = [
 ];
 
 export default async function BetaDashboardPage() {
-  const { role } = await requireSignedInPage();
+  await requireSignedInPage();
+  const { role } = await getOperatorContext();
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.1),transparent_34%),linear-gradient(180deg,#020403,#06090b_44%,#020303)]">

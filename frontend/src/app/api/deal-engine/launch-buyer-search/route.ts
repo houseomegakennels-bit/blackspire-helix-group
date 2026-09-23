@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { launchBuyerSearchFromDeal, recordBuyerSearchDispatchFailure } from "@/lib/deal-engine-server";
@@ -6,6 +7,9 @@ import { triggerBuyerEngineWorkflow } from "@/lib/buyer-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
     const body = (await request.json()) as { dealId?: string };
     if (!body.dealId?.trim()) {

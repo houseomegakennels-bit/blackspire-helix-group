@@ -91,6 +91,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { error: roleError } = await admin.auth.admin.updateUserById(created.user.id, {
+      app_metadata: { blackspire_role: "beta_tester" },
+    });
+    if (roleError) {
+      await admin.auth.admin.deleteUser(created.user.id);
+      return NextResponse.json({ ok: false, error: "Access role could not be assigned." }, { status: 500 });
+    }
+
     const publicAuth = createPublicSupabaseAuthClient();
     const { data: signedIn, error: signInError } = await publicAuth.auth.signInWithPassword({
       email,

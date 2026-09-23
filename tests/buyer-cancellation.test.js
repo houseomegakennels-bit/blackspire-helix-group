@@ -28,20 +28,34 @@ function task(text, overrides = {}) {
   return getTask(created.taskId);
 }
 
-function delayedAdapter(result, signal, delayMs = 200) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(result), delayMs);
-    const onAbort = () => { clearTimeout(timer); reject(new Error('aborted')); };
-    signal?.addEventListener?.('abort', onAbort, { once: true });
-    return { release: () => clearTimeout(timer), done: () => resolve(result) };
-  });
+function pendingAdapter() {
+  const started = Promise.withResolvers();
+  const response = Promise.withResolvers();
+  let signal;
+  const onAbort = () => response.reject(new Error('aborted'));
+  return {
+    started: started.promise,
+    buyerProfiles({ signal: suppliedSignal }) {
+      signal = suppliedSignal;
+      signal.addEventListener('abort', onAbort, { once: true });
+      started.resolve();
+      // Hand the promise to the caller without yielding an unobserved rejection window.
+      return response.promise;
+    },
+    release() {
+      signal?.removeEventListener('abort', onAbort);
+      response.resolve({ profiles:[{ displayName:'ABC Capital', source:'buyer_group_registry' }], matches:[], sourceSnapshotAt:'2026-09-02T00:00:00.000Z' });
+    },
+  };
 }
 
 test('late cancellation while adapter is pending does not disclose Buyer data', async () => {
   const created = task('Find buyers with cancellation race.');
-  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:async ({ signal })=>{ const delayed = delayedAdapter({ profiles:[{ displayName:'ABC Capital', source:'buyer_group_registry' }], matches:[], sourceSnapshotAt:'2026-09-02T00:00:00.000Z' }, signal, 500); await new Promise((resolve)=>setImmediate(resolve)); return await delayed; } } } });
-  await new Promise((resolve)=>setTimeout(resolve, 50));
+  const adapter = pendingAdapter();
+  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:adapter.buyerProfiles } } });
+  await adapter.started;
   transition(created.id, 'cancelled', { error:'operator cancelled' });
+  adapter.release();
   const result = await pending;
   assert.ok(result);
   assert.ok(['cancelled','failed'].includes(result.status));
@@ -50,9 +64,11 @@ test('late cancellation while adapter is pending does not disclose Buyer data', 
 
 test('emergency stop while adapter is pending prevents Buyer finalization', async () => {
   const created = task('Find buyers with cancellation timing test.');
-  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:async ({ signal })=>{ const delayed = delayedAdapter({ profiles:[{ displayName:'ABC Capital', source:'buyer_group_registry' }], matches:[], sourceSnapshotAt:'2026-09-02T00:00:00.000Z' }, signal, 500); await new Promise((resolve)=>setImmediate(resolve)); return await delayed; } } } });
-  await new Promise((resolve)=>setTimeout(resolve, 50));
+  const adapter = pendingAdapter();
+  const pending = processTask(created, { capabilityOptions:{ adapters:{ buyerProfiles:adapter.buyerProfiles } } });
+  await adapter.started;
   setFlag('emergency_stop','active');
+  adapter.release();
   try {
     const result = await pending;
     assert.ok(result);

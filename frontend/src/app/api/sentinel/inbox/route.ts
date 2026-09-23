@@ -1,3 +1,4 @@
+import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import {
@@ -8,13 +9,19 @@ import {
   resolveInboxItem,
   type SentinelInboxItem,
 } from "@/lib/sentinel-server";
+import { guardWorkspaceApi } from "@/lib/operator-access";
 
 const ACTION_TO_STATUS = { read: "read", resolve: "resolved", archive: "archived" } as const;
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const { searchParams } = new URL(request.url);
     const statusParam = searchParams.get("statuses");
     const statuses = statusParam
@@ -31,7 +38,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const accessDenied = await requireProductionWorkspaceApi();
+  if (accessDenied) return accessDenied;
+
   try {
+    const denied = await guardWorkspaceApi();
+    if (denied) return denied;
     const body = (await request.json()) as { id?: string; ids?: string[]; action?: "read" | "resolve" | "archive" };
     if (!body.action || !(body.action in ACTION_TO_STATUS)) {
       return NextResponse.json({ ok: false, error: "A valid action is required." }, { status: 400 });
