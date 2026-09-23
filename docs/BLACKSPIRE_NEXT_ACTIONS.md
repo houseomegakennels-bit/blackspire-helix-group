@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-23 — eighth READY awaiting manual execution
+
+Eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 prepared plan 4913e56f910e4c4c405f05c9bd001692b96d58b15d9e32f022c4626c50da549b and inactive workflow oHwmQO5Z0WWZfgaO. Detached supervision acknowledged and explicit READY verification passed for PID 4116437. The fixed window expires 2026-09-23T01:28:54.021Z. Browser control is unavailable, so the user receives the exact workflow link to execute once before expiry. No execution or possession success is claimed. After the user executes, inspect authenticated execution inventory and protected receipt/rejection/cleanup before finalization; never retry an uncertain execution. Production remains HELD.
+
 ## 2026-09-23 — failed seventh retired; eighth ready for preparation
 
 Reviewed eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 is clean. After Commander reconnection, actual cloud execution 3 and saved credential metadata passed the new read-only projection and exact transition checks. The reviewed retirement completed AUTH_LENGTH_MISMATCH_RETIRED with workflowDeleted true and positiveProof false; failure evidence remains protected. Do not execute seventh. Eighth has not yet been prepared or executed. Browser control is currently unavailable; manual execution through a fresh workflow can be handed to the user after supervised READY. Production OPEN remains UNVERIFIED.
