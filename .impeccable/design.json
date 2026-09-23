@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-23T04:49:57.418588+00:00",
+  "title": "Design System: Blackspire Helix Group",
+  "extensions": {
+    "shadows": [
+      {
+        "name": "demo-lift",
+        "value": "0 24px 45px #30352928",
+        "purpose": "Lifts the product demonstration from its stone surface."
+      }
+    ],
+    "motion": [
+      {
+        "name": "hero-entrance",
+        "value": "1.25s expo.out, translateY(22px) to 0",
+        "purpose": "One entrance with content visible at rest."
+      },
+      {
+        "name": "sculpture-rotation",
+        "value": "0.12 radians per second",
+        "purpose": "Slow rotation, user-pausable, stopped offscreen or while the document is hidden."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact-desktop",
+        "value": "1100px"
+      },
+      {
+        "name": "mobile-stack",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Secondary text link",
+      "kind": "button",
+      "description": "Underlined action with reserved brass hover and visible focus.",
+      "html": "<a class=\"ds-text-link\" href=\"#\">Explore our services</a>",
+      "css": ".ds-text-link{display:inline-flex;align-items:center;min-height:48px;color:#f3eee4;font-size:.95rem;border-bottom:1px solid #7b786e;text-decoration:none}.ds-text-link:hover{color:#c9ab74;border-color:#c9ab74}.ds-text-link:focus-visible{outline:3px solid #c9ab74;outline-offset:6px}"
+    },
+    {
+      "name": "Service disclosure",
+      "kind": "custom",
+      "description": "Open rows divide services without a card grid.",
+      "html": "<details class=\"ds-offer\"><summary>Follow up before leads go cold.</summary><p>Give new inquiries a clear next step.</p></details>",
+      "css": ".ds-offer{color:#f3eee4;border-block:1px solid #44463d;padding:26px 0}.ds-offer summary{cursor:pointer;min-height:48px;font-size:1.35rem;line-height:1.45}.ds-offer p{color:#c5c2b8;line-height:1.8}.ds-offer summary:focus-visible{outline:3px solid #c9ab74;outline-offset:6px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "A dark studio with a custom metallic helix as its signature object.",
+    "overview": "Mode: Persuade. Direction: a dark studio with a custom metallic helix as its signature object.",
+    "keyCharacteristics": [
+      "Asymmetric 3D hero",
+      "Open service disclosures",
+      "Contrasting demonstration section",
+      "Ordered process and substantial contact close"
+    ],
+    "rules": [],
+    "dos": [
+      "Pause rendering when offscreen or document hidden.",
+      "Reduced motion uses the static sculpture."
+    ],
+    "donts": [
+      "No fabricated metrics, generic icon cards, nested containers or scroll interception."
+    ]
+  }
+}

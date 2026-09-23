@@ -4361,3 +4361,16 @@ body::after {
 @media(max-width:900px){.public-hero{gap:32px;grid-template-columns:1fr;padding:48px 0}.public-grid{grid-template-columns:1fr}.public-process,.public-contact-grid,.public-demo-row{grid-template-columns:1fr;gap:24px}.public-nav{gap:1rem}.public-nav .public-client-link{padding-left:0;border-left:0}.public-section{padding:44px 0}}
 @media(max-width:600px){.public-wrap{padding:0 20px 40px}.public-marketing .luxury-header{position:relative}.public-nav{justify-content:flex-start;gap:.3rem 1.1rem;width:100%;font-size:.875rem}.public-nav>.public-button{font-size:.875rem;min-height:44px;padding:.6rem 1rem}.public-actions{flex-direction:column;align-items:stretch}.public-card,.public-demo{padding:22px}.public-footer{grid-template-columns:1fr;padding:32px 20px}.public-wrap h1{font-size:3.25rem}.public-hero{padding-top:32px}.public-demo{scroll-margin-top:20px}}
 @media(prefers-reduced-motion:reduce){.public-marketing *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Sculptural public identity; private workspaces retain their existing theme. */
+.public-marketing{background:#10110f!important;--gold:#c9ab74;--gold-soft:#dec99f;--copy-soft:#c5c2b8;--line:#3f4138}
+.public-marketing .luxury-header{background:#10110ff5;backdrop-filter:none}
+.public-marketing .luxury-header-inner{max-width:1280px;padding-top:10px;padding-bottom:10px}
+.public-marketing .luxury-header-inner>a>div{width:120px;height:68px}
+.public-marketing .public-button{border-radius:4px;background:#c9ab74;border-color:#c9ab74;font-weight:600}
+.public-marketing .public-button:hover{background:#e2ca9e;border-color:#e2ca9e}
+.public-marketing .public-nav{font-size:.875rem;gap:25px}
+.public-marketing .public-footer{background:#10110f;border-color:#3f4138}
+.public-marketing .public-footer .public-eyebrow{letter-spacing:.04em;text-transform:none;font-size:.875rem}
+.public-marketing summary:focus-visible{outline:3px solid #dec99f;outline-offset:6px}
+@media(max-width:600px){.public-marketing .luxury-header-inner{gap:6px;padding:12px 24px}.public-marketing .luxury-header-inner>a>div{width:95px;height:52px}.public-marketing .public-nav{gap:4px 18px;font-size:.8125rem}.public-marketing .public-nav>.public-button{min-height:42px;padding:.4rem .8rem;font-size:.8125rem}}
