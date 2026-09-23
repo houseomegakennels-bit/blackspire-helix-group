@@ -1,5 +1,12 @@
 # Blackspire Active Context
 
+## 2026-09-23 — ninth proof continuation prepared after exact eighth expiry
+
+A separate ninth operator preserves frozen eighth and all prior evidence. Eighth retirement pins its original workflow/version, successful supervisor invocation and second-rounded exit, completed proxy cleanup, and exactly two manual HTTP401 executions 4 and 5 after expiry. It retains only validated public execution projections and raw digests, rejects graph/inventory drift, and reconciles unknown deletion only through authenticated absence without redispatch. Actual protected eighth records and both authenticated execution projections pass read-only classification.
+
+Ninth uses a separate root, workflow challenge and supervised unit with unchanged fifteen-minute window and existing timeout budgets. Explicit native continuation requires the eighth retirement digest, unchanged corrected public credential metadata, all prior lineage, fresh paired possession evidence and cleanup. User approval remains valid; parent coordinates browser readiness before creating the timed window and executes immediately after fresh READY. Retirement and ninth preparation/execution have not occurred in this implementation milestone. Production OPEN remains UNVERIFIED.
+
+
 ## 2026-09-23 — eighth expired before two manual executions
 
 Authenticated read-only inspection at 02:18:49Z confirms eighth expired at 01:28:54.021Z with complete proxy restoration and listener closure, no server receipt and no rejection. Workflow oHwmQO5Z0WWZfgaO subsequently executed twice: execution 4 at 02:17:21.536Z and execution 5 at 02:17:57.713Z, both terminal HTTP401 NodeApiError; the complete inventory has no next cursor. Both requests occurred after endpoint removal and do not establish whether the corrected credential is valid. Preserve these records and do not rerun eighth. A future fresh proof requires reviewed exact retirement of this two-execution expiry outcome and coordination with the user before starting another timed window. Production remains HELD and possession remains UNVERIFIED.

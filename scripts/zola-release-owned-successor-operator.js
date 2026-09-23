@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {OWNED_SEQUENCE} from '../packages/zola-release/owned-sequence-overlay.js';
 const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/';
 try{
- if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==4||!['--release','--reassert-credential','--release-cloud-proof-attempt5','--release-cloud-proof-attempt6','--release-cloud-proof-attempt7','--release-cloud-proof-attempt8'].includes(process.argv[2])
+ if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==4||!['--release','--reassert-credential','--release-cloud-proof-attempt5','--release-cloud-proof-attempt6','--release-cloud-proof-attempt7','--release-cloud-proof-attempt8','--release-cloud-proof-attempt9'].includes(process.argv[2])
   ||process.argv[3]!==`/var/lib/blackspire-operator/preparation/owned-successor-final-${OWNED_SEQUENCE.releaseSha}/production-release.json`)throw Error('Arguments refused');
  const root=fileURLToPath(new URL('../',import.meta.url));
  const git=args=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',root,...args],{encoding:'utf8',timeout:10000,maxBuffer:65536,env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_NO_REPLACE_OBJECTS:'1'}}).trim();
