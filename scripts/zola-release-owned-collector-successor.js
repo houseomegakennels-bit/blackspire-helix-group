@@ -12,9 +12,9 @@ try{
  const git=(root,args)=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',root,...args],{encoding:'utf8',timeout:10000,maxBuffer:65536,env,stdio:['ignore','pipe','pipe']}).trim();
  const operatorSha=git(SUCCESSOR.root,['rev-parse','HEAD']);
  const check=()=>{
-  git(SUCCESSOR.root,['merge-base','--is-ancestor',SUCCESSOR.baseSha,'HEAD']);
-  for(const [root,sha] of [[SUCCESSOR.root,operatorSha],[SUCCESSOR.frozenRoot,SUCCESSOR.baseSha],[SUCCESSOR.canonicalRoot,SUCCESSOR.releaseSha],[OWNED_SIX_READ.frozenRoot,OWNED_SIX_READ.frozenSha]])if(fs.realpathSync(root)!==root||git(root,['rev-parse','HEAD'])!==sha||git(root,['status','--porcelain','--untracked-files=all'])!=='')successorFail();
-  if(operatorSha===SUCCESSOR.baseSha)successorFail();readTerminalProof();
+  git(SUCCESSOR.root,['merge-base','--is-ancestor',SUCCESSOR.archiveOperatorSha,'HEAD']);
+  for(const [root,sha] of [[SUCCESSOR.root,operatorSha],[SUCCESSOR.archiveOperatorRoot,SUCCESSOR.archiveOperatorSha],[SUCCESSOR.frozenRoot,SUCCESSOR.baseSha],[SUCCESSOR.canonicalRoot,SUCCESSOR.releaseSha],[OWNED_SIX_READ.frozenRoot,OWNED_SIX_READ.frozenSha]])if(fs.realpathSync(root)!==root||git(root,['rev-parse','HEAD'])!==sha||git(root,['status','--porcelain','--untracked-files=all'])!=='')successorFail();
+  if(operatorSha===SUCCESSOR.baseSha||operatorSha===SUCCESSOR.archiveOperatorSha)successorFail();readTerminalProof();
  };
  check();
  const guard=execFileSync('/opt/nodejs/node-v22.23.1-linux-x64/bin/node',[SUCCESSOR.root+'/scripts/zola-owned-six-read-start-guard.js'],{cwd:SUCCESSOR.root,encoding:'utf8',timeout:30000,maxBuffer:4096,env,stdio:['ignore','pipe','pipe']});

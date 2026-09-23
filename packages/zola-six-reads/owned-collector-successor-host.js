@@ -3,13 +3,14 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
+import {OWNED_SIX_READ} from '../zola-release/owned-six-read-overlay.js';
 import {RENEWAL,renewalHash as hash,assertRenewalConfig} from './owned-denial-renewal.js';
 import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {RELEASE_ADMISSION_ROOT,acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {observeHeldLifecycle,validateHeldLifecycleProof} from '../zola-release/held-lifecycle.js';
 import {openReleaseJournal} from '../zola-release/commander-journal.js';
 import {writeZolaActivationProfile} from '../zola-release/activation-profile.js';
-export const SUCCESSOR=Object.freeze({root:'/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-collector-successor-20260923',baseSha:'30fcdaa81c8f6fb070cc0f5ec67e597ecd17330a',
+export const SUCCESSOR=Object.freeze({root:'/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-collector-successor2-20260923',archiveOperatorRoot:'/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-collector-successor-20260923',archiveOperatorSha:'13b868da16f373eea06a456b5120c68c6f028605',baseSha:'30fcdaa81c8f6fb070cc0f5ec67e597ecd17330a',
  archive:'/var/lib/blackspire-operator/preparation/owned-collector-successor-20260923',releasePath:'/var/lib/blackspire-operator/release-operations/release.jsonl',
  prefixLength:156008,prefixDigest:'788062d4011049aac0c1766ff364934315b1580bfafefc6f58b0f3ca52996855',
  collectorDigest:'c5ec95649f3cf7849869a9973331ca543b11cfb570d9d59cb577dd66d37062fd',
@@ -29,13 +30,15 @@ function protectedBytes(p,max=1048576){
  const b=fs.readFileSync(fd),t=fs.lstatSync(p);if(b.length!==s.size||t.dev!==s.dev||t.ino!==s.ino)successorFail();return b;
  }finally{fs.closeSync(fd);}
 }
+export function assertArchiveOperatorSource({root,sha,clean}){if(root!==SUCCESSOR.archiveOperatorRoot||sha!==SUCCESSOR.archiveOperatorSha||clean!==true)successorFail();return SUCCESSOR.archiveOperatorSha;}
 export function checkSuccessorSource(){
  const run=(root,args)=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',root,...args],{encoding:'utf8',timeout:10000,maxBuffer:65536,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C',GIT_NO_REPLACE_OBJECTS:'1',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null'}}).trim();
- for(const [root,expected] of [[RENEWAL.root,SUCCESSOR.baseSha],[RENEWAL.canonicalRoot,RENEWAL.releaseSha]]){
+ assertArchiveOperatorSource({root:fs.realpathSync(SUCCESSOR.archiveOperatorRoot),sha:run(SUCCESSOR.archiveOperatorRoot,['rev-parse','HEAD']),clean:run(SUCCESSOR.archiveOperatorRoot,['status','--porcelain','--untracked-files=all'])===''});
+ for(const [root,expected] of [[RENEWAL.root,SUCCESSOR.baseSha],[RENEWAL.canonicalRoot,RENEWAL.releaseSha],[OWNED_SIX_READ.frozenRoot,OWNED_SIX_READ.frozenSha]]){
   if(fs.realpathSync(root)!==root||run(root,['rev-parse','HEAD'])!==expected||run(root,['status','--porcelain','--untracked-files=all']))successorFail();
  }
  if(fs.realpathSync(SUCCESSOR.root)!==SUCCESSOR.root||run(SUCCESSOR.root,['status','--porcelain','--untracked-files=all']))successorFail();
- run(SUCCESSOR.root,['merge-base','--is-ancestor',SUCCESSOR.baseSha,'HEAD']);const sha=run(SUCCESSOR.root,['rev-parse','HEAD']);if(sha===SUCCESSOR.baseSha)successorFail();return sha;
+ run(SUCCESSOR.root,['merge-base','--is-ancestor',SUCCESSOR.archiveOperatorSha,'HEAD']);const sha=run(SUCCESSOR.root,['rev-parse','HEAD']);if(sha===SUCCESSOR.baseSha||sha===SUCCESSOR.archiveOperatorSha)successorFail();return sha;
 }
 function envelopes(bytes){
  if(!bytes.length||bytes.at(-1)!==10)successorFail();let previous='0'.repeat(64);return bytes.toString().trimEnd().split('\n').map((line,i)=>{
@@ -100,7 +103,7 @@ async function liveFence(config,claims){
 export function readTerminalProof(){
  checkSuccessorSource();const o=originals(),intent=json(SUCCESSOR.archive+'/intent.json'),completion=json(SUCCESSOR.archive+'/completion.json'),terminal=json(SUCCESSOR.archive+'/terminal.json');
  const expectedLog={unit:'blackspire-owned-postgres.service',timestamp:'1790140208365124',messageDigest:SUCCESSOR.logDigest,classification:'SET_ROLE_AUTHENTICATED_PERMISSION_DENIED'};
- const expectedIntent={version:1,kind:'owned-collector-archive-intent',operatorSha:checkSuccessorSource(),releaseSha:RENEWAL.releaseSha,operationId:RENEWAL.operationId,attemptId:RENEWAL.attemptId,runId:RENEWAL.runId,configDigest:RENEWAL.configDigest,originalReleasePrefixDigest:SUCCESSOR.prefixDigest,collectorDigest:SUCCESSOR.collectorDigest,originalClaimsDigest:SUCCESSOR.claimsDigest,collectorIntentDigest:o.collectorIntentDigest,files,runtime:intent.runtime,logProof:expectedLog};
+ const expectedIntent={version:1,kind:'owned-collector-archive-intent',operatorSha:SUCCESSOR.archiveOperatorSha,releaseSha:RENEWAL.releaseSha,operationId:RENEWAL.operationId,attemptId:RENEWAL.attemptId,runId:RENEWAL.runId,configDigest:RENEWAL.configDigest,originalReleasePrefixDigest:SUCCESSOR.prefixDigest,collectorDigest:SUCCESSOR.collectorDigest,originalClaimsDigest:SUCCESSOR.claimsDigest,collectorIntentDigest:o.collectorIntentDigest,files,runtime:intent.runtime,logProof:expectedLog};
  validateHeldLifecycleProof(intent.runtime,{releaseSha:RENEWAL.releaseSha,runId:RENEWAL.runId});
  if(intent.runtime.api.pid!==o.config.apiPid||intent.runtime.worker.pid!==o.config.workerPid||intent.runtime.api.generation!==o.claims.apiGeneration||intent.runtime.worker.generation!==o.claims.workerGeneration)successorFail();
  const expectedCompletion={version:1,status:'BOTH_ARCHIVED',intentDigest:hash(intent),filesDigest:hash(files)};
@@ -134,6 +137,7 @@ export function renameNoReplace(source,destination){
  sync(path.dirname(source));sync(path.dirname(destination));
 }
 export async function archiveOldObservation({mutate=false,reconcile=false}={}){
+ if(mutate||reconcile)successorFail(); // Archive authority belongs exclusively to frozen predecessor.
  const operatorSha=checkSuccessorSource();let journal,lease;
  try{
   if(mutate)journal=openReleaseJournal();

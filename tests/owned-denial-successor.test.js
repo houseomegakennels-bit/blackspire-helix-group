@@ -41,3 +41,8 @@ test('durable publication precedes commit and failed publication rolls back sess
  const result=publishBeforeCommit(transaction,build,r=>{assert.equal(r.id,'test');assert.equal(db.prepare('SELECT count(*) n FROM audits').get().n,1);});
  assert.equal(result.result.ok,true);assert.equal(db.prepare('SELECT count(*) n FROM sessions').get().n,1);db.close();
 });
+test('session lineage hashes raw string bytes and rejects JSON-quoted string digest',()=>{
+ const f=fixture();assert.equal(assertExpiredRenewalLineage(f.prior,f.config,f.identity,f.observation,f.options),'expired-session-absent');
+ const quoted=hash(JSON.stringify(f.prior.receipt.sessionId));assert.notEqual(quoted,f.options.policy.priorSessionDigest);
+ f.options.policy.priorSessionDigest=quoted;assert.throws(()=>assertExpiredRenewalLineage(f.prior,f.config,f.identity,f.observation,f.options));
+});

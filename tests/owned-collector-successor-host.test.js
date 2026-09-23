@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import {renameNoReplace,classifyArchiveMove,classifyArchivePresence,exactFile} from '../packages/zola-six-reads/owned-collector-successor-host.js';
+import {SUCCESSOR,assertArchiveOperatorSource,archiveOldObservation,renameNoReplace,classifyArchiveMove,classifyArchivePresence,exactFile} from '../packages/zola-six-reads/owned-collector-successor-host.js';
 test('archive rename preserves evidence inode and bytes',()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'zola-archive-test-'));
  try{const a=root+'/old',b=root+'/retained';fs.writeFileSync(a,'evidence\n',{mode:0o600});const before=fs.statSync(a);
@@ -50,4 +50,14 @@ test('matching bytes on a substituted inode cannot reconcile archive',()=>{
  const s=fs.statSync(a),expected={dev:s.dev,ino:s.ino,gid:s.gid,size:s.size,mode:s.mode&0o7777,digest:createHash('sha256').update('same').digest('hex')};
  exactFile(a,expected);assert.throws(()=>exactFile(b,expected));
  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('archive operator remains frozen predecessor and rejects source identity drift',()=>{
+ const bound={root:SUCCESSOR.archiveOperatorRoot,sha:SUCCESSOR.archiveOperatorSha,clean:true};
+ assert.notEqual(SUCCESSOR.root,bound.root);assert.notEqual(SUCCESSOR.baseSha,bound.sha);
+ assert.equal(assertArchiveOperatorSource(bound),'13b868da16f373eea06a456b5120c68c6f028605');
+ for(const change of [{root:SUCCESSOR.root},{sha:'f'.repeat(40)},{sha:SUCCESSOR.baseSha},{clean:false}])assert.throws(()=>assertArchiveOperatorSource({...bound,...change}));
+});
+test('successor2 refuses archive mutation and reconciliation before any host access',async()=>{
+ await assert.rejects(archiveOldObservation({mutate:true}));await assert.rejects(archiveOldObservation({reconcile:true}));
 });

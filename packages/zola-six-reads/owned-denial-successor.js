@@ -8,7 +8,7 @@ import {SUCCESSOR,checkSuccessorSource,readTerminalProof} from './owned-collecto
 export const DENIAL_SUCCESSOR=Object.freeze({prefix:'/var/lib/blackspire-operator/preparation/six-read-premerge-denial-successor-20260923',
  action:'auth.delegated-denial.collector-successor',authentication:'root-delegated-existing-principal-collector-successor',
  priorIntentDigest:'6db2a7e5726840dc73c7fdd5b983cba29450e2624363d4e686247bf9d881c8f0',priorReceiptDigest:'d52dd5a79480e7b799f6e08c34ee9a4ad846faa26add2cf9cc6d607b32abba7e',
- priorResultDigest:'834c4f87199e24b742907d3e41c0d3c2916040890258b93290e31c07e27e910e',priorSessionDigest:'93dc1816092159a77fd3a6db119377ee0d6a794e43384f4cd9c174678414fd35'});
+ priorResultDigest:'834c4f87199e24b742907d3e41c0d3c2916040890258b93290e31c07e27e910e',priorSessionDigest:'e240f5e51e67ec6f0333116571779934524fccd38df92370fd392c6e4ed61b7d'});
 export const successorDenialFail=()=>{throw Error('OWNED_DENIAL_SUCCESSOR_REJECTED');};
 const fail=successorDenialFail;
 const same=(a,b)=>hash(a)===hash(b);
