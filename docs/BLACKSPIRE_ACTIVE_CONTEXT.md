@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-23 — eighth expired before two manual executions
+
+Authenticated read-only inspection at 02:18:49Z confirms eighth expired at 01:28:54.021Z with complete proxy restoration and listener closure, no server receipt and no rejection. Workflow oHwmQO5Z0WWZfgaO subsequently executed twice: execution 4 at 02:17:21.536Z and execution 5 at 02:17:57.713Z, both terminal HTTP401 NodeApiError; the complete inventory has no next cursor. Both requests occurred after endpoint removal and do not establish whether the corrected credential is valid. Preserve these records and do not rerun eighth. A future fresh proof requires reviewed exact retirement of this two-execution expiry outcome and coordination with the user before starting another timed window. Production remains HELD and possession remains UNVERIFIED.
+
 ## 2026-09-23 — eighth READY awaiting manual execution
 
 Eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 prepared plan 4913e56f910e4c4c405f05c9bd001692b96d58b15d9e32f022c4626c50da549b and inactive workflow oHwmQO5Z0WWZfgaO. Detached supervision acknowledged and explicit READY verification passed for PID 4116437. The fixed window expires 2026-09-23T01:28:54.021Z. Browser control is unavailable, so the user receives the exact workflow link to execute once before expiry. No execution or possession success is claimed. After the user executes, inspect authenticated execution inventory and protected receipt/rejection/cleanup before finalization; never retry an uncertain execution. Production remains HELD.
