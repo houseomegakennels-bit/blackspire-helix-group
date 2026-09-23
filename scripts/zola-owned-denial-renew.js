@@ -37,7 +37,7 @@ try{
  if(!fs.readdirSync(`/proc/${config.apiPid}/fd`).some(n=>{try{const s=fs.statSync(`/proc/${config.apiPid}/fd/${n}`);return s.dev===identity.dev&&s.ino===identity.ino;}catch{return false;}}))renewalFail();
  if(!mutate){process.stdout.write('OWNED_DENIAL_RENEWAL_PREFLIGHT_VERIFIED\n');}
  else{
-  const intent={version:1,kind:'owned-denial-renewal-intent',operatorSha,configDigest:RENEWAL.configDigest,originalReceiptDigest:RENEWAL.originalReceiptDigest,
+  const intent={version:1,kind:'owned-denial-renewal-intent',operatorSha,originalOutcome:RENEWAL.originalOutcome,configDigest:RENEWAL.configDigest,originalReceiptDigest:RENEWAL.originalReceiptDigest,
    operationId:RENEWAL.operationId,attemptId:RENEWAL.attemptId,inputDigest:state.pending.inputDigest,checkOutputDigest:state.pending.checkOutputDigest,
    profileDigest:renewalHash(runtime.profile),createdAt:Date.now()};
   writeZolaActivationProfile(RENEWAL.prefix+'-intent.json',intent);

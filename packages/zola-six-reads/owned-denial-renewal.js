@@ -12,6 +12,7 @@ export const RENEWAL=Object.freeze({
  originalReceiptDigest:'18b505632eadb971a59fb5924336f5561fc00d29f94b5a5ed86849ce1c3a17ca',
  originalSessionDigest:'586c73a34dd3c06c6c908231c284bd5a46e99b5763d9cf2e8efd13b7423c6236',
  prefix:'/var/lib/blackspire-operator/preparation/six-read-premerge-denial-renewal-20260923',
+ originalOutcome:'expired-session-absent',
  authentication:'root-delegated-existing-principal-renewal',action:'auth.delegated-denial.renewed'
 });
 export const renewalFail=()=>{throw Error('OWNED_DENIAL_RENEWAL_REJECTED');};
@@ -40,21 +41,21 @@ export function assertOriginalDenial({original,config,identity,session,audits,ac
  assertRenewalConfig(config,policy);
  if(!exact(original,receiptKeys)||original.version!==1||original.authentication!=='root-delegated-existing-principal'
   ||renewalHash(original)!==policy.originalReceiptDigest||!bound(original,config,identity)||original.expiresAt>now
-  ||!sessionMatches(original,session)||activeGrants!==0||!Array.isArray(family)||family.length!==1||family[0].id!==original.sessionId
+  ||session!=null||activeGrants!==0||!Array.isArray(family)||family.length!==0
   ||!Array.isArray(audits)||audits.length!==1||audits[0].actor!==original.operatorPrincipal)renewalFail();
  const expected={runId:original.runId,releaseSha:original.releaseSha,deniedPrincipal:original.deniedPrincipal,workspace:original.workspace,sessionDigest:renewalHash(original.sessionId),expiresAt:original.expiresAt};
  let details;try{details=JSON.parse(audits[0].details);}catch{renewalFail();}if(!same(details,expected))renewalFail();return true;
 }
 export function renewalAuditDetails(receipt,policy=RENEWAL){return {runId:receipt.runId,releaseSha:receipt.releaseSha,deniedPrincipal:receipt.deniedPrincipal,workspace:receipt.workspace,
- originalReceiptDigest:policy.originalReceiptDigest,originalSessionDigest:policy.originalSessionDigest,intentDigest:receipt.intentDigest,
+ originalOutcome:policy.originalOutcome,originalReceiptDigest:policy.originalReceiptDigest,originalSessionDigest:policy.originalSessionDigest,intentDigest:receipt.intentDigest,
  sessionDigest:renewalHash(receipt.sessionId),createdAt:receipt.createdAt,expiresAt:receipt.expiresAt};}
 export function verifyRenewedDenial(receipt,config,identity,{original,originalSession,originalAudits,originalFamily,renewedFamily,session,audits,activeGrants,intent,result,now=Date.now()},policy=RENEWAL){
  assertOriginalDenial({original,config,identity,session:originalSession,audits:originalAudits,family:originalFamily,activeGrants,now},policy);
  if(!exact(receipt,receiptKeys+',intentDigest,originalReceiptDigest')||receipt.version!==2||receipt.authentication!==policy.authentication
   ||!bound(receipt,config,identity)||receipt.originalReceiptDigest!==policy.originalReceiptDigest||receipt.createdAt>now||receipt.expiresAt<=now
   ||receipt.createdAt<original.expiresAt||receipt.sessionId===original.sessionId||receipt.marker!==`zola-denial-renewal:${policy.attemptId}`
-  ||!sessionMatches(receipt,session)||!Array.isArray(renewedFamily)||renewedFamily.length!==1||renewedFamily[0].id!==receipt.sessionId||!exact(intent,'version,kind,operatorSha,configDigest,originalReceiptDigest,operationId,attemptId,inputDigest,checkOutputDigest,profileDigest,createdAt')
-  ||intent.version!==1||intent.kind!=='owned-denial-renewal-intent'||intent.configDigest!==policy.configDigest||intent.originalReceiptDigest!==policy.originalReceiptDigest
+  ||!sessionMatches(receipt,session)||!Array.isArray(renewedFamily)||renewedFamily.length!==1||renewedFamily[0].id!==receipt.sessionId||!exact(intent,'version,kind,operatorSha,configDigest,originalReceiptDigest,originalOutcome,operationId,attemptId,inputDigest,checkOutputDigest,profileDigest,createdAt')
+  ||intent.originalOutcome!==policy.originalOutcome||intent.version!==1||intent.kind!=='owned-denial-renewal-intent'||intent.configDigest!==policy.configDigest||intent.originalReceiptDigest!==policy.originalReceiptDigest
   ||intent.inputDigest!==policy.inputDigest||intent.checkOutputDigest!==policy.checkOutputDigest
   ||intent.operationId!==policy.operationId||intent.attemptId!==policy.attemptId||!['operatorSha'].every(k=>/^[a-f0-9]{40}$/.test(intent[k]??''))
   ||!['inputDigest','checkOutputDigest','profileDigest'].every(k=>/^[a-f0-9]{64}$/.test(intent[k]??''))||!Number.isSafeInteger(intent.createdAt)||intent.createdAt>receipt.createdAt

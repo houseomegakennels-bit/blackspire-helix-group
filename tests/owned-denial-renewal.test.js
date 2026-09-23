@@ -13,16 +13,18 @@ const {prepareDisposableDatabase}=await import('./helpers/prepare-disposable-dat
 const db=await import('../packages/task-engine/db.js');
 const {openDelegatedSessionService}=await import('../packages/zola-six-reads/denial-session.js');
 const canonical=await openDelegatedSessionService(database);
+const {cleanupExpiredSessions}=await import('../packages/shared/sessions.js');
 const old=Date.now()-1800000;
 for(const id of ['operator','denied'])db.run('INSERT INTO auth_principals VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[id,'admin',id+'-actor','bearer','fixture-reference','active',old-1,null,null,null,1,old-1]);
 let n=0;
 function fixture(){
  const input={operatorPrincipal:'operator',deniedPrincipal:'denied',workspace:'isolated',runId:'renewal-fixture-'+(++n),releaseSha:'a'.repeat(40)};
  let original;const now=Date.now;Date.now=()=>old;try{canonical.issue(input,r=>{original=r;});}finally{Date.now=now;}
+ cleanupExpiredSessions();
  const st=fs.statSync(database),identity={dev:st.dev,ino:st.ino,uid:st.uid};original={...original,databaseIdentity:identity};
  const config={version:6,releaseSha:input.releaseSha,runId:input.runId,workspace:input.workspace,principal:input.operatorPrincipal,deniedPrincipal:input.deniedPrincipal,databasePath:database};
  const policy={...RENEWAL,configDigest:hash(config),originalReceiptDigest:hash(original),originalSessionDigest:hash(original.sessionId),releaseSha:input.releaseSha,runId:input.runId,attemptId:'fixture-attempt-'+n};
- const intent={version:1,kind:'owned-denial-renewal-intent',operatorSha:'b'.repeat(40),configDigest:policy.configDigest,originalReceiptDigest:policy.originalReceiptDigest,operationId:policy.operationId,attemptId:policy.attemptId,inputDigest:policy.inputDigest,checkOutputDigest:policy.checkOutputDigest,profileDigest:'c'.repeat(64),createdAt:Date.now()};
+ const intent={version:1,kind:'owned-denial-renewal-intent',originalOutcome:policy.originalOutcome,operatorSha:'b'.repeat(40),configDigest:policy.configDigest,originalReceiptDigest:policy.originalReceiptDigest,operationId:policy.operationId,attemptId:policy.attemptId,inputDigest:policy.inputDigest,checkOutputDigest:policy.checkOutputDigest,profileDigest:'c'.repeat(64),createdAt:Date.now()};
  return {original,config,identity,policy,intent};
 }
 function evidence(f,receipt){return {
@@ -32,7 +34,7 @@ function evidence(f,receipt){return {
  audits:db.all("SELECT actor,details FROM audit_events WHERE action=? AND json_extract(details,'$.runId')=?",[RENEWAL.action,f.config.runId]),activeGrants:0,intent:f.intent,
  result:{version:1,kind:'owned-denial-renewal-result',intentDigest:hash(f.intent),receiptDigest:hash(receipt),expiresAt:receipt.expiresAt}};}
 test.after(()=>{canonical.close();fs.rmSync(directory,{recursive:true,force:true});});
-test('renewal retains original/audit, commits only after exclusive receipt publication, uses distinct bounded session and audit',async()=>{
+test('renewal explicitly classifies absent expired original and retains original receipt/audit, commits only after exclusive receipt publication, uses distinct bounded session and audit',async()=>{
  const f=fixture(),service=await openRenewalService(database,{policy:f.policy});
  const before=db.get('SELECT * FROM sessions WHERE id=?',[f.original.sessionId]);let receipt;
  service.issue(f,r=>{receipt=r;const separate=new DatabaseSync(database,{readOnly:true});try{assert.equal(separate.prepare('SELECT count(*) AS n FROM sessions WHERE id=?').get(r.sessionId).n,0);}finally{separate.close();}});
@@ -52,7 +54,7 @@ test('publication failure rolls back new session/audit while external receipt an
 });
 test('renewal proof rejects provenance, expiry, profile syntax, session family, old audit and identity drift',async()=>{
  const f=fixture(),service=await openRenewalService(database,{policy:f.policy});const receipt=service.issue(f,()=>{}),ev=evidence(f,receipt);
- for(const mutate of [x=>x.receipt.authentication='root-delegated-existing-principal',x=>x.receipt.expiresAt=x.receipt.createdAt+900001,x=>x.receipt.originalReceiptDigest='0'.repeat(64),x=>x.ev.now=x.receipt.expiresAt,x=>x.ev.intent.inputDigest='d'.repeat(64),x=>x.ev.intent.checkOutputDigest='d'.repeat(64),x=>x.ev.intent.profileDigest='wrong',x=>x.ev.renewedFamily.push(x.ev.session),x=>x.ev.originalAudits=[],x=>x.ev.audits[0].actor='other',x=>x.ev.activeGrants=1,x=>x.ev.session.revoked_at=Date.now(),x=>x.identity.ino++]){
+ for(const mutate of [x=>x.receipt.authentication='root-delegated-existing-principal',x=>x.receipt.expiresAt=x.receipt.createdAt+900001,x=>x.receipt.originalReceiptDigest='0'.repeat(64),x=>x.ev.now=x.receipt.expiresAt,x=>x.ev.intent.inputDigest='d'.repeat(64),x=>x.ev.intent.checkOutputDigest='d'.repeat(64),x=>x.ev.intent.profileDigest='wrong',x=>x.ev.renewedFamily.push(x.ev.session),x=>x.ev.originalSession=x.ev.session,x=>x.ev.originalFamily=[x.ev.session],x=>x.ev.originalAudits=[],x=>x.ev.audits[0].actor='other',x=>x.ev.activeGrants=1,x=>x.ev.session.revoked_at=Date.now(),x=>x.identity.ino++]){
   const x=structuredClone({receipt,ev,identity:f.identity});mutate(x);assert.throws(()=>verifyRenewedDenial(x.receipt,f.config,x.identity,x.ev,f.policy));
  }
 });
