@@ -19,9 +19,9 @@ export function ownedSixReadConfigMatches(config,context){
 export function transformOwnedSixReadSource(source){
  if(typeof source!=='string'||createHash('sha256').update(source).digest('hex')!==OWNED_SIX_READ.sourceDigest)fail();
  const needle='config.version!==4',pieces=source.split(needle);if(pieces.length!==2)fail();
- // Inject one pure predicate. All original journal, identity, generation, expiry,
- // no-replay, config digest and collector evidence checks remain byte-identical.
- return "const OWNED_SIX_READ="+JSON.stringify(OWNED_SIX_READ)+";\n"+ownedSixReadConfigMatches.toString()+"\n"+pieces[0]+'!ownedSixReadConfigMatches(config,context)'+pieces[1];
+ // Keep original permit proof and no-replay checks. Version six additionally
+ // validates fresh renewed delegation only before first permit issuance.
+ return "import {selectRenewalReceipt} from '/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-denial-renewal-20260923/packages/zola-six-reads/owned-denial-host.js';\n"+"const OWNED_SIX_READ="+JSON.stringify(OWNED_SIX_READ)+";\n"+ownedSixReadConfigMatches.toString()+"\n"+pieces[0]+'!ownedSixReadConfigMatches(config,context)'+pieces[1].replace('  lease=acquire({root,exclusive:true,owner:0,groupId});','  if(config.version===6)selectRenewalReceipt(config);\n  lease=acquire({root,exclusive:true,owner:0,groupId});');
 }
 export function assertOwnedSixReadStart({state,n8nEvents,stages}){
  if(!state?.started||state.context?.releaseSha!==OWNED_SIX_READ.releaseSha||state.context?.operationId!==OWNED_SIX_READ.operationId
@@ -37,7 +37,7 @@ export function assertOwnedSixReadStart({state,n8nEvents,stages}){
  return true;
 }
 export function assertOwnedSixReadSource({wrapperRoot,frozenRoot,frozenSha,wrapperClean,frozenClean,ancestor,wrapperSha}){
- if(wrapperRoot!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-premerge-six-permit-20260923'
+ if(wrapperRoot!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-denial-renewal-20260923'
   ||frozenRoot!==OWNED_SIX_READ.frozenRoot||frozenSha!==OWNED_SIX_READ.frozenSha||wrapperClean!==true||frozenClean!==true||ancestor!==true
   ||!/^[a-f0-9]{40}$/.test(wrapperSha??'')||wrapperSha===frozenSha)fail();return true;
 }

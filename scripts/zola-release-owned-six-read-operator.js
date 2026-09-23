@@ -19,6 +19,8 @@ try{
  check();
  const guard=execFileSync('/opt/nodejs/node-v22.23.1-linux-x64/bin/node',[root+'/scripts/zola-owned-six-read-start-guard.js'],{cwd:root,encoding:'utf8',timeout:30000,maxBuffer:4096,env,stdio:['ignore','pipe','pipe']});
  if(guard!=='OWNED_SIX_READ_START_VERIFIED\n')throw Error('Guard');
- check();register(new URL('../packages/zola-release/owned-six-read-loader.js',import.meta.url));
+ check();
+ register(new URL('../packages/zola-six-reads/owned-denial-loader.js',import.meta.url));
+ register(new URL('../packages/zola-release/owned-six-read-loader.js',import.meta.url));
  await import(OWNED_SIX_READ.frozenRoot+'/scripts/zola-release-owned-successor-operator.js');check();
 }catch{process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_SIX_READ_OPERATOR_REJECTED',releaseReady:false})+'\n');process.exitCode=1;}
