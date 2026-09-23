@@ -4374,3 +4374,20 @@ body::after {
 .public-marketing .public-footer .public-eyebrow{letter-spacing:.04em;text-transform:none;font-size:.875rem}
 .public-marketing summary:focus-visible{outline:3px solid #dec99f;outline-offset:6px}
 @media(max-width:600px){.public-marketing .luxury-header-inner{gap:6px;padding:12px 24px}.public-marketing .luxury-header-inner>a>div{width:95px;height:52px}.public-marketing .public-nav{gap:4px 18px;font-size:.8125rem}.public-marketing .public-nav>.public-button{min-height:42px;padding:.4rem .8rem;font-size:.8125rem}}
+
+/* Complete public navigation, including books, without crowding small screens. */
+.public-skip-link{position:fixed;top:8px;left:16px;z-index:100;transform:translateY(-180%);padding:12px 18px;background:#e2ca9e;color:#10110f;border-radius:4px}
+.public-skip-link:focus{transform:translateY(0)}
+.public-mobile-menu{display:none}
+.public-marketing .public-nav{gap:20px}
+@media(max-width:1100px){
+  .public-desktop-nav,.public-marketing .public-desktop-nav{display:none}
+  .public-mobile-menu{display:block;position:relative;margin-left:auto}
+  .public-mobile-menu summary{display:flex;align-items:center;justify-content:center;gap:12px;min-height:48px;padding:10px 16px;list-style:none;border:1px solid #696b5c;border-radius:4px;color:#f3eee4;cursor:pointer}
+  .public-mobile-menu summary::-webkit-details-marker{display:none}
+  .public-mobile-menu .public-nav,.public-marketing .public-mobile-menu .public-nav{position:absolute;right:0;top:calc(100% + 12px);width:min(300px,calc(100vw - 48px));display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;background:#10110f;border:1px solid #696b5c;padding:16px;box-shadow:0 16px 36px #0008;font-size:.9375rem}
+  .public-mobile-menu .public-nav>a{display:flex;align-items:center;min-height:48px;padding:8px}
+  .public-mobile-menu .public-nav .public-client-link{border:0;padding-left:8px}
+  .public-mobile-menu .public-nav>.public-button{min-height:48px;font-size:.875rem;padding:8px}
+  .public-mobile-menu summary:focus-visible{outline:3px solid #dec99f;outline-offset:4px}
+}

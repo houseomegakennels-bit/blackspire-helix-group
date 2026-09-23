@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { listPublishedBooks } from "@/lib/book-studio/service";
 import { getAssetUrl } from "@/lib/book-studio/store";
+
+export const metadata: Metadata = {
+  title: "Books & Audiobooks | Blackspire Helix Group",
+  description: "Explore published Blackspire stories and play their chapter-by-chapter audiobooks.",
+};
 
 export const dynamic = "force-dynamic";
 

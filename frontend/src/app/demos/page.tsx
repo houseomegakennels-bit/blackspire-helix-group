@@ -11,6 +11,7 @@ const demos = [
     title: "Keep customer inquiries moving.",
     category: "Service businesses · Helix Lawn Command",
     src: "/demos/helix-lawn-command-demo.mp4",
+    poster: "/demos/helix-lawn-command-poster.jpg",
     problem: "You’re busy with a job when another customer reaches out.",
     workflow:
       "Explore an example of inquiry capture and follow-up for a lawn-care business.",
@@ -21,6 +22,7 @@ const demos = [
     title: "Make buyer research easier to use.",
     category: "Real estate · Buyer Engine",
     src: "/demos/buyer-engine-demo-final.mp4",
+    poster: "/demos/buyer-engine-poster.jpg",
     problem:
       "Buyer information is scattered, and preparing outreach takes time.",
     workflow:
@@ -60,6 +62,7 @@ export default function DemosPage() {
                 preload="metadata"
                 aria-label={d.title}
                 src={d.src}
+                poster={d.poster}
               />
             </div>
             <div className="public-card">

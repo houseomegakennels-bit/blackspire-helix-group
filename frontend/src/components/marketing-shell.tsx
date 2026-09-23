@@ -29,16 +29,17 @@ export function MarketingShell({
   const watermarkSrc =
     watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
-    <main
+    <div
       className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : "public-marketing"}`}
       style={themeStyle}
     >
+      <a href="#main-content" className="public-skip-link">Skip to content</a>
       <div className="luxury-orbital-field" aria-hidden="true">
         <span className="luxury-orbital-ring luxury-orbital-ring-a" />
         <span className="luxury-orbital-ring luxury-orbital-ring-b" />
         <span className="luxury-orbital-ring luxury-orbital-ring-c" />
       </div>
-      <div
+      {isDivisionWatermark && <div
         className={`luxury-watermark ${isDivisionWatermark ? "luxury-watermark-division" : ""}`}
         aria-hidden="true"
       >
@@ -49,8 +50,9 @@ export function MarketingShell({
           height={isDivisionWatermark ? 1254 : 1024}
           aria-hidden="true"
           className="luxury-watermark-img"
+          sizes="100vw"
         />
-      </div>
+      </div>}
       <div className="luxury-scroll-rail" aria-hidden="true" />
       <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
         <div className="luxury-header-inner mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:py-4 lg:px-6">
@@ -65,6 +67,7 @@ export function MarketingShell({
                 width={1792}
                 height={1024}
                 priority
+                sizes="(max-width: 600px) 95px, 164px"
                 className="h-full w-full object-contain"
               />
             </div>
@@ -74,7 +77,7 @@ export function MarketingShell({
         </div>
       </header>
 
-      {children}
+      <main id="main-content" tabIndex={-1}>{children}</main>
 
       <footer className="public-footer">
         <div>
@@ -87,10 +90,11 @@ export function MarketingShell({
         <div className="public-footer-links">
           <a href={publicContact.emailHref}>{publicContact.email}</a>
           <a href={publicContact.phoneHref}>{publicContact.phone}</a>
+          <Link href="/books">Books &amp; audiobooks</Link>
           <Link href="/ecosystem">Explore our products</Link>
           <Link href="/workspaces">Client access</Link>
         </div>
       </footer>
-    </main>
+    </div>
   );
 }
