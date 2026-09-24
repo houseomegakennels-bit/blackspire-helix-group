@@ -111,3 +111,12 @@ test('health rejects internally consistent permits for a different runtime ident
   assert.equal(reads,0);
  }
 });
+
+test('fixed health transport emits a valid HTTP/1.1 Host header',async()=>{
+ const http=await import('node:http');
+ const server=http.createServer((req,res)=>{assert.equal(req.headers.host,'127.0.0.1:'+server.address().port);res.setHeader('content-type','application/json');res.end(JSON.stringify(health()));});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{const transport={request(options,callback){assert.equal(options.hostname,'127.0.0.1');assert.equal(options.port,8789);return http.request({...options,port:server.address().port},callback);}};
+ assert.deepEqual(await requestFixedProductionHealth({transport}),health());
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});

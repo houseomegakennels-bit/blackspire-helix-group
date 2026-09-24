@@ -1,5 +1,12 @@
 # Blackspire Active Context
 
+## 2026-09-24 — VPS cutover complete; health transport corrected
+
+Clean 2e5a805058ff9e0854368c09ce7ffec3881dd66c reconciled the retained store startup, completed VPS readiness/generation checks and confirmed journaled_vps_cutover. All four services run the merged release under HELD. Postmerge writer binding and held epoch are confirmed. Main CI run 36035924867 completed successfully at 6cdd47e9222501980d2dce0e0e42e05e91db05b0.
+
+The acceptance permit was minted and api_health intent retained at 314 events. Its fixed HTTP client suppressed Host, causing HTTP 400 before the health handler; native comparison with the same fixed endpoint and Host enabled returns 200. The client now emits the standard Host header while retaining the fixed loopback destination, response checks and timeout. Six tests pass, including a real HTTP server that verifies the generated header. Next: reconcile the same health observation and continue bounded postmerge acceptance. OPEN remains UNVERIFIED.
+
+
 ## 2026-09-24 — merged production verified; interrupted store startup recovery
 
 PR125 is merged as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Exact-head merge identity and Vercel production deployment dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x are verified; Vercel is READY at that SHA. The fixed CLI advanced the VPS pointer to the same merged release under HELD epoch fa25de00-5c65-44f0-b437-03e4f2b295aa. API, worker and gateway run; the Buyer store remains stopped. Lifecycle and deployed artifact observations pass. The 287-event journal retains store_start intent with no result; OPEN remains UNVERIFIED.

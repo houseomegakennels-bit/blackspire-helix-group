@@ -2722,3 +2722,9 @@ PR125 is merged as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Exact-head merge id
 Pending owned-store startup can now reconcile through its existing durable manifest publication layers under the cutover lease. It verifies retained transition, receiver/authority bindings, service state and stable API/worker generations before startup; drift cannot start the store. Other interrupted steps retain existing observation/rollback behavior. Sixteen focused tests pass, including protected publication replay and lost-rename recovery. An in-memory copy of the native 287-event journal reaches cutover completion at 295 modeled events, without physical writes or redispatch of the original store_start operation.
 
 Next: execute the clean fixed CLI to reconcile store startup, verify readiness and generations, then complete postmerge acceptance and guarded OPEN. No business request or old acceptance is replayed.
+
+## 2026-09-24 — VPS cutover complete; health transport corrected
+
+Clean 2e5a805058ff9e0854368c09ce7ffec3881dd66c reconciled the retained store startup, completed VPS readiness/generation checks and confirmed journaled_vps_cutover. All four services run the merged release under HELD. Postmerge writer binding and held epoch are confirmed. Main CI run 36035924867 completed successfully at 6cdd47e9222501980d2dce0e0e42e05e91db05b0.
+
+The acceptance permit was minted and api_health intent retained at 314 events. Its fixed HTTP client suppressed Host, causing HTTP 400 before the health handler; native comparison with the same fixed endpoint and Host enabled returns 200. The client now emits the standard Host header while retaining the fixed loopback destination, response checks and timeout. Six tests pass, including a real HTTP server that verifies the generated header. Next: reconcile the same health observation and continue bounded postmerge acceptance. OPEN remains UNVERIFIED.

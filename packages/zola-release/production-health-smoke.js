@@ -21,7 +21,7 @@ export function requestFixedProductionHealth({timeoutMs=HEALTH_TIMEOUT_MS,transp
   let bytes=0,settled=false;
   const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);error?rejectRequest(error):resolve(value);};
   const request=transport.request({protocol:'http:',hostname:'127.0.0.1',port:8789,path:'/health',method:'GET',
-   timeout:timeoutMs,setHost:false,headers:{accept:'application/json','user-agent':'blackspire-zola-health/1'}},response=>{
+   timeout:timeoutMs,setHost:true,headers:{accept:'application/json','user-agent':'blackspire-zola-health/1'}},response=>{
    if(response.statusCode!==200||response.headers.location||!String(response.headers['content-type']??'').toLowerCase().startsWith('application/json')){
     response.resume();finish(new Error('HEALTH_RESPONSE_REJECTED'));return;
    }
