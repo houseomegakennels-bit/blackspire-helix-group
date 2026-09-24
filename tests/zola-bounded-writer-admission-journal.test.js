@@ -5,7 +5,7 @@ import {hash} from '../packages/zola-release/commander-journal.js';
 import {RELEASE_STAGES,MUTATING_STAGES,RELEASE_REGISTRY_DIGEST} from '../packages/zola-release/commander-sequence.js';
 import {createBoundedWriterAdmissionJournal,inspectBoundedWriterAdmissionHistory} from '../packages/zola-release/bounded-writer-admission-journal.js';
 import {createBuyerWriterAdmittedLocalClient} from '../packages/buyer-writer/admitted-local-client.js';
-import {createBoundedWriterE2eOperation,inspectFixedWriterAcceptance,runFixedWriterAcceptance} from '../packages/zola-release/production-acl-writer.js';
+import {createBoundedWriterE2eOperation,inspectFixedWriterAcceptance,runFixedWriterAcceptance,resumeUnadmittedFixedWriterAcceptance} from '../packages/zola-release/production-acl-writer.js';
 
 function fixture(){
  const input={releaseSha:'a'.repeat(40),previousMainSha:'b'.repeat(40),recoverySha:'c'.repeat(40),
@@ -60,7 +60,7 @@ function fixture(){
    }}});};
  const host={groupId:0,admissionJournal:stream,readAcceptanceSnapshot:()=>({value:target,identity:{}}),openAdmittedClient:open};
  const operation=()=>createBoundedWriterE2eOperation({inspectAcceptance:b=>inspectFixedWriterAcceptance(b,host),
-  runAcceptance:r=>runFixedWriterAcceptance(r,host)});
+  runAcceptance:r=>runFixedWriterAcceptance(r,host),resumeUnadmitted:b=>resumeUnadmittedFixedWriterAcceptance(b,host)});
  const call={input,state:{context:{operationId,releaseSha:input.releaseSha,workspace:input.workspace,principal:input.principal}},
   attemptId,inputDigest,checkOutputDigest};
  return {events,stream,bound,target,operation,call,originals,host,lose:value=>{lost=value;},restore:()=>{denyRecovery=false;}};
@@ -157,4 +157,17 @@ test('read-only handle inspector preserves validation after outer stage confirma
  assert.throws(()=>inspectBoundedWriterAdmissionHistory(late));
  const tampered=structuredClone(f.events);tampered.find(row=>row.type==='bounded_writer_admission_handle').handleDigest='0'.repeat(64);
  assert.throws(()=>inspectBoundedWriterAdmissionHistory(tampered));
+});
+
+test('provably unadmitted attempt resumes once and subsequent reconciliation never redispatches',async()=>{
+ const f=fixture();assert.equal((await f.operation().reconcile(f.call)).status,'PASS');
+ assert.deepEqual(f.originals,['issue','apply','reconcile','receipt']);
+ assert.equal((await f.operation().reconcile(f.call)).status,'PASS');
+ assert.deepEqual(f.originals,['issue','apply','reconcile','receipt']);
+});
+
+test('unadmitted resume cannot dispatch without successful durable handle publication',async()=>{
+ const f=fixture();f.stream.append=()=>{throw Error('fsync failure');};
+ assert.deepEqual(await f.operation().reconcile(f.call),{status:'BLOCKED_EXTERNAL'});
+ assert.deepEqual(f.originals,[]);
 });

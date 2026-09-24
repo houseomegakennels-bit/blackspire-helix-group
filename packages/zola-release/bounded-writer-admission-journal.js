@@ -1,3 +1,4 @@
+import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {buyerWriterAdmissionHandleDigest} from '../buyer-writer/admitted-local-client.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 
@@ -37,7 +38,7 @@ export function createBoundedWriterAdmissionJournal(stream,bound){
    ||sequence.context.principal!==bound.principal
    ||['attemptId','inputDigest','checkOutputDigest'].some(k=>pending[k]!==bound[k]))reject();
   const found=new Map();
-  for(const event of events.filter(row=>row?.type===type)){
+  for(const event of partitionRetiredReleaseHistory(events).current.filter(row=>row?.type===type)){
    if(!exact(event,['schema','type',...keys,'operation','handle','handleDigest'])||event.schema!==1)reject();
    // This stream cannot silently adopt another run's unfinished writer intent.
    if(keys.some(k=>event[k]!==bound[k])||!operations.includes(event.operation)||found.has(event.operation))reject();

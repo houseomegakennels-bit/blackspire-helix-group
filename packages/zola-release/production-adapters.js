@@ -1,3 +1,4 @@
+import {resumeUnadmittedFixedWriterAcceptance} from './production-acl-writer.js';
 import {readFixedWriterAcceptanceBackend} from './production-acl-writer.js';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
@@ -147,7 +148,8 @@ export function createFixedProductionOperations(context,dependencies={}){
   releaseSha:bound.releaseSha,workspace:bound.workspace}),...(dependencies.writerHost??{}),
   admissionJournal:context.journal.stream('release')};
  operations.bounded_writer_e2e=createBoundedWriterE2eOperation({inspectAcceptance:binding=>inspectFixedWriterAcceptance(binding,writerHost),
-  runAcceptance:request=>runFixedWriterAcceptance(request,writerHost)});
+  runAcceptance:request=>runFixedWriterAcceptance(request,writerHost),
+  resumeUnadmitted:bound=>resumeUnadmittedFixedWriterAcceptance(bound,writerHost)});
  Object.assign(operations,createRollbackProductionOperations(context,dependencies.rollback));
  Object.assign(operations,createHealthSmokeProductionOperations(context,dependencies.healthSmoke));
  Object.assign(operations,createZeroProofProductionOperations(context,dependencies.zeroProof));

@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — HELD lifecycle confirmed; undispatched writer recovery
+
+Clean operator 27f1a707d7a5d14ccf453a8d1da3584fa6661eba resumed the retained admission attempt. Initial startup produced a lifecycle intent without a result; a later native observation verified the exact running f1f artifact and epoch d2619093-f021-42d0-8507-72acad955ec6. Same-intent reconciliation confirmed lifecycle, started the owned store, installed the writer binding, and passed generation, provider ACL and GET-only published n8n carryover gates. All four services now run HELD.
+
+The sequence stopped at bounded_writer_e2e because its durable journal scanned retired handles as current. The fix scopes handles through the strictly validated retirement partition. The native whole-history reader validates all 231 events; current attempt 76698759-cafd-49d2-af94-cad39a77256c has zero handles, while all four old handles remain retained. No current writer request was dispatched: native admitted transport persists its handle before every original dispatch.
+
+Reconciliation now permits the fixed writer transport only for a strictly empty current attempt. Any retained handle follows existing receipt recovery and is never reissued. Twenty-two writer tests pass, covering one-time empty-attempt dispatch, repeated observation, append failure, changed bindings and lost issue/apply/reconcile/receipt acknowledgements. Next: resume this same fixed CLI attempt after clean-source gates. Fresh six-read acceptance, merge, production deployment and OPEN remain UNVERIFIED; intake stays HELD.
+
+
 ## 2026-09-24 — candidate cutover retained; lifecycle history repair
 
 The fixed successor CLI from clean bf4bc529f7e4391d10ae0e158c3d42c72ea45ed2 completed schema-six predecessor retirement, protected authority archival, exact Preview metadata adoption, successor configuration and gateway installation, and native candidate deployment. The current pointer is f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e. All four services remain stopped; the new epoch is HELD. No lifecycle start intent was issued. The release journal retains 213 events and the same admission_lease attempt 8de020dd-b0ae-460a-a6fe-7b7892f68213 for operation b9679cbd-5331-45ae-a026-02b7f5e117e9.

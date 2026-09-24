@@ -339,6 +339,16 @@ export async function inspectFixedWriterAcceptance(binding,host={}){
  return withFixedWriter(bound,(database,target)=>compensate(durableWriter(database,bound,host.admissionJournal),bound,target),host);
 }
 
+export async function resumeUnadmittedFixedWriterAcceptance(bound,host={}){
+ bindingShape(bound,true);
+ const journal=createBoundedWriterAdmissionJournal(host.admissionJournal,bound);
+ // Every original gateway dispatch persists its handle first. Only a strictly
+ // empty current attempt can be dispatched here; uncertain handles are recovered.
+ if(journal.entries().length)return false;
+ await runFixedWriterAcceptance(writerRequest(bound),host);
+ return true;
+}
+
 export async function runFixedWriterAcceptance(value,host={}){
  const request=validateFixedRequest(value),bound=Object.freeze(Object.fromEntries(
   ['releaseSha','operationId','workspace','principal','attemptId','inputDigest','checkOutputDigest'].map(key=>[key,request[key]])));
@@ -386,7 +396,7 @@ function verifyInspection(value,bound,expectedState){
 // the attempt-bound permit, invoke the existing writer gateway once, reconcile
 // its receipt on outcome uncertainty, and finish through the writer's bounded
 // failure/compensation path. This operation supplies no unrestricted payload.
-export function createBoundedWriterE2eOperation({inspectAcceptance,runAcceptance}){
+export function createBoundedWriterE2eOperation({inspectAcceptance,runAcceptance,resumeUnadmitted}){
  if(typeof inspectAcceptance!=='function'||typeof runAcceptance!=='function')reject();
  const check=async args=>{
   const base=binding(args),bound={...base,attemptId:null};
@@ -408,7 +418,7 @@ export function createBoundedWriterE2eOperation({inspectAcceptance,runAcceptance
  const reconcile=async args=>{
   const bound=binding(args,{attempt:true});
   let observed;
-  try{observed=await inspectAcceptance(Object.freeze(bound));}
+  try{if(resumeUnadmitted)await resumeUnadmitted(Object.freeze(bound));observed=await inspectAcceptance(Object.freeze(bound));}
   catch{return blocked();}
   if(observed===null||observed===undefined)return blocked();
   verifyInspection(observed,bound,'COMPENSATED');
