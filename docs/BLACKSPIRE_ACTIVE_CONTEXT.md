@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-09-24 — writer archive collision stopped successor transition
+
+Credential recovery b626dab retained plan 3775ac8968ffddc5c7680a56dcc9f602452ec1c023b646946431bb53c813b6d9 and installed new HELD epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with the corrected Preview. Readiness resume observed the original start without repeating it. Transition journal stopped at its twenty-third event, archive_writer_commit intent: the native archive name reused the fixed outer stage attempt and collided with the preserved previous recovery archive. No writer archive was overwritten.
+
+The native host now optionally scopes archives to the exact HELD epoch while retaining its default behavior. Runtime and plan epoch mismatch refuse before mutation. An explicit reconciliation checks the exact twenty-three-event prefix, unchanged current binding/commit, exact previous archive bytes and inodes, absent new destinations and preserved failed-read lineage before retaining a one-time reconciliation intent. It retires only the current commit into the new epoch archive; normal resume observes that result. A retained reconciliation intent prevents redispatch.
+
+Forty-six focused tests pass, including a real protected-file native host fixture with existing earlier archives, unchanged historical contents and wrong-epoch refusal. Production remains HELD; writer publication, fresh acceptance and OPEN are UNVERIFIED. Next: commit the verified repair, run explicit archive reconciliation, resume transition and immediately continue fresh acceptance.
+
 ## 2026-09-24 — corrected-credential successor recovery verified
 
 A separate credential-recovery worktree preserves frozen admitted-read recovery 093c0983d5c180ceb3c42564f1f36f7830c344ca. Its observer binds the completed predecessor transition, retired UNKNOWN acceptance, collector, archived original claims/secret and both unchanged failed task/provider/input records. It rejects additional historical admissions, active authority, expired-proof drift, configuration mismatch and source drift. Historical terminal validation accepts only the original renewal predicate using retained snapshot configuration; it never treats present configuration as historical evidence.

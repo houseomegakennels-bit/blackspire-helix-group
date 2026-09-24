@@ -1,4 +1,4 @@
-import {readPriorReadRecovery} from './admitted-read-prior-recovery.js';
+import {readPriorReadRecovery,PRIOR_READ_ROOT} from './admitted-read-prior-recovery.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -46,7 +46,7 @@ export function createNativeReadRecoveryHost(plan){
  const store=createOwnedStoreTransition({paths,inspect:inspectBuyerWriterArtifact,publishManifest:b=>publishBuyerStoreInstalledManifest(b,{inspect:inspectBuyerWriterArtifact})});
  const lifecycle=()=>observeHeldLifecycle({releaseSha:P.releaseSha,runId:plan.newRunId});
  const writerAction=async(action,step)=>{
-  const p=get('writer-plan'),host=createHeldWriterBindingHost();
+  const p=get('writer-plan'),host=createHeldWriterBindingHost({archiveRunId:plan.newRunId});
   try{await host.lease(P.releaseSha);await host.check(p);
    if(action==='execute')await host.execute(step,p);
    if(action==='inspect')return await host.inspect(p);
@@ -106,7 +106,7 @@ export function createNativeReadRecoveryHost(plan){
    const s=status('blackspire-buyer-store.service');if(s.ActiveState!=='active'||s.SubState!=='running'||s.MainPID==='0')fail();return evidence(s);
   }
   if(step==='prepare_writer_binding'){
-   const p=get('writer-plan'),h=createHeldWriterBindingHost();
+   const p=get('writer-plan'),h=createHeldWriterBindingHost({archiveRunId:plan.newRunId});
    try{await h.lease(P.releaseSha);await h.check(p);}finally{h.close();}
    return evidence(p);
   }
@@ -125,6 +125,29 @@ export function createNativeReadRecoveryHost(plan){
   async acquire(){
    journal=openReleaseJournal();try{records.directory(R+'/events',{create:true});eventsJournal=openReleaseJournal({root:R+'/events'});}catch(e){journal.close();journal=null;throw e;}
    return {close:async()=>{eventsJournal?.close();journal?.close();}};
+  },
+  async reconcileWriterArchive(){
+   const e=eventsJournal.stream('release').events();
+   if(e.length!==23||e.at(-1).type!=='step_intent'||e.at(-1).step!=='archive_writer_commit'
+    ||e.at(-1).planDigest!==hash(plan))fail();
+   await readPriorReadRecovery();
+   await observe('prepare_writer_binding');
+   const previous=records.value(PRIOR_READ_ROOT+'/snapshot.json').files;
+   for(const name of ['writerBinding','writerCommit']){
+    const f=original[name],old=previous[name],legacy=f.path+'.retired-'+P.attemptId;
+    if(current(name)!==f.bytes||read(legacy,{gid:old.gid,mode:old.mode})!==old.bytes
+     ||fs.existsSync(legacy+'-epoch-'+plan.newRunId))fail();
+    const st=fs.lstatSync(legacy);if(st.dev!==old.identity.dev||st.ino!==old.identity.ino)fail();
+   }
+   if(fs.existsSync(R+'/writer-archive-reconciliation-intent.json'))fail();
+   retain('writer-archive-reconciliation-intent',{version:1,kind:'held-epoch-writer-archive',
+    planDigest:hash(plan),retainedEventsDigest:hash(e),archiveRunId:plan.newRunId,
+    priorArchivesPreserved:true,currentBindingUnchanged:true});
+   await writerAction('execute','retire_commit');
+   retain('writer-archive-reconciliation-result',{version:1,planDigest:hash(plan),
+    archiveRunId:plan.newRunId,step:'retire_commit',verified:true});
+   await readPriorReadRecovery();
+   return {status:'WRITER_COMMIT_ARCHIVE_RECONCILED',planDigest:hash(plan),productionOpen:false};
   },
   async reconcilePreparation(){
    const e=eventsJournal.stream('release').events();

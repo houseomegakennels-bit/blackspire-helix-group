@@ -50,16 +50,16 @@ export function inspectHeldWriterBindingHistory(events){
 }
 const result=p=>({status:'HELD_WRITER_BINDING_VERIFIED',releaseSha:p.plan.releaseSha,runId:p.plan.runId,apiGeneration:p.plan.apiGeneration,workerGeneration:p.plan.workerGeneration,bindingDigest:p.result.bindingDigest,commitDigest:p.result.commitDigest});
 const sync=directory=>{const fd=fs.openSync(directory,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}};
-export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,profile=collectInstalledHeldWriterProfile,observe=observeHeldLifecycle,acquire=acquireReleaseAdmissionLock,publish=publishVerifiedBuyerWriterActivation,
+export function createHeldWriterBindingHost({root=RELEASE_ADMISSION_ROOT,archiveRunId=null,profile=collectInstalledHeldWriterProfile,observe=observeHeldLifecycle,acquire=acquireReleaseAdmissionLock,publish=publishVerifiedBuyerWriterActivation,
  inspectBinding=context=>createBuyerWriterBindingObserver({...context,inspectRuntime:createBuyerWriterRuntimeInspector(context)})(),checkReadiness=checkBuyerWriterHeldReadiness}={}){
  let lease,initial,held,initialProof;
  const state=()=>{const file=path.join(root,'state.json');return validateReleaseAdmissionState(readRootOwnedJson(file,{groupId:fs.lstatSync(file).gid,maxBytes:2048}));};
  const heldCheck=()=>{lease.assertIdentity();if(!same(state(),held)||held.mode!=='held')reject();};
  const snapshot=file=>readRootOwnedJsonDigestSnapshot(file,{groupId:initial.context.credentialGroupId,maxBytes:4096});
  const absent=file=>{try{fs.lstatSync(file);return false;}catch(e){if(e.code!=='ENOENT')throw e;return true;}};
- const paths=(p,step)=>{const file=initial.context.filename+(step==='retire_commit'?'.commit.json':'');return {file,archive:file+'.retired-'+p.attemptId,prior:step==='retire_commit'?p.priorCommitDigest:p.priorBindingDigest};};
+ const paths=(p,step)=>{const file=initial.context.filename+(step==='retire_commit'?'.commit.json':'');return {file,archive:file+'.retired-'+p.attemptId+(archiveRunId===null?'':'-epoch-'+archiveRunId),prior:step==='retire_commit'?p.priorCommitDigest:p.priorBindingDigest};};
  const check=async p=>{
-  heldCheck();if(held.runId!==p.runId||held.releaseSha!==p.releaseSha||!((held.apiGeneration===null&&held.workerGeneration===null)||(held.apiGeneration===p.apiGeneration&&held.workerGeneration===p.workerGeneration)))reject();const current=await profile(p.releaseSha),proof=validateHeldLifecycleProof(await observe({releaseSha:p.releaseSha,runId:p.runId}),p);
+  heldCheck();if(archiveRunId!==null&&(!uuid(archiveRunId)||archiveRunId!==p.runId||archiveRunId!==held.runId))reject();if(held.runId!==p.runId||held.releaseSha!==p.releaseSha||!((held.apiGeneration===null&&held.workerGeneration===null)||(held.apiGeneration===p.apiGeneration&&held.workerGeneration===p.workerGeneration)))reject();const current=await profile(p.releaseSha),proof=validateHeldLifecycleProof(await observe({releaseSha:p.releaseSha,runId:p.runId}),p);
   if(!same(current,initial)||current.artifactDigest!==p.artifactDigest||current.configurationDigest!==p.configurationDigest||current.context.apiGeneration!==p.apiGeneration||current.workerGeneration!==p.workerGeneration
    ||hash(proof)!==p.lifecycleDigest||proof.artifactDigest!==p.artifactDigest||proof.api.generation!==p.apiGeneration||proof.worker.generation!==p.workerGeneration||proof.api.pid!==current.context.apiPid)reject();heldCheck();
  };

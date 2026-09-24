@@ -67,3 +67,37 @@ test('unsupported prior history and wrong enclosing binding refuse before any ev
   const f=fixture(options);await f.run();assert.equal(f.events.filter(e=>String(e.type).startsWith('held_writer_binding_')).length,0);assert.equal(f.calls.filter(c=>c.startsWith('effect:')).length,0);assert.doesNotThrow(()=>inspectReleaseCommander(f.journal));
  }
 });
+
+test('epoch-scoped archive preserves earlier attempt archives and refuses a foreign epoch',async t=>{
+ const fs=await import('node:fs'),path=await import('node:path');const {createHeldWriterBindingHost}=await import('../packages/zola-release/held-writer-binding.js');
+ if(process.getuid()!==0)return t.skip('protected root-owned host fixture');
+ const root=fs.mkdtempSync('/run/zola-held-binding-');t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const filename=path.join(root,'binding.json'),runId='11111111-1111-4111-8111-111111111111',apiGeneration='1'.repeat(32),workerGeneration='2'.repeat(32);
+ const state={version:1,mode:'held',releaseSha:main,runId,apiGeneration:null,workerGeneration:null};
+ fs.writeFileSync(path.join(root,'state.json'),JSON.stringify(state)+'\n',{mode:0o600});
+ const previousBinding=JSON.stringify({prior:'binding'})+'\n',previousCommit=JSON.stringify({prior:'commit'})+'\n';
+ fs.writeFileSync(filename,previousBinding,{mode:0o600});fs.writeFileSync(filename+'.commit.json',previousCommit,{mode:0o600});
+ const profile={context:{filename,credentialGroupId:0,apiGeneration,apiPid:123,releaseSha:main},artifactDigest:'3'.repeat(64),configurationDigest:'4'.repeat(64),workerGeneration,preparationCredential:'x'.repeat(43)};
+ const proof={releaseSha:main,runId,artifactDigest:profile.artifactDigest,api:{role:'api',generation:apiGeneration,pid:123,startTime:'100'},worker:{role:'worker',generation:workerGeneration,pid:124,startTime:'101'}};
+ let held=false,reads=0;
+ const host=createHeldWriterBindingHost({root,archiveRunId:runId,profile:async()=>structuredClone(profile),observe:async()=>structuredClone(proof),acquire:options=>{
+  assert.equal(options.exclusive,false);assert.equal(options.allowPending,true);held=true;return{assertIdentity(){assert.equal(held,true);},close(){held=false;}};},
+  publish:async()=>{assert.equal(held,true);assert.equal(fs.existsSync(filename),false);assert.equal(fs.existsSync(filename+'.commit.json'),false);fs.writeFileSync(filename,JSON.stringify({current:'binding'})+'\n',{mode:0o600});fs.writeFileSync(filename+'.commit.json',JSON.stringify({current:'commit'})+'\n',{mode:0o600});},
+  inspectBinding:async()=>({approved:true,credentialsSeparated:true,apiGeneration,workerGeneration,releaseSha:main,workspace:'blackspire-command'}),
+  checkReadiness:async options=>{assert.equal(held,true);options.verifyHeld();reads++;return{verified:true,workerGeneration};}});
+ const input={stage:'post_merge_held_epoch',releaseSha:main,operationId:'22222222-2222-4222-8222-222222222222',attemptId:'33333333-3333-4333-8333-333333333333',inputDigest:'a'.repeat(64),checkOutputDigest:'b'.repeat(64)};
+ const legacyBinding=filename+'.retired-'+input.attemptId,legacyCommit=filename+'.commit.json.retired-'+input.attemptId;
+ fs.writeFileSync(legacyBinding,JSON.stringify({legacy:'binding'})+'\n',{mode:0o600});
+ fs.writeFileSync(legacyCommit,JSON.stringify({legacy:'commit'})+'\n',{mode:0o600});
+ try{
+  await host.lease(main);const p=await host.prepare(input,{result:{bindingDigest:hash(previousBinding),commitDigest:hash(previousCommit)}});
+  for(const step of ['retire_commit','retire_binding','publish']){await host.execute(step,p);assert.equal(await host.observe(step,p),true);}
+  assert.equal(fs.readFileSync(filename+'.retired-'+input.attemptId+'-epoch-'+runId,'utf8'),previousBinding);
+  assert.equal(fs.readFileSync(filename+'.commit.json.retired-'+input.attemptId+'-epoch-'+runId,'utf8'),previousCommit);assert.equal(reads,1);
+  assert.equal(JSON.parse(fs.readFileSync(legacyBinding)).legacy,'binding');
+  assert.equal(JSON.parse(fs.readFileSync(legacyCommit)).legacy,'commit');
+  await assert.rejects(host.check({...p,runId:'44444444-4444-4444-8444-444444444444'}));
+  proof.worker.startTime='102';await assert.rejects(host.check(p));proof.worker.startTime='101';
+  state.runId='44444444-4444-4444-8444-444444444444';fs.writeFileSync(path.join(root,'state.json'),JSON.stringify(state)+'\n');await assert.rejects(host.check(p));
+ }finally{host.close();}assert.equal(held,false);
+});
