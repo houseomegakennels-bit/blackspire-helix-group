@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-09-24 — runtime recovery complete; malformed Supabase key blocks Seller acceptance
+
+Recovery operator 7d2d17d completed the fifteen-step HELD transition using epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5 and Preview dpl_EfJVukRyw39vR6P7koqm99TiaNCw. API, worker, buyer-store and gateway are active. Receiver/store configuration, installed manifest and writer binding were verified. An early lifecycle observation preceded readiness; resume observed the running services without issuing another start. Native continuation must run with the canonical release worktree as cwd. Diagnostic-only 3bb4063 reports sanitized source locations.
+
+Fresh denial issuance and baseline queries completed. Seller index zero was admitted as task_c5c8d9bca504952a; the collector stopped without a collected result. Its permit was retired UNKNOWN and its active marker is absent. Recovery acceptance journal has five rows and digest 3e5571b827c1aab279087aa37d24d9db4cb919c4c4463a9686c7fe7eefcbb34d; collector has sixteen rows and digest 009ee43f3d9ed7f68274653db2177faea754ca08415089ec0706205b09df3994. Preserve both histories and all prior UNKNOWN task/attempt records. Do not replay this collector or relabel its result.
+
+Supabase connected logs for the acceptance time show /rest/v1/seller_leads returning HTTP401, error code UNAUTHORIZED_INVALID_API_KEY, with both API-key and Authorization values reported as malformed JWT/base64/JSON. Vercel reports the corresponding receiver HTTP503. The branch SUPABASE_URL was privately verified to be a canonical HTTPS project origin. The branch service-role credential is sensitive/write-only and its correctness is not assumed from its presence. This is a confirmed credential failure, not a successful acceptance or a database schema issue.
+
+Next: securely access the existing Supabase project credential, replace only the branch-scoped Vercel service-role value, verify the intended credential against the read endpoint, redeploy, and reconcile with a separately retained fresh acceptance after preserving this failed attempt. Cloud browser currently requires Supabase sign-in; the connected plugin does not expose service-role key retrieval. No secret values were printed. Production remains HELD; no merge, cutover or OPEN occurred.
+
 ## 2026-09-24 — stopped-runtime preparation reconciler verified
 
 The live transition stopped API, worker and buyer-store and preserved the expired successor claims and secret with their original bytes/inodes. The original release journal remains unchanged. Its separate recovery journal retains completed stop/archive steps and an unmatched prepare_bindings intent. No receiver URL, epoch, runtime configuration, manifest or writer binding was published.
