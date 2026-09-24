@@ -76,8 +76,8 @@ async function vpsBase(context,args,held,dependencies){
  const candidate=inspectCandidateDeploymentHistory(context.journal.stream('release').events());
  if(!candidate.completed||candidate.plan.operationId!==binding.operationId||candidate.plan.releaseSha!==context.input.releaseSha
   ||candidate.plan.recoverySha!==context.input.recoverySha||candidate.plan.recoveryArtifactDigest!==rollback.artifactDigest)reject();
- if(JSON.stringify(ownedBackendFields(candidate.plan))!==JSON.stringify(ownedBackendFields(context.input)))reject();
- return{...ownedBackendFields(context.input),candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
+ if(JSON.stringify(ownedBackendFields(candidate.plan))!==JSON.stringify(ownedBackendFields(context.release)))reject();
+ return{...ownedBackendFields(context.release),candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
   rollbackSha:context.input.recoverySha,artifactDigest:await dependencies.materializeArtifact(newMainSha),rollbackArtifactDigest:rollback.artifactDigest,
   backupDigest:rollback.backupProofDigest,backupManifestFile:context.release.backupManifestFile,
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
@@ -91,7 +91,7 @@ async function ensureHeld(context,args,dependencies){
   return{status:'POST_MERGE_HELD',newMainSha,epochRunId:completed.epochRunId,intakeOpen:false,reconciled:true};
  }
  return dependencies.beginHeld({commanderRunId,candidateSha:context.input.releaseSha,newMainSha,journal:context.journal},
-  {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:async()=>{if(context.input.backendProfile){const r=dependencies.stopOwnedStore();if(r?.then)await r;}return dependencies.stopAndVerify();}});
+  {root:ADMISSION,groupId:dependencies.admissionGroup(),stopAndVerify:async()=>{if(context.release.backendProfile){const r=dependencies.stopOwnedStore();if(r?.then)await r;}return dependencies.stopAndVerify();}});
 }
 async function driveVps(context,args,dependencies){
  const newMainSha=capturedMain(context,args,'journaled_vps_cutover'),ci=dependencies.readCiProof(context,args);

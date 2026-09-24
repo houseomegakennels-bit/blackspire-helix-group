@@ -88,17 +88,18 @@ export function createPostmergeAuthorityRebind(plan,{paths=defaults,inspectArtif
    if(installation.version!==4||installation.sha!=='2636a1e75cd0f422aff036dfee8a93a81cd5008b'
     ||plan.backendProfile!=='owned-postgres-v1'||plan.profileDigest!=='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505'
     ||oldGateway.authority.operationId!==plan.commanderRunId)reject();
+   const dependencyCount=plan.candidateSha==='f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e'?9:5;
    const receipt=await successorReceipt({releaseSha:plan.candidateSha,operationId:oldGateway.authority.operationId,artifactDigest:plan.candidateArtifactDigest});
    if(receipt?.status!=='OWNED_SUCCESSOR_GATEWAY_UNIT_RECEIPT_VERIFIED'||receipt.sha!==plan.candidateSha
     ||receipt.operationId!==plan.commanderRunId||receipt.attemptId!==oldGateway.authority.attemptId||receipt.profileDigest!==plan.profileDigest
     ||receipt.artifactDigest!==plan.candidateArtifactDigest||receipt.installedUnitSha256!==hash(unit.bytes)
-    ||!Array.isArray(receipt.dependencies)||receipt.dependencies.length!==5)reject();
+    ||!Array.isArray(receipt.dependencies)||receipt.dependencies.length!==dependencyCount)reject();
    if(!receipt.dependencies.some(row=>row.filename===paths.candidateState&&row.digest===hash(candidateState.bytes)))reject();
    for(const row of receipt.dependencies){
     if(Object.keys(row).sort().join(',')!=='digest,filename,gid,mode,uid'||row.uid!==0||row.gid!==0||row.mode!==0o600
      ||!/^[a-f0-9]{64}$/.test(row.digest??'')||hash(read(row.filename,row).bytes)!==row.digest)reject();
    }
-   if(new Set(receipt.dependencies.map(row=>row.filename)).size!==5)reject();
+   if(new Set(receipt.dependencies.map(row=>row.filename)).size!==dependencyCount)reject();
    successorDependencies=receipt.dependencies.filter(row=>row.filename!==paths.candidateState);
   }
   const dependencies=[{filename:paths.candidateState,uid:0,gid:0,mode:0o600,digest:hash(candidateState.bytes)},...successorDependencies,{filename:ingress.filename,uid:0,gid:ingress.gid,mode:ingress.mode,digest:hash(ingress.bytes)},

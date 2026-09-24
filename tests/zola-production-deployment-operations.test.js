@@ -23,6 +23,16 @@ function fixture(overrides={},options={}){
   beginHeld:async()=>({status:'POST_MERGE_HELD',newMainSha,epochRunId:'33333333-3333-4333-8333-333333333333'}),admissionGroup:()=>0,stopAndVerify:async()=>{},
   prepareVps:async({plan})=>({plan:{...plan,snapshotDigest:'8'.repeat(64)},snapshot:{fixed:true}}),
   runVps:async({plan})=>({status:'VPS_CUTOVER_COMPLETE',newMainSha:plan.newMainSha,replayed:false}),...overrides};
+
+ if(options.owned){
+  context.release={...context.release,backendProfile:'owned-postgres-v1',profileDigest:'9'.repeat(64)};
+  const backend={backendProfile:context.release.backendProfile,profileDigest:context.release.profileDigest};
+  const ownedStore={version:1,releaseSha,previousSha:candidate.plan.previousSha,origin:candidate.plan.receiverOrigin.origin,...backend,retainedDigest:'0'.repeat(64)};
+  const rows=j.events.map(e=>({...e,schema:2,...backend,ownedStore}));
+  const at=rows.findIndex(e=>e.step==='reload');
+  rows.splice(at,0,...['candidate_deployment_step_intent','candidate_deployment_step_result'].map(type=>({...rows[0],type,step:'owned_store'})));
+  j.events.splice(0,j.events.length,...rows);
+ }
  if(options.useDefaultCi)delete deps.readCiProof;
  return{operations:createDeploymentProductionOperations(context,deps),args,journal:j};
 }
@@ -91,4 +101,17 @@ test('completed VPS outer reconciliation replays without re-entering the HELD mu
  f.journal.events.push({schema:5,type:'vps_cutover_result',...base});
  const proof=await f.operations.journaled_vps_cutover.reconcile(f.args(21,{attempt:true}));
  assert.equal(heldCalls,0);assert.equal(preparedCalls,0);assert.equal(runInput.reconcile,true);assert.equal(proof.evidence.replayed,true);
+});
+
+test('owned VPS cutover uses protected release backend while preserving native sequence input',async()=>{
+ const stops=[];let prepared;
+ const f=fixture({
+  beginHeld:async(value,options)=>{await options.stopAndVerify();return{status:'POST_MERGE_HELD',newMainSha,epochRunId:'33333333-3333-4333-8333-333333333333'};},
+  stopOwnedStore:async()=>{stops.push('store');},stopAndVerify:async()=>{stops.push('services');},
+  prepareVps:async({plan})=>{prepared=plan;return{plan:{...plan,snapshotDigest:'8'.repeat(64)},snapshot:{fixed:true}}}
+ },{owned:true});
+ const call=f.args(21,{attempt:true});assert.equal(call.input.backendProfile,undefined);
+ await f.operations.journaled_vps_cutover.execute(call);
+ assert.deepEqual(stops,['store','services']);assert.equal(prepared.backendProfile,'owned-postgres-v1');
+ assert.equal(prepared.profileDigest,'9'.repeat(64));assert.equal(call.input.backendProfile,undefined);
 });

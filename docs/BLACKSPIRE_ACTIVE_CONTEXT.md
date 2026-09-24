@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-24 — fresh acceptance and native operation composition
+
+The successor Preview metadata handoff and fresh six-read acceptance implementation are now present. Preview publication retains exact old/new metadata and an intent before publication; uncertain acknowledgement is observed without redispatch. Fresh acceptance binds the completed authority archive, exact successor operation, live HELD lifecycle and writer proof, preserves the old Seller/Buyer rows, and uses a new epoch, denial receipt, permit and collector journal. UNKNOWN acceptance cannot be relabeled PASS or automatically repeated.
+
+Forty-six focused tests passed across Preview handoff, fresh evidence/history validation, native postmerge configuration publication, provider input binding and deployment stage composition. The postmerge gateway consumer now retains all nine successor receipt dependencies. VPS cutover takes backend identity from protected release input rather than the intentionally backend-free sequence input, ensuring the owned store stops before the other services and its profile reaches cutover.
+
+A fixed native operation factory now composes the exact successor source, owned ACL observer, owned runtime transitions, published n8n carryover and fresh acceptance. Its isolated candidate collector runs from the independent canonical successor checkout. Native composition execution and postmerge live collector preparation remain UNVERIFIED. No retirement, archive move, service stop, runtime pointer switch, merge or OPEN occurred. Next: verify the clean composition against actual retained history in memory, complete the fixed CLI and postmerge acceptance preparation, then run the authorized successor sequence.
+
+
 ## 2026-09-24 — archive prepared; sequence and n8n carryover verified
 
 Clean operator d5ffb890b146bcc9f18a6aa994444f3dcc923a1a prepared the live metadata-only authority archive plan e584b29f954c00a40be7cd01de0ddf20f8f200217f9ea2597ce1c806beca36e1. Its protected-state digest matches the prior preflight. No authority file moved and services remain running HELD.

@@ -10,12 +10,12 @@ import {createBuyerWriterRuntime} from '../packages/buyer-writer/runtime.js';
 import {createPostmergeAuthorityRebind} from '../packages/zola-release/postmerge-authority-rebind.js';
 import {renderGatewayUnit} from '../packages/buyer-writer/gateway-installation.js';
 
-function fixture(){
+function fixture(releaseSha='a'.repeat(40)){
   const root=fs.mkdtempSync('/root/zola-config-test-'),paths={configDirectory:path.join(root,'etc'),gatewayConfigDirectory:path.join(root,'gateway-etc'),
     unitDirectory:path.join(root,'systemd'),releaseRoot:path.join(root,'releases')};
   for(const p of Object.values(paths))fs.mkdirSync(p,{mode:0o755});
   fs.chownSync(paths.gatewayConfigDirectory,0,982);fs.chmodSync(paths.gatewayConfigDirectory,0o750);
-  const secret=()=>randomBytes(32).toString('base64url'),releaseSha='a'.repeat(40),ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
+  const secret=()=>randomBytes(32).toString('base64url'),ca=fs.readFileSync(new URL('./fixtures/buyer-writer/supabase-production-ca.crt',import.meta.url),'utf8');
   const authority={releaseSha,operationId:randomUUID(),attemptId:randomUUID(),workspace:'blackspire-command',gatewayIdentity:'blackspire-writer'};
   const keyPair=generateKeyPairSync('ed25519'),publicKey=keyPair.publicKey.export({type:'spki',format:'pem'});
   const privateKeyPath=path.join(paths.configDirectory,'buyer-writer-signing-key-fixture-key.pem');
@@ -42,8 +42,8 @@ function fixture(){
   return {root,paths,config,input,options,execution,artifactProof,calls,events,closed:()=>closed,start:()=>{running=true;},cleanup:()=>fs.rmSync(root,{recursive:true,force:true})};
 }
 
-async function rebindFixture(t){
- const f=fixture();t.after(()=>f.cleanup());
+async function rebindFixture(t,releaseSha){
+ const f=fixture(releaseSha);t.after(()=>f.cleanup());
  await installZolaConfiguration(await prepareZolaConfigurationInstall(f.input,f.options),f.execution);
  const paths={config:f.paths.configDirectory,gateway:path.join(f.paths.gatewayConfigDirectory,'gateway.json'),
   dropin:path.join(f.paths.unitDirectory,'blackspire-command.service.d/40-zola-writer.conf'),
@@ -131,8 +131,8 @@ test('real runtime refuses candidate authority for new main and boots only the r
  finally{await runtime.close();}
 });
 
-async function successorReceiptFixture(t){
- const f=await rebindFixture(t);f.plan.backendProfile='owned-postgres-v1';f.plan.profileDigest='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505';f.plan.commanderRunId=f.config.authority.operationId;
+async function successorReceiptFixture(t,releaseSha){
+ const f=await rebindFixture(t,releaseSha);f.plan.backendProfile='owned-postgres-v1';f.plan.profileDigest='2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505';f.plan.commanderRunId=f.config.authority.operationId;
  fs.writeFileSync(f.paths.candidateState,JSON.stringify({version:4,sha:'2636a1e75cd0f422aff036dfee8a93a81cd5008b'})+'\n',{mode:0o600});
  const digest=value=>createHash('sha256').update(value).digest('hex'),dependencies=[];
  for(const name of ['plan','intent','result','retirement']){const filename=path.join(f.root,'successor-'+name+'.json');fs.writeFileSync(filename,JSON.stringify({modeled:name})+'\n',{mode:0o600});dependencies.push({filename,uid:0,gid:0,mode:0o600,digest:digest(fs.readFileSync(filename))});}
@@ -153,4 +153,22 @@ test('foreign successor receipt binding refuses postmerge before publication',ro
   await assert.rejects(f.open({successorReceipt:async()=>({...f.receipt,...patch})}).prepare());assert.equal(fs.existsSync(f.paths.state),false);
  }
  f.plan.backendProfile=undefined;let called=false;await assert.rejects(f.open({successorReceipt:async()=>{called=true;return f.receipt;}}).prepare());assert.equal(called,false);
+});
+
+test('mixed successor postmerge keeps all nine gateway lineage dependencies',rootOnly,async t=>{
+ const f=await successorReceiptFixture(t,'f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e');
+ const digest=v=>createHash('sha256').update(v).digest('hex');
+ for(const name of ['prior-plan','prior-intent','prior-result','mixed-retirement']){
+  const filename=path.join(f.root,name+'.json');fs.writeFileSync(filename,JSON.stringify({modeled:name})+'\n',{mode:0o600});
+  f.receipt.dependencies.push({filename,uid:0,gid:0,mode:0o600,digest:digest(fs.readFileSync(filename))});
+ }
+ assert.equal(f.receipt.dependencies.length,9);
+ const host=f.open({successorReceipt:f.successorReceipt}),proof=await host.prepare();
+ for(const row of f.receipt.dependencies)assert.ok(proof.dependencies.some(p=>p.filename===row.filename&&p.digest===row.digest));
+ await host.publish(proof);assert.equal(host.observe(proof),true);
+ fs.appendFileSync(f.receipt.dependencies.at(-1).filename,' ');assert.equal(host.observe(proof),false);
+});
+test('mixed successor cannot truncate its gateway lineage to the old five-file receipt',rootOnly,async t=>{
+ const f=await successorReceiptFixture(t,'f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e');
+ await assert.rejects(f.open({successorReceipt:f.successorReceipt}).prepare());
 });
