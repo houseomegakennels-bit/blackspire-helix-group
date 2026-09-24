@@ -51,10 +51,16 @@ function safeProof(value,stage,binding,ids){
   ||value.apiGeneration===value.workerGeneration||(['recoveryPointerAvailable','rollbackContainmentExecutable','noAttemptMixing','noStaleGeneration'].some(key=>value[key]!==true)||value.rollbackMode!=='stopped-held'||value.businessRecoveryVerified!==false)))reject();
  return structuredClone(value);
 }
+const retryDigest='618a35c30b87b1bfc4da99e380874427796d2dfbea586050e55ebbe36afcd86b';
+export function isMixedRollbackRetry(previous){
+ return previous?.schema===1&&previous.type==='rollback_acceptance_probe_result'&&previous.status==='BLOCKED_EXTERNAL'
+  &&hash(previous)===retryDigest;
+}
 function rows(context,stage){return context.journal.stream('release').events().filter(row=>row?.type===`${stage}_probe_intent`||row?.type===`${stage}_probe_result`);}
 function history(context,stage,binding,ids){
- const found=rows(context,stage);if(found.length!==2)reject();const [intent,result]=found;
- if(intent.schema!==1||result.schema!==1||intent.type!==`${stage}_probe_intent`||result.type!==`${stage}_probe_result`
+ const observed=inspectRollbackProbeHistory(context.journal.stream('release').events()).get(stage);
+ if(!observed?.intent||!observed.result)reject();const {intent,result}=observed;
+ if(![1,2].includes(intent.schema)||result.schema!==intent.schema||intent.type!==`${stage}_probe_intent`||result.type!==`${stage}_probe_result`
   ||!same(intent.binding,binding)||!same(result.binding,binding)||intent.operationId!==ids.operationId||result.operationId!==ids.operationId
   ||intent.attemptId!==ids.attemptId||result.attemptId!==ids.attemptId||!['PASS','BLOCKED_EXTERNAL'].includes(result.status))reject();
  if(result.status==='PASS')safeProof(result.proof,stage,binding,ids);else if(Object.hasOwn(result,'proof'))reject();
@@ -70,12 +76,16 @@ export function inspectRollbackProbeHistory(events){
   if(!pending||pending.stage!==stage||row.operationId!==state.context.operationId||row.attemptId!==pending.attemptId)reject();
   const binding={releaseSha:state.context.releaseSha,rollbackSha:state.context.recoverySha,workspace:state.context.workspace,principal:state.context.principal};
   const intent=row.type===`${stage}_probe_intent`;
-  if(row.schema!==1||!exact(row,['schema','type','binding','operationId','attemptId',
+  if(![1,2].includes(row.schema)||!exact(row,['schema','type','binding','operationId','attemptId',...(row.schema===2?['previousResultDigest']:[]),
    ...(intent?[]:row.status==='PASS'?['status','proof']:['status'])])||!same(row.binding,binding))reject();
   const prior=found.get(stage);
-  if(intent){if(prior)reject();found.set(stage,{intent:row,result:null});}
+  if(intent){
+   if(row.schema===1&&prior||row.schema===2&&(!isMixedRollbackRetry(prior?.result)||row.previousResultDigest!==retryDigest
+    ||!same(prior.intent.binding,row.binding)||prior.intent.operationId!==row.operationId||prior.intent.attemptId!==row.attemptId))reject();
+   found.set(stage,{intent:row,result:null});
+  }
   else{
-   if(!prior||prior.result||!['PASS','BLOCKED_EXTERNAL'].includes(row.status))reject();
+   if(!prior||prior.result||row.schema!==prior.intent.schema||row.schema===2&&row.previousResultDigest!==prior.intent.previousResultDigest||!['PASS','BLOCKED_EXTERNAL'].includes(row.status))reject();
    if(row.status==='PASS'){
     safeProof(row.proof,stage,binding,{operationId:row.operationId,attemptId:row.attemptId});
     const {status,observationDigest,...core}=row.proof;
@@ -176,12 +186,13 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
 function operation(context,stage,precheck,collector,integrity){
  const binding=contextBinding(context);
  const collectAndRecord=async ids=>{
+   const retained=rows(context,stage).at(-1),meta={schema:retained.schema,...(retained.schema===2?{previousResultDigest:retained.previousResultDigest}:{})};
    const result=await collector(context,binding,ids);
-   if(result?.status==='BLOCKED_EXTERNAL'){append(context,{schema:1,type:stage+'_probe_result',binding,...ids,status:'BLOCKED_EXTERNAL'});return;}
+   if(result?.status==='BLOCKED_EXTERNAL'){append(context,{...meta,type:stage+'_probe_result',binding,...ids,status:'BLOCKED_EXTERNAL'});return;}
    if(result?.status!=='PASS')reject();
    const core={stage,binding,...ids,...result};delete core.status;
    const proof={status:'PASS',...core,observationDigest:hash(core)};safeProof(proof,stage,binding,ids);
-   append(context,{schema:1,type:stage+'_probe_result',binding,...ids,status:'PASS',proof});
+   append(context,{...meta,type:stage+'_probe_result',binding,...ids,status:'PASS',proof});
  };
  return Object.freeze({
   async check(value){const ids=invocation(value,stage,{pending:false}),checked=await precheck(context,binding,ids);
@@ -199,15 +210,19 @@ function operation(context,stage,precheck,collector,integrity){
   },
   async reconcile(value){const ids=invocation(value,stage);
    const pending=rows(context,stage);
-   if(pending.length===1){
-    const intent=pending[0];
-    if(!exact(intent,['schema','type','binding','operationId','attemptId'])||intent.schema!==1||intent.type!==stage+'_probe_intent'
+   if(pending.at(-1)?.type===stage+'_probe_intent'){
+    const intent=pending.at(-1);
+    if(!exact(intent,['schema','type','binding','operationId','attemptId',...(intent.schema===2?['previousResultDigest']:[])])||![1,2].includes(intent.schema)||intent.type!==stage+'_probe_intent'
      ||!same(intent.binding,binding)||intent.operationId!==ids.operationId||intent.attemptId!==ids.attemptId)reject();
     // This collector only observes immutable packages/backups and disposable rehearsal.
     // A retained intent without a result can re-observe; completed proofs never rerun.
     await collectAndRecord(ids);
    }
-   const result=history(context,stage,binding,ids);
+   let result=history(context,stage,binding,ids);
+   if(stage==='rollback_acceptance'&&isMixedRollbackRetry(result)){
+    append(context,{schema:2,type:stage+'_probe_intent',binding,...ids,previousResultDigest:hash(result)});
+    await collectAndRecord(ids);result=history(context,stage,binding,ids);
+   }
    if(result.status==='BLOCKED_EXTERNAL')return{status:'BLOCKED_EXTERNAL'};
    if(integrity){const current=await integrity(context,binding,result.proof,ids);if(current?.status==='BLOCKED_EXTERNAL')return current;if(current?.status!=='PASS')reject();}
    return{status:'PASS',evidence:result.proof};},

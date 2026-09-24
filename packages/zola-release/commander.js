@@ -84,6 +84,7 @@ function history(journal){
   if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
   if([3,4,5,6].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
   if(row?.schema===2&&SUCCESSOR_TYPES.includes(row.type))continue;
+  if(row?.schema===2&&['rollback_acceptance_probe_intent','rollback_acceptance_probe_result'].includes(row.type))continue;
   if(row?.schema===2&&String(row.type).startsWith('candidate_deployment_'))continue;
   if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
    'premerge_reads_intent','premerge_reads_active','premerge_reads_result','premerge_reads_retired',

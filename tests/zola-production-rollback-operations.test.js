@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {RELEASE_STAGES,MUTATING_STAGES,runReleaseSequence} from '../packages/zola-release/commander-sequence.js';
-import {createRollbackProductionOperations} from '../packages/zola-release/production-rollback-operations.js';
+import {createRollbackProductionOperations,isMixedRollbackRetry} from '../packages/zola-release/production-rollback-operations.js';
 
 const input={releaseSha:'a'.repeat(40),previousMainSha:'b'.repeat(40),recoverySha:'2c0b600c268faa0571f08322e16d7f81f37789be',
  protectedInputDigest:'c'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root'};
@@ -96,4 +96,14 @@ test('interrupted read-only rollback probe resumes its exact intent once',async(
  assert.equal(j.events.filter(e=>e.type==='rollback_acceptance_probe_result').length,1);
  assert.equal(inspectReleaseCommander(j).status,'OBSERVED');
  await runReleaseSequence({input,journal:j,adapters:adapters(rollback,'ci_security')});assert.equal(probes,2);
+});
+
+test('only the exact unavailable mixed rollback proof authorizes its one successor observation',()=>{
+ const prior={schema:1,type:'rollback_acceptance_probe_result',binding:{
+ releaseSha:'f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e',rollbackSha:input.recoverySha,workspace:'zola-production',principal:'blackspire-release-root'},
+ operationId:'b9679cbd-5331-45ae-a026-02b7f5e117e9',attemptId:'38d6acaa-2b05-460f-b46e-36cdc57c2536',status:'BLOCKED_EXTERNAL'};
+ assert.equal(isMixedRollbackRetry(prior),true);
+ for(const change of [p=>p.status='PASS',p=>p.attemptId='other',p=>p.schema=2,p=>p.binding.releaseSha='a'.repeat(40),p=>p.extra=true]){
+  const p=structuredClone(prior);change(p);assert.equal(isMixedRollbackRetry(p),false);
+ }
 });

@@ -1,5 +1,12 @@
 # Blackspire Active Context
 
+## 2026-09-24 — fresh backup verified; integrated recovery ready
+
+Clean e61fd20dcebb0bcf94a6d0dd71a574c2951ebdfc captured and verified the fresh protected backup. Rollback observation then recorded BLOCKED_EXTERNAL because the isolated frontend dependencies were absent. Deterministic frontend npm ci --ignore-scripts installed 482 locked packages using the development-volume cache; tracked files remain unchanged. The credential-free, isolated-network integrated rehearsal now reports PASS_FIXED_INTEGRATED_HTTP.
+
+A single successor observation is pinned to the exact unavailable rollback result digest 618a35c30b87b1bfc4da99e380874427796d2dfbea586050e55ebbe36afcd86b and attempt 38d6acaa-2b05-460f-b46e-36cdc57c2536. Schema-two intent/result records preserve the original unavailable result; another attempt, successful result, altered history or second retry cannot use this path. Fourteen focused rollback/deployment tests pass. The native rollback adapter completed against an in-memory copy of all 253 events, produced PASS and validated all 255 modeled events without physical release writes. Next: execute clean CLI to retain that observation and continue CI, final diff and expected-head merge gates. Runtime remains HELD and no main merge or OPEN is claimed.
+
+
 ## 2026-09-24 — fresh acceptance passed; backup renewal prepared
 
 Clean 5c8d36e76988f989d38cc02580db162bad202d62 completed the distinct writer request and all four correlated gateway receipt operations. Bounded writer acceptance, migration preflight, retained migration lineage and postconditions passed. All six fresh premerge reads passed with six cross-owner denials, zero paid calls and zero unintended mutations. The new acceptance report and completed authority are retained separately from old Seller/Buyer evidence.
