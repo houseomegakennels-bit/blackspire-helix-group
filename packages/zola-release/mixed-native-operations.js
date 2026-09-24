@@ -1,3 +1,4 @@
+import {wrapMixedLivePreparation} from './mixed-live-preparation.js';
 import {execFileSync} from 'node:child_process';
 import {Pool} from 'pg';
 import {MIXED_RETIREMENT as P,validateMixedRetirementEvent} from './mixed-retirement-history.js';
@@ -74,11 +75,11 @@ export function createMixedNativeOperations(context,{fence}){
   candidate:()=>collectMixedIsolatedCandidate(fence),
   establishHeld:()=>establishCandidateHeld(context,{ownedStore:()=>createOwnedRuntimeStoreTransition()})
  }});
- const operations=wrapMixedReadAcceptanceOperations(context,{...fixed,
+ const operations=wrapMixedLivePreparation(context,wrapMixedReadAcceptanceOperations(context,{...fixed,
   ...createNativeMixedN8nCarryover(context).operations(),
   provider_acl_check:bindOwnedProviderInput({operation:provider,input:context.input,release:context.release,
    protectedInputDigest:loaded.inputDigest,fence:stable})
- });
+ }));
  return Object.freeze(Object.fromEntries(Object.entries(operations).map(([stage,operation])=>[stage,Object.freeze(
   Object.fromEntries(Object.entries(operation).map(([method,run])=>[method,async call=>{
    stable();const result=await run(call);stable();return result;

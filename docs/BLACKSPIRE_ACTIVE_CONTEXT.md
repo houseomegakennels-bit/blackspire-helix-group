@@ -1,5 +1,16 @@
 # Blackspire Active Context
 
+## 2026-09-24 — native pre-cutover model passed; fixed successor CLI
+
+Clean operator 35d097852754f3f2c80b18e96e3abe6b6d1669a8 executed the real first five native stage adapters against an in-memory copy of the protected 186-event history plus a modeled retirement. Exact source, receiver audit, Preview checks, GET-only n8n carryover and all six isolated candidate reads passed. The model intentionally blocked at admission_lease; both physical journals remained unchanged. Its mutationSent field describes model journal/candidate activity, not a production cutover.
+
+Exact repaired-head receiver maintenance audit 36024932894 completed successfully using action=audit, with no routing or environment mutation. The independent canonical successor checkout initially lacked pg. Deterministic npm ci --ignore-scripts installed its lockfile dependencies; tracked source remains clean.
+
+A fixed root-only successor CLI now connects retirement, archive, Preview metadata adoption and native release composition with clean-source fencing and retained-intent reconciliation. A new postmerge live collector preparer requires the completed fresh premerge proof, exact merged SHA, production deployment, current HELD writer/lifecycle and the rebound owned acceptance target. It retains a separate denial issuance intent and refuses uncertain reissuance. Production configuration uses owned version seven and a fresh epoch; publication rejects a conflicting existing live configuration.
+
+Eleven focused live-configuration tests pass, including stale candidate/profile/epoch, wrong target, customer-target and duplicate-process refusals. Native postmerge preparation, retirement and full successor execution remain UNVERIFIED. Current runtime remains a8 HELD, with no main merge or OPEN. Next: complete clean final verification and execute the fixed authorized CLI, preserving any uncertain outcome rather than replaying it.
+
+
 ## 2026-09-24 — fresh acceptance and native operation composition
 
 The successor Preview metadata handoff and fresh six-read acceptance implementation are now present. Preview publication retains exact old/new metadata and an intent before publication; uncertain acknowledgement is observed without redispatch. Fresh acceptance binds the completed authority archive, exact successor operation, live HELD lifecycle and writer proof, preserves the old Seller/Buyer rows, and uses a new epoch, denial receipt, permit and collector journal. UNKNOWN acceptance cannot be relabeled PASS or automatically repeated.
