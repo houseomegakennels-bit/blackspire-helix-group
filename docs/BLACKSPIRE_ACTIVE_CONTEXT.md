@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-09-24 — native Vercel access restored and Preview scope confirmed
+
+Both original protected-token and stored CLI access-token requests returned HTTP403. The existing installed Vercel CLI whoami command successfully refreshed its normal login and returned the expected account. The renewed CLI token then verified the exact new deployment with HTTP200, expected project, READY Preview target and exact candidate SHA. The previous native credential was preserved in a root-only backup, and its protected file was atomically replaced with the verified refreshed credential without logging any value. This restores current access; the copied access token remains subject to expiry. Use the normal CLI refresh before future expiry-related recovery rather than requesting a new user token.
+
+The repository-native observeReceiverDeployment function now passes against both the new deployment ID and hostname. Authenticated environment metadata confirms exactly one Preview SUPABASE_URL and one Preview SUPABASE_SERVICE_ROLE_KEY scoped to release/zola-production-live, plus the intact Production entries and no all-Preview duplicate. Secret correctness and the full Seller request remain UNVERIFIED.
+
+The prior entry's provider-access blocker is resolved. Receiver binding still references the older deployment and was not mutated. Existing recovery validators only accept the earlier observation failure with zero admissions; they cannot reconcile the later admitted Seller outcome_unknown or adopt a new receiver/config binding. A separate reviewed recovery must preserve both UNKNOWN histories and the old task/attempt, bind the newly verified deployment and freshly validate acceptance. Do not replace configuration or rerun the current collector to evade its one-attempt guards. Production remains HELD; no new workflow execution, read-task dispatch, merge, receiver switch or production cutover occurred.
+
 ## 2026-09-24 — corrected Preview variables and verified new deployment
 
 Operator screenshots show branch-scoped Preview entries for SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. The operator reported removing the additional all-Preview service-role entry. Exact complete branch names, secret correctness, and post-removal inventory are UNVERIFIED through the connected API; no secrets were requested in chat or logged. The operator then redeployed the existing candidate in Vercel.
