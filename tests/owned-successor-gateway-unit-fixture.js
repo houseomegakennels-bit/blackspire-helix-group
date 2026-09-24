@@ -10,8 +10,8 @@ import {hash as journalHash} from '../packages/zola-release/commander-journal.js
 import {publishOwnedConfigurationBytes} from '../packages/zola-release/owned-buyer-configuration-host.js';
 const hash=v=>createHash('sha256').update(v).digest('hex'),json=v=>JSON.stringify(v)+'\n';
 const template=fs.readFileSync(new URL('../ops/runtime-ownership/blackspire-buyer-writer-gateway.service',import.meta.url),'utf8');
-export function createOwnedSuccessorGatewayUnitFixture(){
- const root=fs.mkdtempSync('/run/owned-unit-test-'),releaseSha='a'.repeat(40),operationId='11111111-1111-4111-8111-111111111111',attemptId='22222222-2222-4222-8222-222222222222',d='c'.repeat(64);
+export function createOwnedSuccessorGatewayUnitFixture({releaseSha='a'.repeat(40),operationId='11111111-1111-4111-8111-111111111111',artifactDigest='c'.repeat(64)}={}){
+ const root=fs.mkdtempSync('/run/owned-unit-test-'),attemptId='22222222-2222-4222-8222-222222222222',d=artifactDigest;
  const input={releaseSha,operationId,attemptId,profileDigest:P.profileDigest,successorLineageFile:`/var/lib/blackspire-operator/owned-migration-successors/${operationId}/plan.json`};
  const paths={current:root+'/current',root:root+'/receipts',releases:root+'/releases',unit:root+'/gateway.service',oldState:root+'/old-state.json',retirement:root+'/retirement.json'};
  const put=(p,bytes,mode=0o600)=>{fs.mkdirSync(path.dirname(p),{recursive:true,mode:0o700});fs.writeFileSync(p,bytes,{mode});};

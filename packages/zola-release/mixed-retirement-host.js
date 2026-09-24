@@ -133,7 +133,15 @@ export function createMixedRetirementHost(){
  const deployed=()=>inspectBuyerWriterArtifact({artifactRoot:'/opt/blackspire-command/releases/'+P.releaseSha,releaseSha:P.releaseSha,environment:'production'});
  return {
   async verifySuccessor(input){
-   if(input.successorReleaseSha!==P.successorReleaseSha)fail();
+   if(input.successorReleaseSha!==P.successorReleaseSha||input.successorOperationId!==P.successorOperationId)fail();
+   const inputPath='/var/lib/blackspire-operator/preparation/owned-successor-final-'+P.successorReleaseSha+'/production-release.json';
+   if(hash(files.value(inputPath))!==P.successorInputDigest)fail();
+   const {observeMixedSuccessorLineage}=await import('./mixed-successor-preparation.js');
+   const lineage=await observeMixedSuccessorLineage({releaseSha:P.successorReleaseSha,operationId:P.successorOperationId,profileDigest:P.profileDigest});
+   if(lineage.lineageDigest!==P.lineageDigest)fail();
+   const {readOwnedSuccessorGatewayUnitReceipt}=await import('../buyer-writer/owned-successor-gateway-unit.js');
+   const oldUnit=readOwnedSuccessorGatewayUnitReceipt({releaseSha:P.releaseSha,operationId:P.operationId,artifactDigest:P.artifactDigest});
+   if(hash(oldUnit)!==P.gatewayReceiptDigest)fail();
    verifyReleaseSource(P.successorReleaseSha,{root:CANONICAL,requireRemote:true});
    command('/usr/bin/git',['--no-replace-objects','-C',CANONICAL,'merge-base','--is-ancestor',P.releaseSha,P.successorReleaseSha]);
    const ci=verifyReleaseCi(P.successorReleaseSha);if(ci.mainSha!==P.previousMainSha)fail();

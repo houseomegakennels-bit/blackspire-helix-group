@@ -29,3 +29,16 @@ test('running publication observer binds every installed byte and protected mode
  const read=(p,o={})=>{const row=files.get(p);assert.deepEqual(o,row.options);return row.value;};assert.equal(verifyOwnedSuccessorWriterPublication(plan,{credentialGroupId:984,read}),true);
  for(const [p,row] of files){files.set(p,{...row,value:row.value+' '});assert.throws(()=>verifyOwnedSuccessorWriterPublication(plan,{credentialGroupId:984,read}));files.set(p,row);}
 });
+
+test('mixed successor preserves credentials while binding only the repaired current-runtime pair',async()=>{
+ const {MIXED_RETIREMENT:P}=await import('../packages/zola-release/mixed-retirement-history.js');
+ const f=fixture();f.previousReleaseSha=P.releaseSha;f.releaseSha=P.successorReleaseSha;f.operationId=P.successorOperationId;
+ for(const v of [f.credentialSource,f.gateway])v.authority={...v.authority,releaseSha:P.releaseSha,operationId:P.operationId};
+ f.gateway.operationPermitConfiguration=JSON.stringify({...JSON.parse(f.gateway.operationPermitConfiguration),releaseSha:P.releaseSha,operationId:P.operationId});
+ const next=buildOwnedSuccessorWriter(f);
+ assert.deepEqual(next.source,f.source);
+ for(const k of ['writerCredential','issuerCredential','gatewayCapability','admissionCredential','runtime','issuer','operationPermitSignerConfiguration','operationPermitVerificationConfiguration'])assert.deepEqual(next.gateway[k],f.gateway[k]);
+ assert.equal(next.gateway.authority.releaseSha,P.successorReleaseSha);
+ assert.equal(next.gateway.authority.operationId,P.successorOperationId);
+ for(const patch of [{previousReleaseSha},{releaseSha:'c'.repeat(40)},{gateway:{...f.gateway,authority:{...f.gateway.authority,releaseSha:previousReleaseSha}}}])assert.throws(()=>buildOwnedSuccessorWriter({...f,...patch}));
+});

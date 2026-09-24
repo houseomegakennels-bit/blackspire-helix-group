@@ -1,3 +1,5 @@
+import {successorRuntimePredecessor,validateSuccessorRetirement,observeRuntimeSuccessorLineage} from '../zola-release/successor-runtime-predecessor.js';
+import {MIXED_RETIREMENT} from '../zola-release/mixed-retirement-history.js';
 import {inspectCandidateDeploymentHistory} from '../zola-release/candidate-deployment.js';
 import {hash as journalHash} from '../zola-release/commander-journal.js';
 import fs from 'node:fs';
@@ -6,15 +8,13 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {createBuyerStoreProtectedFiles} from '../buyer-store/protected-files.js';
 import {readOwnedConfigurationBytes,publishOwnedConfigurationBytes} from '../zola-release/owned-buyer-configuration-host.js';
-import {PARTIAL_RELEASE,validatePartialRetirementEvent} from '../zola-release/partial-retirement-history.js';
 import {validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {readRootOwnedJsonSnapshot} from './protected-json.js';
 import {readOwnedDatabaseProfile,databaseProfileDigest} from './database-profile.js';
-import {observeOwnedMigrationSuccessor} from './owned-migration-successor.js';
 import {verifyOwnedBuyerMigrationQuiescence} from './owned-migration-host.js';
 import {inspectBuyerWriterArtifact,inspectSealedBuyerWriterArtifact} from './artifact-inspection.js';
 import {renderGatewayUnit,decodeGatewayInstallState,GATEWAY_SERVICE} from './gateway-installation.js';
-const P=PARTIAL_RELEASE,ROOT='/var/lib/blackspire-operator/owned-successor-gateway-units';
+const ROOT='/var/lib/blackspire-operator/owned-successor-gateway-units';
 const defaults=Object.freeze({current:'/opt/blackspire-command/current',root:ROOT,releases:'/opt/blackspire-command/releases',unit:'/etc/systemd/system/'+GATEWAY_SERVICE,
  oldState:'/var/lib/blackspire-operator/gateway-installation/state.json',retirement:'/var/lib/blackspire-operator/release-retirements/partial-2636/retirement.json',profile:'/etc/blackspire/owned-postgres/profile.json',admission:'/etc/blackspire/release-admission/state.json'});
 const hash=v=>createHash('sha256').update(v).digest('hex'),json=v=>JSON.stringify(v)+'\n',same=(a,b)=>json(a)===json(b);
@@ -22,10 +22,30 @@ const fail=()=>{throw new Error('Owned successor gateway unit rejected; retain e
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);
 const digest=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const plans=new WeakMap();
-function validate(input){if(!input||Object.keys(input).sort().join(',')!=='attemptId,operationId,profileDigest,releaseSha,successorLineageFile'||!uuid(input.operationId)||!uuid(input.attemptId)||input.operationId===P.operationId||input.attemptId===P.attemptId||!(/^[a-f0-9]{40}$/).test(input.releaseSha??'')||input.releaseSha===P.releaseSha||input.profileDigest!==P.profileDigest||input.successorLineageFile!==`/var/lib/blackspire-operator/owned-migration-successors/${input.operationId}/plan.json`)fail();return Object.freeze({...input});}
+function validate(input){const P=successorRuntimePredecessor(input?.releaseSha);if(!input||Object.keys(input).sort().join(',')!=='attemptId,operationId,profileDigest,releaseSha,successorLineageFile'||!uuid(input.operationId)||!uuid(input.attemptId)||input.operationId===P.operationId||input.attemptId===P.attemptId||!(/^[a-f0-9]{40}$/).test(input.releaseSha??'')||input.releaseSha===P.releaseSha||input.profileDigest!==P.profileDigest||input.successorLineageFile!==`/var/lib/blackspire-operator/owned-migration-successors/${input.operationId}/plan.json`)fail();return Object.freeze({...input});}
+function runtimePaths(releaseSha,provided){
+ if(provided)return provided;
+ return successorRuntimePredecessor(releaseSha)===MIXED_RETIREMENT
+  ?{...defaults,retirement:'/var/lib/blackspire-operator/release-retirements/mixed-a8e-20260924/retirement.json'}:defaults;
+}
+function predecessorGatewayRecord(releaseSha,{paths,read}){
+ const P=successorRuntimePredecessor(releaseSha);
+ if(P===MIXED_RETIREMENT){
+  const receipt=readOwnedSuccessorGatewayUnitReceipt({releaseSha:P.releaseSha,operationId:P.operationId,artifactDigest:P.artifactDigest},
+   {paths:{...paths,retirement:paths.predecessorRetirement??defaults.retirement},read});
+  if(journalHash(receipt)!==P.gatewayReceiptDigest)fail();
+  return {bytes:json(receipt),sha:receipt.sha,artifactDigest:receipt.artifactDigest,
+   installedUnitSha256:receipt.installedUnitSha256,dependencies:receipt.dependencies};
+ }
+ const bytes=read(paths.oldState),state=decodeGatewayInstallState(bytes);
+ if(state.version!==4||state.sha!==P.releaseSha||state.previousActive!==false)fail();
+ return {bytes,sha:state.sha,artifactDigest:state.artifactDigest,installedUnitSha256:state.installedUnitSha256,
+  dependencies:[{filename:paths.oldState,uid:0,gid:0,mode:0o600,digest:hash(bytes)}]};
+}
 function host(input,deps){
+ const P=successorRuntimePredecessor(input.releaseSha);
  if(process.getuid()!==0||process.geteuid()!==0||typeof deps.verifyRetirement!=='function')fail();
- const paths=deps.paths??defaults,files=deps.files??createBuyerStoreProtectedFiles(),read=deps.read??readOwnedConfigurationBytes,publish=deps.publish??publishOwnedConfigurationBytes;
+ const paths=runtimePaths(input.releaseSha,deps.paths),files=deps.files??createBuyerStoreProtectedFiles(),read=deps.read??readOwnedConfigurationBytes,publish=deps.publish??publishOwnedConfigurationBytes;
  const run=deps.run??((args)=>execFileSync('/usr/bin/systemctl',args,{encoding:'utf8',timeout:5000,maxBuffer:16384,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}}).trim());
  const directory=path.join(paths.root,input.operationId),record=n=>path.join(directory,n+'.json');
  const rootValue=p=>{const raw=read(p);if(raw===null)fail();return JSON.parse(raw);};
@@ -40,15 +60,15 @@ function host(input,deps){
  const phase=()=>captureOwnedSuccessorRuntimePhase(input,{...deps,paths,files,held});
 
  async function evidence(sealed){const before=stable();if(sealed)await stopped();
-  const retirement=await deps.verifyRetirement(input);validatePartialRetirementEvent(retirement);
+  const retirement=await deps.verifyRetirement(input);validateSuccessorRetirement(retirement,input.releaseSha);
   if(!same(rootValue(paths.retirement),retirement)||retirement.successorReleaseSha!==input.releaseSha||retirement.successorOperationId!==input.operationId||retirement.profileDigest!==input.profileDigest)fail();
-  const lineage=await(deps.observeLineage??observeOwnedMigrationSuccessor)({releaseSha:input.releaseSha,operationId:input.operationId,profileDigest:input.profileDigest,successorLineageFile:input.successorLineageFile});
+  const lineage=await(deps.observeLineage??observeRuntimeSuccessorLineage)({releaseSha:input.releaseSha,operationId:input.operationId,profileDigest:input.profileDigest,successorLineageFile:input.successorLineageFile});
   if(lineage.status!=='OWNED_MIGRATION_SUCCESSOR_VERIFIED'||lineage.releaseSha!==input.releaseSha||lineage.operationId!==input.operationId||lineage.profileDigest!==input.profileDigest||lineage.lineageDigest!==retirement.proof.lineageDigest||lineage.sourceWritesDenied!==true||lineage.targetBrowserSecurityVerified!==true||lineage.dataCopied!==false||lineage.hardeningReapplied!==false)fail();
   const old=await artifact(false,P.releaseSha),next=await artifact(sealed,input.releaseSha),oldTemplate=template(P.releaseSha),nextTemplate=template(input.releaseSha);
-  const stateBytes=read(paths.oldState),state=decodeGatewayInstallState(stateBytes);
+  const state=predecessorGatewayRecord(input.releaseSha,{paths,read}),stateBytes=state.bytes;
   const beforeUnit=renderGatewayUnit(oldTemplate,{sha:P.releaseSha}),afterUnit=renderGatewayUnit(nextTemplate,{sha:input.releaseSha});
-  if(state.version!==4||state.sha!==P.releaseSha||state.artifactDigest!==old.artifactDigest||state.installedUnitSha256!==hash(beforeUnit)||state.previousActive!==false)fail();
-  if(!same(before,stable())||!same(rootValue(paths.retirement),retirement)||read(paths.oldState)!==stateBytes)fail();if(sealed)await stopped();if(!same(before,stable())||read(paths.oldState)!==stateBytes||!same(rootValue(paths.retirement),retirement)||template(P.releaseSha)!==oldTemplate||template(input.releaseSha)!==nextTemplate)fail();
+  if(state.sha!==P.releaseSha||state.artifactDigest!==old.artifactDigest||state.installedUnitSha256!==hash(beforeUnit))fail();
+  if(!same(before,stable())||!same(rootValue(paths.retirement),retirement)||predecessorGatewayRecord(input.releaseSha,{paths,read}).bytes!==stateBytes)fail();if(sealed)await stopped();if(!same(before,stable())||predecessorGatewayRecord(input.releaseSha,{paths,read}).bytes!==stateBytes||!same(rootValue(paths.retirement),retirement)||template(P.releaseSha)!==oldTemplate||template(input.releaseSha)!==nextTemplate)fail();
   return {beforeUnit,afterUnit,dependencies:{oldStateDigest:hash(stateBytes),retirementDigest:hash(json(retirement)),lineageDigest:lineage.lineageDigest,previousArtifactDigest:old.artifactDigest,artifactDigest:next.artifactDigest,profileDigest:input.profileDigest,profileSnapshotDigest:hash(json(before.profile))}};
  }
  function loaded(requireFresh=true){const names=['LoadState','FragmentPath','DropInPaths','NeedDaemonReload','WorkingDirectory'],raw=run(['show',GATEWAY_SERVICE,...names.map(n=>'--property='+n)]),lines=raw.split('\n'),value=Object.fromEntries(lines.map(line=>{const i=line.indexOf('=');return[line.slice(0,i),line.slice(i+1)];}));
@@ -57,7 +77,7 @@ function host(input,deps){
  const retain=(n,v)=>files.record(record(n),v);
  function checkPlan(plan,e){if(!same(plan,{version:1,kind:'owned-successor-gateway-unit-v1',input,dependencies:e.dependencies,beforeUnit:e.beforeUnit,afterUnit:e.afterUnit}))fail();}
  const unit=()=>read(paths.unit,{gid:0,mode:0o644});
- function unchanged(plan){if(hash(json(stable().profile))!==plan.dependencies.profileSnapshotDigest||hash(read(paths.oldState))!==plan.dependencies.oldStateDigest||hash(json(rootValue(paths.retirement)))!==plan.dependencies.retirementDigest||renderGatewayUnit(template(P.releaseSha),{sha:P.releaseSha})!==plan.beforeUnit||renderGatewayUnit(template(input.releaseSha),{sha:input.releaseSha})!==plan.afterUnit)fail();}
+ function unchanged(plan){if(hash(json(stable().profile))!==plan.dependencies.profileSnapshotDigest||hash(predecessorGatewayRecord(input.releaseSha,{paths,read}).bytes)!==plan.dependencies.oldStateDigest||hash(json(rootValue(paths.retirement)))!==plan.dependencies.retirementDigest||renderGatewayUnit(template(P.releaseSha),{sha:P.releaseSha})!==plan.beforeUnit||renderGatewayUnit(template(input.releaseSha),{sha:input.releaseSha})!==plan.afterUnit)fail();}
  const intent=plan=>({version:1,planDigest:hash(json(plan)),beforeDigest:hash(plan.beforeUnit),afterDigest:hash(plan.afterUnit)});
  function checkResult(plan,result){if(!same(result,{version:1,status:'OWNED_SUCCESSOR_GATEWAY_UNIT_VERIFIED',planDigest:hash(json(plan)),releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,unitDigest:hash(plan.afterUnit),daemonReloaded:true}))fail();return result;}
  return {paths,files,directory,record,evidence,phase,loaded,unchanged,retained,retain,checkPlan,unit,intent,checkResult,stopped,stable,publish,run};
@@ -95,7 +115,8 @@ export async function observeOwnedSuccessorGatewayUnit(raw,deps={}){
 }
 // Postmerge reads this distinct completed receipt by the candidate gateway's
 // operation authority. It never reinterprets the original installation state.
-export function readOwnedSuccessorGatewayUnitReceipt({releaseSha,operationId,artifactDigest},{paths=defaults,read=readOwnedConfigurationBytes}={}){
+export function readOwnedSuccessorGatewayUnitReceipt({releaseSha,operationId,artifactDigest},{paths:providedPaths,read=readOwnedConfigurationBytes}={}){
+ const P=successorRuntimePredecessor(releaseSha),paths=runtimePaths(releaseSha,providedPaths);
  if(process.getuid()!==0||!uuid(operationId)||!digest(artifactDigest)||!(/^[a-f0-9]{40}$/).test(releaseSha??'')||releaseSha===P.releaseSha)fail();
  const directory=path.join(paths.root,operationId),filenames=['plan','intent','result'].map(n=>path.join(directory,n+'.json'));
  const contents=filenames.map(p=>{const v=read(p);if(v===null)fail();return v;}),[plan,intent,result]=contents.map(v=>JSON.parse(v));
@@ -104,19 +125,19 @@ export function readOwnedSuccessorGatewayUnitReceipt({releaseSha,operationId,art
   ||!Object.values(plan.dependencies).every(digest)||plan.dependencies.artifactDigest!==artifactDigest||plan.dependencies.profileDigest!==P.profileDigest||typeof plan.beforeUnit!=='string'||typeof plan.afterUnit!=='string')fail();
  const planDigest=hash(json(plan));
  if(!same(intent,{version:1,planDigest,beforeDigest:hash(plan.beforeUnit),afterDigest:hash(plan.afterUnit)})||!same(result,{version:1,status:'OWNED_SUCCESSOR_GATEWAY_UNIT_VERIFIED',planDigest,releaseSha,operationId,attemptId:input.attemptId,unitDigest:hash(plan.afterUnit),daemonReloaded:true}))fail();
- const oldBytes=read(paths.oldState),old=decodeGatewayInstallState(oldBytes);if(old.sha!==P.releaseSha||old.version!==4||hash(oldBytes)!==plan.dependencies.oldStateDigest||old.installedUnitSha256!==hash(plan.beforeUnit)||old.artifactDigest!==plan.dependencies.previousArtifactDigest)fail();
- const retirementBytes=read(paths.retirement);if(retirementBytes===null)fail();const retired=JSON.parse(retirementBytes);validatePartialRetirementEvent(retired);
+ const old=predecessorGatewayRecord(releaseSha,{paths,read}),oldBytes=old.bytes;if(old.sha!==P.releaseSha||hash(oldBytes)!==plan.dependencies.oldStateDigest||old.installedUnitSha256!==hash(plan.beforeUnit)||old.artifactDigest!==plan.dependencies.previousArtifactDigest)fail();
+ const retirementBytes=read(paths.retirement);if(retirementBytes===null)fail();const retired=JSON.parse(retirementBytes);validateSuccessorRetirement(retired,releaseSha);
  if(hash(json(retired))!==plan.dependencies.retirementDigest||retired.successorReleaseSha!==releaseSha||retired.successorOperationId!==operationId||retired.proof.lineageDigest!==plan.dependencies.lineageDigest)fail();
- if(filenames.some((p,i)=>read(p)!==contents[i])||read(paths.oldState)!==oldBytes||read(paths.retirement)!==retirementBytes)fail();
+ if(filenames.some((p,i)=>read(p)!==contents[i])||predecessorGatewayRecord(releaseSha,{paths,read}).bytes!==oldBytes||read(paths.retirement)!==retirementBytes)fail();
  return Object.freeze({status:'OWNED_SUCCESSOR_GATEWAY_UNIT_RECEIPT_VERIFIED',sha:releaseSha,operationId,attemptId:input.attemptId,artifactDigest,profileDigest:input.profileDigest,
-  installedUnitSha256:result.unitDigest,planDigest,dependencies:[...filenames.map((filename,i)=>({filename,uid:0,gid:0,mode:0o600,digest:hash(contents[i])})),{filename:paths.oldState,uid:0,gid:0,mode:0o600,digest:hash(oldBytes)},{filename:paths.retirement,uid:0,gid:0,mode:0o600,digest:hash(retirementBytes)}]});
+  installedUnitSha256:result.unitDigest,planDigest,dependencies:[...filenames.map((filename,i)=>({filename,uid:0,gid:0,mode:0o600,digest:hash(contents[i])})),...old.dependencies,{filename:paths.retirement,uid:0,gid:0,mode:0o600,digest:hash(retirementBytes)}]});
 }
 
 // Shared, observation-only phase classifier. Callers fence its full serializable
 // result across awaited evidence and enforce requiresStopped before accepting it.
 // Record presence selects deployed verification; verifier errors never fall back.
-export function captureOwnedSuccessorRuntimePhase(raw,{paths=defaults,files=createBuyerStoreProtectedFiles(),held,verifySuccessorHeld,releaseEvents}={}){
- const input=validate(raw);if(process.getuid()!==0)fail();files.directory(path.dirname(paths.current));
+export function captureOwnedSuccessorRuntimePhase(raw,{paths:providedPaths,files=createBuyerStoreProtectedFiles(),held,verifySuccessorHeld,releaseEvents}={}){
+ const input=validate(raw),P=successorRuntimePredecessor(input.releaseSha),paths=runtimePaths(input.releaseSha,providedPaths);if(process.getuid()!==0)fail();files.directory(path.dirname(paths.current));
  const st=fs.lstatSync(paths.current);if(!st.isSymbolicLink()||st.uid!==0||st.nlink!==1)fail();
  const target=fs.realpathSync(paths.current),currentSha=path.basename(target);
  if(![P.releaseSha,input.releaseSha].includes(currentSha)||target!==path.join(paths.releases,currentSha))fail();

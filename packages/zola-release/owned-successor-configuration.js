@@ -1,3 +1,4 @@
+import {successorRuntimePredecessor} from './successor-runtime-predecessor.js';
 import {createHash} from 'node:crypto';
 import {validateBuyerWriterConfiguration,validateBuyerWriterGatewayProvisioningConfiguration} from '../buyer-writer/configuration.js';
 import {validateOwnedDatabaseProfile,databaseProfileDigest} from '../buyer-writer/database-profile.js';
@@ -13,7 +14,7 @@ export function renderOwnedSuccessorLiveWriter(rendered,{configDirectory='/etc/b
  return {gateway:encode(rendered.gatewayConfig),dropin:'[Service]\nEnvironment=BUYER_WRITER_MODE=scoped\nEnvironment=BUYER_WRITER_WORKSPACE_ID=blackspire-command\nEnvironment=BLACKSPIRE_BUYER_WRITER_CLIENT_CONFIG='+client+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_INGRESS_CONFIG='+ingress+'\nEnvironment=BLACKSPIRE_BUYER_WRITER_SIGNER_CONFIG='+signer+'\n'};
 }
 export function buildOwnedSuccessorWriter({previousReleaseSha,releaseSha,operationId,attemptId,profile,credentialSource,source,gateway}){
- if(previousReleaseSha!==OWNED_CONFIG_PREDECESSOR||!sha(releaseSha)||releaseSha===previousReleaseSha||!uuid(operationId)||!uuid(attemptId)||operationId===attemptId)fail();
+ if(previousReleaseSha!==successorRuntimePredecessor(releaseSha).releaseSha||!sha(releaseSha)||releaseSha===previousReleaseSha||!uuid(operationId)||!uuid(attemptId)||operationId===attemptId)fail();
  profile=validateOwnedDatabaseProfile(profile);const profileDigest=databaseProfileDigest(profile);
  source=validateBuyerWriterConfiguration(source,{workspace:'blackspire-command',environment:'production'});
  gateway=validateBuyerWriterGatewayProvisioningConfiguration(gateway,{workspace:'blackspire-command'});
@@ -43,11 +44,11 @@ export function buildInheritedOwnedFrontend({previousReleaseSha,releaseSha,front
 // choose publication paths or credential transformations; all effects remain fixed.
 export function createOwnedSuccessorConfiguration({host,store}){
  const checked=async input=>{if(Object.keys(input??{}).sort().join(',')!=='attemptId,frontendOrigin,operationId,previousReleaseSha,profileDigest,releaseSha')fail();await host.assertStoppedHeld(input);const evidence=await host.verifyEvidence(input);
-  if(evidence.retirement?.previousReleaseSha!==OWNED_CONFIG_PREDECESSOR||evidence.retirement.releaseSha!==input.releaseSha||!hex(evidence.retirement.digest)
+  if(evidence.retirement?.previousReleaseSha!==input.previousReleaseSha||input.previousReleaseSha!==successorRuntimePredecessor(input.releaseSha).releaseSha||evidence.retirement.releaseSha!==input.releaseSha||!hex(evidence.retirement.digest)
    ||evidence.lineage?.status!=='OWNED_MIGRATION_SUCCESSOR_VERIFIED'||evidence.lineage.releaseSha!==input.releaseSha||evidence.lineage.operationId!==input.operationId||evidence.lineage.profileDigest!==input.profileDigest||evidence.lineage.predecessorReleaseSha!==OWNED_CONFIG_PREDECESSOR
    ||evidence.lineage.sourceWritesDenied!==true||evidence.lineage.targetBrowserSecurityVerified!==true||evidence.lineage.dataCopied!==false||evidence.lineage.hardeningReapplied!==false||!hex(evidence.lineage.lineageDigest)
    ||!hex(evidence.previousArtifactDigest)||!hex(evidence.artifactDigest))fail();return evidence;};
- const validate=plan=>{if(plan?.version!==1||plan.kind!=='owned-successor-configuration'||!plan.input||plan.input.previousReleaseSha!==OWNED_CONFIG_PREDECESSOR)fail();
+ const validate=plan=>{if(plan?.version!==1||plan.kind!=='owned-successor-configuration'||!plan.input||plan.input.previousReleaseSha!==successorRuntimePredecessor(plan.input.releaseSha).releaseSha)fail();
   const sp=validateOwnedStoreTransitionPlan(plan.storePlan);if(sp.releaseSha!==plan.input.releaseSha||sp.previousSha!==plan.input.previousReleaseSha||sp.origin!==plan.input.frontendOrigin||sp.profileDigest!==plan.input.profileDigest)fail();
   const derived=buildOwnedSuccessorWriter({...plan.input,...plan.before});if(!same(derived,plan.candidate)||!same(plan.input.profileDigest,derived.profileDigest))fail();return plan;};
  const barrier=releaseSha=>{if(host.readRecord(releaseSha,'restore-intent')!==null||host.readRecord(releaseSha,'restore-result')!==null)fail();};

@@ -3,7 +3,7 @@ import {validateOwnedStoreTransitionPlan} from './owned-store-transition.js';
 import {hash} from './commander-journal.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {partitionRetiredReleaseHistory} from './retired-release-history.js';
-import {validatePartialRetirementEvent,PARTIAL_RELEASE} from './partial-retirement-history.js';
+import {successorRuntimePredecessor,validateSuccessorRetirement} from './successor-runtime-predecessor.js';
 const fail=()=>{throw new Error('Owned successor activation refused; preserve retained phases');};
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const exact=(v,keys)=>v&&Object.keys(v).sort().join(',')===keys.split(',').sort().join(',');
@@ -16,7 +16,7 @@ export function inspectOwnedSuccessorActivationAuthority(input,journal){
  if(!exact(input,'releaseSha,operationId,attemptId,inputDigest,checkOutputDigest,profileDigest,successorLineageFile')||!sha(input.releaseSha)||![input.operationId,input.attemptId].every(uuid)||![input.inputDigest,input.checkOutputDigest,input.profileDigest].every(digest)
   ||input.successorLineageFile!==`/var/lib/blackspire-operator/owned-migration-successors/${input.operationId}/plan.json`)fail();
  const events=journal.stream('release').events();partitionRetiredReleaseHistory(events);const retired=events.findLast(e=>e.type==='sequence_retired');
- validatePartialRetirementEvent(retired);
+ validateSuccessorRetirement(retired,input.releaseSha);
  if(retired.successorReleaseSha!==input.releaseSha||retired.successorOperationId!==input.operationId||retired.profileDigest!==input.profileDigest)fail();
  const state=inspectReleaseSequenceHistory(events),p=state.pending;
  if(state.context?.operationId!==input.operationId||state.context.releaseSha!==input.releaseSha||state.nextOrdinal!==5||p?.stage!=='admission_lease'
@@ -35,7 +35,7 @@ export async function activateOwnedSuccessorBeforeHeld({journal:inputJournal,...
  const expectedPlan={version:1,input,identity:first.identity};
  let plan=store.read('plan');if(plan){if(!same(plan,expectedPlan))fail();}else{await fence();store.retain('plan',expectedPlan);plan=expectedPlan;}
  const planDigest=hash(plan),stepIntent={version:1,planDigest};
- const configInput={previousReleaseSha:PARTIAL_RELEASE.releaseSha,releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,profileDigest:input.profileDigest,frontendOrigin:first.identity.frontendOrigin};
+ const configInput={previousReleaseSha:successorRuntimePredecessor(input.releaseSha).releaseSha,releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,profileDigest:input.profileDigest,frontendOrigin:first.identity.frontendOrigin};
  const unitInput={releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,profileDigest:input.profileDigest,successorLineageFile:input.successorLineageFile};
  let configurationPlan=store.read('configuration-plan'),configurationResult=store.read('configuration-result'),gatewayResult=store.read('gateway-result'),completed=store.read('result');
  const observe=async()=>{if(!configurationPlan||await host.observeConfiguration(configurationPlan)!==true||await host.observeGateway(unitInput)!==true)fail();await fence();};
@@ -77,11 +77,11 @@ export function readOwnedSuccessorActivationStorePlan({journal,...input},{read=r
  const records=Object.fromEntries(names.map(name=>[name,snapshot(name)]));
  const plan=records.plan,configuration=records['configuration-result'],gateway=records['gateway-result'],result=records.result,configurationPlan=records['configuration-plan'].value;
  const planDigest=hash(plan.value),intent={version:1,planDigest};
- const configInput={previousReleaseSha:PARTIAL_RELEASE.releaseSha,releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,profileDigest:input.profileDigest,frontendOrigin:plan.value.identity.frontendOrigin};
+ const configInput={previousReleaseSha:successorRuntimePredecessor(input.releaseSha).releaseSha,releaseSha:input.releaseSha,operationId:input.operationId,attemptId:input.attemptId,profileDigest:input.profileDigest,frontendOrigin:plan.value.identity.frontendOrigin};
  if(!exact(plan.value,'version,input,identity')||plan.value.version!==1||!same(plan.value.input,input)||!same(configurationPlan.input,configInput)||!same(records['configuration-intent'].value,intent)||!same(records['gateway-intent'].value,intent)
   ||!same(result.value,{version:1,planDigest,configurationResultDigest:hash(configuration.value),gatewayResultDigest:hash(gateway.value),status:'OWNED_SUCCESSOR_ACTIVATION_VERIFIED'}))fail();
  validateActivationResults(input,planDigest,configurationPlan,configuration.value,gateway.value);
  const value=validateOwnedStoreTransitionPlan(configuration.value.result.storePlan);
- if(value.releaseSha!==input.releaseSha||value.previousSha!==PARTIAL_RELEASE.releaseSha||value.profileDigest!==input.profileDigest||value.origin!==plan.value.identity.frontendOrigin)fail();
+ if(value.releaseSha!==input.releaseSha||value.previousSha!==successorRuntimePredecessor(input.releaseSha).releaseSha||value.profileDigest!==input.profileDigest||value.origin!==plan.value.identity.frontendOrigin)fail();
  if(names.some(name=>!same(records[name],snapshot(name)))||!same(authority,inspectOwnedSuccessorActivationAuthority(input,journal)))fail();return value;
 }

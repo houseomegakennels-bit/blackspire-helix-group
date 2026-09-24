@@ -35,7 +35,7 @@ test('synthetic coordinator preserves durable stop ordering and refuses uncertai
    if(records.has(k))assert.deepEqual(records.get(k),v);else records.set(k,structuredClone(v));}};
   const journal={stream:()=>({events:()=>structuredClone(rows),append:e=>{calls.push('append');rows.push(e);}})};
   return {calls,rows,records,host,clear:()=>{survivor=false;},run:()=>retireMixedReadRelease({
-   successorOperationId:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',journal},{host,store,uid:0})};
+   successorOperationId:P.successorOperationId,journal},{host,store,uid:0})};
  }
  const good=setup();await good.run();assert.equal(good.rows.length,2);real.validateMixedRetirementEvent(good.rows[1]);
  assert.ok(good.calls.indexOf('stop-intent')<good.calls.indexOf('stop'));

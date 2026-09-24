@@ -22,7 +22,7 @@ export function validateMixedRetirementStopped(stopped,before){
 // The caller owns the global release journal; this function additionally holds
 // the admission exclusion lease throughout stop observation and final append.
 export async function retireMixedReadRelease({successorOperationId,journal},{host,store,uid=process.getuid()}={}){
- if(uid!==0||!uuid(successorOperationId)||successorOperationId===P.operationId||!host||!store)fail();
+ if(uid!==0||!uuid(successorOperationId)||successorOperationId!==P.successorOperationId||!host||!store)fail();
  const input={successorReleaseSha:P.successorReleaseSha,successorOperationId},stream=journal.stream('release');let lease;
  const stable=()=>validateMixedRetirementPrefix(stream.events());
  try{
@@ -59,7 +59,7 @@ export async function retireMixedReadRelease({successorOperationId,journal},{hos
    authorityInactive:true,bindingRetained:true,retainedEffects:true,
    retainedEvidenceDigest:P.retainedEvidenceDigest,acceptanceDigest:P.acceptanceDigest,collectorDigest:P.collectorDigest,
    transitionDigest:P.transitionDigest,stopPlanDigest:planDigest,stopResultDigest:hash(result),
-   protectedStateDigest:plan.before.protectedStateDigest,successorArtifactDigest:P.successorArtifactDigest};
+   protectedStateDigest:plan.before.protectedStateDigest,successorArtifactDigest:P.successorArtifactDigest,lineageDigest:P.lineageDigest};
   const event={schema:6,type:'sequence_retired',operationId:P.operationId,releaseSha:P.releaseSha,attemptId:P.attemptId,
    ordinal:13,stage:'six_reads',prefixDigest:P.prefixDigest,segmentDigest:P.segmentDigest,
    ...input,backendProfile:'owned-postgres-v1',profileDigest:P.profileDigest,proof,proofDigest:hash(proof)};

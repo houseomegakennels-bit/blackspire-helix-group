@@ -10,6 +10,10 @@ export const MIXED_RETIREMENT=Object.freeze({
  segmentDigest:'ec29daa16cb88935c263d99833210346b2e01f75a04153c047a16aa36052a7f6',
  profileDigest:'2563185421523bf337e382a38ca389c5991406cb2adecc952048cdf5cf058505',
  successorReleaseSha:'f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e',
+ successorOperationId:'b9679cbd-5331-45ae-a026-02b7f5e117e9',
+ successorInputDigest:'d249b16ea4aa576a71dbb0bd04f38f0a9dfed96e1538fe8b06165491d3887e84',
+ lineageDigest:'7e6aec9a795cb03aa0b0729e9245b0660c5a6bba23a4ae9b4c564af078e0dde8',
+ gatewayReceiptDigest:'b270137e725a2af2707a72683a7f12f384f9fb361572664aa699d0d668f0e781',
  successorArtifactDigest:'e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a',
  previousMainSha:'f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8',
  recoverySha:'2c0b600c268faa0571f08322e16d7f81f37789be',
@@ -30,13 +34,13 @@ export function validateMixedRetirementEvent(e){
  if(!exact(e,'schema,type,operationId,releaseSha,attemptId,ordinal,stage,prefixDigest,segmentDigest,successorReleaseSha,successorOperationId,backendProfile,profileDigest,proof,proofDigest')
   ||e.schema!==6||e.type!=='sequence_retired'||e.ordinal!==13||e.stage!=='six_reads'
   ||['operationId','releaseSha','attemptId','prefixDigest','segmentDigest','profileDigest','successorReleaseSha'].some(k=>e[k]!==p[k])
-  ||!uuid(e.successorOperationId)||e.successorOperationId===p.operationId
+  ||!uuid(e.successorOperationId)||e.successorOperationId!==p.successorOperationId
   ||e.backendProfile!=='owned-postgres-v1'||!digest(e.proofDigest)||hash(e.proof)!==e.proofDigest)fail();
  const r=e.proof;
- if(!exact(r,'version,runId,currentSha,hostStopped,noDetachedSurvivors,authorityInactive,bindingRetained,retainedEffects,retainedEvidenceDigest,acceptanceDigest,collectorDigest,transitionDigest,stopPlanDigest,stopResultDigest,protectedStateDigest,successorArtifactDigest')
+ if(!exact(r,'version,runId,currentSha,hostStopped,noDetachedSurvivors,authorityInactive,bindingRetained,retainedEffects,retainedEvidenceDigest,acceptanceDigest,collectorDigest,transitionDigest,stopPlanDigest,stopResultDigest,protectedStateDigest,successorArtifactDigest,lineageDigest')
   ||r.version!==1||r.runId!==p.runId||r.currentSha!==p.releaseSha
   ||['hostStopped','noDetachedSurvivors','authorityInactive','bindingRetained','retainedEffects'].some(k=>r[k]!==true)
-  ||['retainedEvidenceDigest','acceptanceDigest','collectorDigest','transitionDigest','successorArtifactDigest'].some(k=>r[k]!==p[k])
+  ||['retainedEvidenceDigest','acceptanceDigest','collectorDigest','transitionDigest','successorArtifactDigest','lineageDigest'].some(k=>r[k]!==p[k])
   ||!['stopPlanDigest','stopResultDigest','protectedStateDigest'].every(k=>digest(r[k])))fail();
  return true;
 }

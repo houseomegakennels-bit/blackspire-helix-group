@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-24 — successor inputs verified; current-runtime activation support
+
+Native preparation from clean operator ebcc0b2078632cdf5904f8cabbd8fe2aa9a56462 completed for candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e and operation b9679cbd-5331-45ae-a026-02b7f5e117e9. The final input digest is d249b16ea4aa576a71dbb0bd04f38f0a9dfed96e1538fe8b06165491d3887e84. A separate SQLite backup and exact original workflow backup were retained. Native migration successor verification passed with lineage digest 7e6aec9a795cb03aa0b0729e9245b0660c5a6bba23a4ae9b4c564af078e0dde8. Existing data was neither copied again nor rehardened; the published n8n candidate was observed without mutation.
+
+Activation, configuration and HELD rollover now explicitly distinguish the current a8 runtime predecessor from the original 2636 database lineage. The exact repaired candidate selects schema-six retirement and the new canonical checkout. Existing schema-five behavior remains covered. The gateway successor chains the prior completed a8 receipt (digest b270137e725a2af2707a72683a7f12f384f9fb361572664aa699d0d668f0e781), retaining its original installation state and all historical dependencies. Retirement preflight now additionally binds the prepared operation/input, native lineage and prior gateway receipt.
+
+Thirty-seven focused tests pass, including native disposable protected-file HELD rollover with lost acknowledgement, wrong-run and wrong-lineage refusals; exact configuration credential preservation; activation replay; and a two-generation native gateway receipt chain with tampering refusal. Build, lint and syntax typecheck pass. Synthetic journal parsing in the new isolated activation fixture is explicitly mocked; it is not production history evidence.
+
+No retirement, archive, service stop, pointer switch or production OPEN has occurred. Current a8 remains HELD. Next: repeat clean live preflight, implement and verify protected permit/writer archival and native operator composition, then execute the authorized successor sequence and fresh acceptance. Full cutover and acceptance remain UNVERIFIED.
+
+
 ## 2026-09-24 — workflow carryover retained; empty bundle repair
 
 The same successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9 completed the explicit candidate workflow carryover with mutationSent=false. Its carryover observation digest is31172a5318c42604ddde2068636252763151a4da7e52b8c1ea8869d7c7e33180. Bundle initialization then stopped at the configuration publisher's64KiB limit before any backup or bundle output was written. The bundle intent a07c6d3f1ee619ce3959edacdc98bf91f4874e3c526f9373b9f64d10ef3fe44c remains unchanged; actual observation confirms both outputs absent.

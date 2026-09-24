@@ -7,11 +7,11 @@ import {partitionRetiredReleaseHistory,assertRetiredReleaseSuccessor} from '../p
 function event(){
  const proof={version:1,runId:P.runId,currentSha:P.releaseSha,hostStopped:true,noDetachedSurvivors:true,
   authorityInactive:true,bindingRetained:true,retainedEffects:true,
-  ...Object.fromEntries(['retainedEvidenceDigest','acceptanceDigest','collectorDigest','transitionDigest','successorArtifactDigest'].map(k=>[k,P[k]])),
+  ...Object.fromEntries(['retainedEvidenceDigest','acceptanceDigest','collectorDigest','transitionDigest','successorArtifactDigest','lineageDigest'].map(k=>[k,P[k]])),
   stopPlanDigest:'a'.repeat(64),stopResultDigest:'b'.repeat(64),protectedStateDigest:'c'.repeat(64)};
  return {schema:6,type:'sequence_retired',operationId:P.operationId,releaseSha:P.releaseSha,attemptId:P.attemptId,
   ordinal:13,stage:'six_reads',prefixDigest:P.prefixDigest,segmentDigest:P.segmentDigest,
-  successorReleaseSha:P.successorReleaseSha,successorOperationId:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+  successorReleaseSha:P.successorReleaseSha,successorOperationId:P.successorOperationId,
   backendProfile:'owned-postgres-v1',profileDigest:P.profileDigest,proof,proofDigest:hash(proof)};
 }
 test('mixed retirement binds exact predecessor, repaired artifact and unknown history',()=>{

@@ -1,3 +1,5 @@
+import {successorRuntimePredecessor} from './successor-runtime-predecessor.js';
+import {MIXED_RETIREMENT} from './mixed-retirement-history.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -48,7 +50,7 @@ export function verifyOwnedSuccessorWriterPublication(plan,{credentialGroupId,re
 export function createOwnedSuccessorConfigurationHost({verifyRetirement,verifyLineage}){
  if(process.getuid?.()!==0||typeof verifyRetirement!=='function'||typeof verifyLineage!=='function')fail();
  const profileSnapshot=readRootOwnedJsonSnapshot('/etc/blackspire/owned-postgres/profile.json',{groupId:0});
- const assertStoppedHeld=input=>{verifyOwnedBuyerMigrationQuiescence();if(input.previousReleaseSha!==OWNED_CONFIG_PREDECESSOR||databaseProfileDigest(readOwnedDatabaseProfile())!==input.profileDigest||!same(profileSnapshot,readRootOwnedJsonSnapshot('/etc/blackspire/owned-postgres/profile.json',{groupId:0})))fail();
+ const assertStoppedHeld=input=>{verifyOwnedBuyerMigrationQuiescence();if(input.previousReleaseSha!==successorRuntimePredecessor(input.releaseSha).releaseSha||databaseProfileDigest(readOwnedDatabaseProfile())!==input.profileDigest||!same(profileSnapshot,readRootOwnedJsonSnapshot('/etc/blackspire/owned-postgres/profile.json',{groupId:0})))fail();
   const stateFile='/etc/blackspire/release-admission/state.json',state=validateReleaseAdmissionState(readRootOwnedJsonSnapshot(stateFile,{groupId:fs.statSync(stateFile).gid}).value);if(state.mode!=='held'||![input.previousReleaseSha,input.releaseSha].includes(state.releaseSha))fail();};
  return {
   assertStoppedHeld,
@@ -60,7 +62,7 @@ export function createOwnedSuccessorConfigurationHost({verifyRetirement,verifyLi
   readRecord(sha,suffix,{final=false}={}){if(!['intent','result','restore-intent','restore-result'].includes(suffix))fail();const name=file(sha)+'.'+suffix+'.json';if(final){if(rootRead(name+'.owned-buyer-stage')!==null)fail();return rootRead(name);}return retained(name);},
   async observeWriter(plan){if(databaseProfileDigest(readOwnedDatabaseProfile())!==plan.input.profileDigest||!same(profileSnapshot,readRootOwnedJsonSnapshot('/etc/blackspire/owned-postgres/profile.json',{groupId:0})))fail();const ids=await lookupBuyerWriterIdentity();verifyOwnedSuccessorWriterPublication(plan,{credentialGroupId:ids.credentialGroupId});},
   retainPlan(plan){directory();publishOwnedConfigurationBytes(file(plan.input.releaseSha),null,bytes(plan));},
-  readWriterInputs(previous){if(previous!==OWNED_CONFIG_PREDECESSOR)fail();const gateway=rootRead(PREP+'/owned-buyer-writer-v4-'+previous+'.json'),rendered=renderZolaGatewayConfigurations(gateway);
+  readWriterInputs(previous){if(previous!==OWNED_CONFIG_PREDECESSOR&&previous!==MIXED_RETIREMENT.releaseSha)fail();const gateway=rootRead(PREP+'/owned-buyer-writer-v4-'+previous+'.json'),rendered=renderZolaGatewayConfigurations(gateway);
    const group=run('/usr/bin/getent',['group','blackspire-writer']).split(':');if(group.length!==4||group[0]!=='blackspire-writer'||!Number.isSafeInteger(Number(group[2])))fail();
    const installed=readRootOwnedJsonSnapshot('/etc/blackspire-buyer-writer-gateway/gateway.json',{groupId:Number(group[2])}).value;if(!same(installed,rendered.gatewayConfig))fail();
    const live=renderOwnedSuccessorLiveWriter(rendered),actualGateway=readOwnedConfigurationBytes(liveGateway,{gid:Number(group[2]),mode:0o640}),actualDropin=readOwnedConfigurationBytes(liveDropin,{mode:0o644});if(actualGateway!==live.gateway||actualDropin!==live.dropin)fail();

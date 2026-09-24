@@ -18,7 +18,7 @@ try{
  register('file:///mnt/blackspire-builds/development-cache/0/workspaces/zola-owned-cloud-attempt9-20260923/packages/zola-release/owned-sequence-loader.js',import.meta.url);
  const {createMixedRetirementHost}=await import('../packages/zola-release/mixed-retirement-host.js');
  const {MIXED_RETIREMENT:P}=await import('../packages/zola-release/mixed-retirement-history.js');
- const host=createMixedRetirementHost();await host.verifySuccessor({successorReleaseSha:P.successorReleaseSha});
+ const host=createMixedRetirementHost();await host.verifySuccessor({successorReleaseSha:P.successorReleaseSha,successorOperationId:P.successorOperationId});
  fence();lease=await host.lease();const result=await host.observeRunning();fence();lease.assertIdentity();
  console.log(JSON.stringify({status:'MIXED_RETIREMENT_PREFLIGHT_VERIFIED',operatorSha,successorReleaseSha:P.successorReleaseSha,
   ...result,mutationSent:false,retirementExecuted:false,productionOpen:false}));
