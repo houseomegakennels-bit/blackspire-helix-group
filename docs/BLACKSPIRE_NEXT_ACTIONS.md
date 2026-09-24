@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — rollback, CI and diff passed; merge proof formatting repaired
+
+Clean 124729ff47261ac5fb8af40eb658f62307e5462d retained the successful successor rollback proof and confirmed rollback_acceptance, ci_security and final_diff. The merge precheck returned PASS from GitHub twice, but the sequence rejected its evidence because it contained attemptId:null before an attempt existed. No expected_head_merge intent or request was sent; PR125 remains open at f1f and main remains f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8.
+
+The precheck now omits only the unallocated attempt ID; execution/reconciliation still require the real durable attempt. Nine deployment tests pass, including a real sequence integration proving the exact-head merge intent exists before the request and the merged proof is accepted. Next: resume the clean fixed CLI through expected-head merge and production SHA checks. All services remain HELD; production deployment and OPEN remain UNVERIFIED.
+
+
 ## 2026-09-24 — fresh backup verified; integrated recovery ready
 
 Clean e61fd20dcebb0bcf94a6d0dd71a574c2951ebdfc captured and verified the fresh protected backup. Rollback observation then recorded BLOCKED_EXTERNAL because the isolated frontend dependencies were absent. Deterministic frontend npm ci --ignore-scripts installed 482 locked packages using the development-volume cache; tracked files remain unchanged. The credential-free, isolated-network integrated rehearsal now reports PASS_FIXED_INTEGRATED_HTTP.

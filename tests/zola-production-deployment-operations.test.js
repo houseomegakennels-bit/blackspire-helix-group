@@ -115,3 +115,21 @@ test('owned VPS cutover uses protected release backend while preserving native s
  assert.deepEqual(stops,['store','services']);assert.equal(prepared.backendProfile,'owned-postgres-v1');
  assert.equal(prepared.profileDigest,'9'.repeat(64));assert.equal(call.input.backendProfile,undefined);
 });
+
+test('real merge check evidence passes sequence validation before its durable request intent',async()=>{
+ const {runReleaseSequence,RELEASE_STAGES,MUTATING_STAGES}=await import('../packages/zola-release/commander-sequence.js');
+ const base={releaseSha,previousMainSha,recoverySha,protectedInputDigest:'1'.repeat(64),workspace:'zola-production',principal:'blackspire-release-root'};
+ const input={...base,inputDigest:hash(base)},events=[],j={stream:()=>({events:()=>structuredClone(events),append:e=>events.push(structuredClone(e))})};
+ let requests=0;
+ const merge=createDeploymentProductionOperations({input,release:{releaseSha},journal:j},{
+ readCiProof:()=>ci,observeMergeability:()=>({status:'PR_MERGEABLE'}),
+ requestMerge:()=>{assert.equal(events.at(-1).type,'sequence_stage_intent');assert.equal(events.at(-1).stage,'expected_head_merge');requests++;},
+ observeMerge:()=>({status:'MERGED_EXACT_HEAD',newMainSha})}).expected_head_merge;
+ const pass=()=>({status:'PASS',evidence:{verified:true}});
+ const adapters=Object.fromEntries(RELEASE_STAGES.map(stage=>[stage,stage==='expected_head_merge'?merge:{
+ check:stage==='capture_new_main_sha'?()=>({status:'BLOCKED_EXTERNAL'}):pass,observe:pass,
+ ...(MUTATING_STAGES.has(stage)?{execute:async()=>{},reconcile:pass}:{})}]));
+ const result=await runReleaseSequence({input,journal:j,adapters});
+ assert.equal(result.stage,'capture_new_main_sha');assert.equal(requests,1);
+ assert.equal(events.find(e=>e.type==='sequence_stage_confirmed'&&e.stage==='expected_head_merge').output.newMainSha,newMainSha);
+});

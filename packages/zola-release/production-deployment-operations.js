@@ -113,7 +113,7 @@ export function createDeploymentProductionOperations(context,overrides={}){
   stopOwnedStore:()=>createOwnedStoreTransition().stop(),beginHeld:beginPostMergeHeldEpoch,admissionGroup:()=>fs.statSync(ADMISSION).gid,stopAndVerify:fixedStopAndVerify,
   prepareVps:prepareVpsCutoverPlan,runVps:runVpsCutover,readCiProof:ciProof,materializeArtifact:materializeFixedNewMainArtifact,...overrides};
  const merge={
-  check(args){const binding=invocation(context,args,'expected_head_merge'),ci=dependencies.readCiProof(context,args),proof=dependencies.observeMergeability({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha});if(proof.status!=='PR_MERGEABLE')reject();return pass({...binding,...ci,expectedHead:true,mergeable:true});},
+  check(args){const binding=invocation(context,args,'expected_head_merge'),ci=dependencies.readCiProof(context,args),proof=dependencies.observeMergeability({releaseSha:binding.releaseSha,previousMainSha:binding.previousMainSha});if(proof.status!=='PR_MERGEABLE')reject();const {attemptId:_unallocatedAttempt,...checkedBinding}=binding;return pass({...checkedBinding,...ci,expectedHead:true,mergeable:true});},
   execute(args){const binding=invocation(context,args,'expected_head_merge',{attempt:true});dependencies.readCiProof(context,args);dependencies.requestMerge({releaseSha:binding.releaseSha});},
   reconcile:args=>mergeEvidence(context,args,dependencies),observe:args=>mergeEvidence(context,args,dependencies),
  };
