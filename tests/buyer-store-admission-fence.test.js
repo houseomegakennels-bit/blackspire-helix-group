@@ -48,7 +48,7 @@ test('stamped live HELD permits exact read-only generation pair but denies mixed
 });
 
 test('real pending marker allows only the exact HELD profiles lane and retains the shared lock',async()=>{
- const dir=fs.mkdtempSync('/run/buyer-held-pending-');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-held-pending-'));
  const lockPath=dir+'/admission.lock';
  fs.writeFileSync(lockPath,RELEASE_ADMISSION_LOCK,{mode:0o640});
  fs.writeFileSync(dir+'/pending.json','{}\n',{mode:0o600});

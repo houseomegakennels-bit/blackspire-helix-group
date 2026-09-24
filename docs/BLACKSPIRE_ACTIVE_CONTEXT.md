@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-24 — nonroot CI fixture correction
+
+PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.
+
 ## 2026-09-24 — Buyer HELD pending-marker fix verified locally
 
 Credential recovery completed its held transition on epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Fresh Seller acceptance completed, with receiver HTTP200. Buyer profiles was then admitted once and returned HTTP404 through the authority consumer; its task/provider result remains outcome_unknown. The permit retired UNKNOWN. Preserve this collector, its completed Seller result, failed Buyer result, all earlier UNKNOWN histories and the frozen candidate. Do not replay it.
