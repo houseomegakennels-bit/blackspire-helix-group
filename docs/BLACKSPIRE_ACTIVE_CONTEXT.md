@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-09-24 — mixed Seller/Buyer failure observer verified
+
+Separate read-only recovery observation now pins frozen credential recovery 4ac36431870cc062a321d895acbddd14b88fdbff and verifies its completed transition, retired expired UNKNOWN permit, unchanged archives and both older recovery chains. It checks the complete release/acceptance/collector hash chains, the one completed Seller task and one UNKNOWN Buyer task with their exact provider/input rows, absence of the other four admissions, inactive authority, current HELD lifecycle, writer binding, four services and exact corrected deployment.
+
+Actual host inspection passed with retainedEvidenceDigest 3069c5440095c4d8e363758e367f8050fe6601570efd864ef68fb76ddd92b348. The result explicitly retains one completed read and one unknown read, acceptancePassed=false, automaticReplayAllowed=false and productionOpen=false. Twenty-six focused regressions pass; build, lint and syntax typecheck pass. No production configuration, authority, journal, task or service was changed by this observer.
+
+The source fix is PR155 at af6c58ba8eb4b32743b0b5124c7249a51b0e41eb. Its first CI failed only because the new fixture used root-only /run; that fixture now passes under root and isolated nobody. Fresh CI36005166601 is running. The runtime repair is not deployed. A sealed successor and a separate exact retirement/preparation transition remain required; the existing2636-only retirement cannot be reused for this admitted mixed result. Keep the frozen canonical candidate and previous worktrees intact until that implementation validates their historical lineage.
+
 ## 2026-09-24 — credential recovery complete; Seller passed and Buyer fence defect reproduced
 
 Credential recovery operator 9162c2262f23f350e0087299755fc9a6ea340eff completed all fifteen steps after explicit epoch-scoped writer archive reconciliation. The running candidate remains a8e05ef40e44b6695df5b30356af0e411fe36f1a, now HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Transition journal has thirty-one rows, digest 840264d6e46408c0fbb2a2a247bae8c9ea68d4df561dad9517c6b126b1ede7d9.
