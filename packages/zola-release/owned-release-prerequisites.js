@@ -14,6 +14,6 @@ export function ownedReleasePrerequisiteInput(release,operationId){
 export async function observeOwnedReleasePrerequisites(release,operationId){
  const input=ownedReleasePrerequisiteInput(release,operationId);
  if(release.schema===2)return observeOwnedMigrationPrerequisites(input);
- const {observeOwnedMigrationSuccessor}=await import('../buyer-writer/owned-migration-successor.js');
- return observeOwnedMigrationSuccessor(input);
+ const {observeRuntimeSuccessorLineage}=await import('./successor-runtime-predecessor.js');
+ return observeRuntimeSuccessorLineage(input);
 }

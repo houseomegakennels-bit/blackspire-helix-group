@@ -28,7 +28,7 @@ export function readReleaseProtectedBytes(filename,maxBytes){
  }catch{refuse();}finally{if(fd!==undefined)fs.closeSync(fd);}
 }
 
-export function verifyReleaseSource(releaseSha,{root=fileURLToPath(new URL('../../',import.meta.url)),requireRemote=true}={}){
+export function verifyReleaseSource(releaseSha,{root=releaseSha==='f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e'?'/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-successor-20260924':fileURLToPath(new URL('../../',import.meta.url)),requireRemote=true}={}){
  if(!/^[a-f0-9]{40}$/.test(releaseSha??''))refuse();
  const options={encoding:'utf8',timeout:10000,maxBuffer:256*1024,stdio:['ignore','pipe','pipe'],
   env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_SYSTEM:'/dev/null',GIT_NO_REPLACE_OBJECTS:'1'}};

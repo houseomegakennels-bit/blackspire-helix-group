@@ -1,3 +1,4 @@
+import {MIXED_RETIREMENT} from './mixed-retirement-history.js';
 import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {randomUUID} from 'node:crypto';
 import {hash} from './commander-journal.js';
@@ -55,7 +56,11 @@ export function inspectReleaseSequenceHistory(events){
  const partition=partitionRetiredReleaseHistory(events);
  if(partition.retired){
   const prior=inspectReleaseSequenceHistory(partition.prefix);
-  if(prior.pending?.stage!=='admission_lease'||prior.nextOrdinal!==5||prior.mutationState!==null)reject();
+  if(partition.retired.schema===6){
+   if(prior.pending?.stage!=='six_reads'||prior.nextOrdinal!==13||prior.mutationState!==null
+    ||prior.context?.releaseSha!==MIXED_RETIREMENT.releaseSha||prior.context.operationId!==MIXED_RETIREMENT.operationId
+    ||prior.pending.attemptId!==MIXED_RETIREMENT.attemptId)reject();
+  }else if(prior.pending?.stage!=='admission_lease'||prior.nextOrdinal!==5||prior.mutationState!==null)reject();
   const active=inspectReleaseSequenceHistory(partition.current);
   return Object.freeze({...active,retired:partition.retired});
  }
@@ -168,7 +173,7 @@ export async function runReleaseSequence({input,journal,adapters,requestedOperat
   wasStarted=state.started;
   if(!state.started){
    if(state.retired&&(input.releaseSha!==state.retired.successorReleaseSha||state.retired.successorOperationId&&requestedOperationId!==state.retired.successorOperationId
-    ||input.previousMainSha!=='2775fd5043ad422418a4177f686671961e9a9738'
+    ||input.previousMainSha!==(state.retired.schema===6?MIXED_RETIREMENT.previousMainSha:'2775fd5043ad422418a4177f686671961e9a9738')
     ||input.recoverySha!=='2c0b600c268faa0571f08322e16d7f81f37789be'))reject();
    const start={schema:4,type:'sequence_started',operationId:requestedOperationId??randomUUID(),...input,registryDigest:RELEASE_REGISTRY_DIGEST};stream.append(start);state=inspectReleaseSequenceHistory(stream.events());
   }else if(!['releaseSha','previousMainSha','recoverySha','protectedInputDigest','workspace','principal','inputDigest'].every(key=>state.context[key]===input[key])){

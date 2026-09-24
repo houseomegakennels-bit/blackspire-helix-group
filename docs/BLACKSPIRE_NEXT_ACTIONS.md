@@ -1,5 +1,18 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — archive prepared; sequence and n8n carryover verified
+
+Clean operator d5ffb890b146bcc9f18a6aa994444f3dcc923a1a prepared the live metadata-only authority archive plan e584b29f954c00a40be7cd01de0ddf20f8f200217f9ea2597ce1c806beca36e1. Its protected-state digest matches the prior preflight. No authority file moved and services remain running HELD.
+
+The sequence parser now explicitly accepts the exact mixed predecessor's pending six_reads stage at ordinal 13, preserving all prior rows, and binds the repaired successor to current main. Legacy admission-stage retirement remains unchanged. The old schema-five operator overlay accepts separately pinned extended local source while retaining original source pins for frozen readers. The exact candidate's default source verification selects the independent successor checkout; schema-three database prerequisites use the selected native lineage observer.
+
+An in-memory model using the real 186-event protected history and exact prepared production input successfully reached the new operation's first gate. Its retirement event and adapters were model-only; no physical journal append or retirement occurred. Native GET-only n8n inspection verified the active candidate and completed attempt-nine cloud proof. Workflow state digest: 2b5f190442f7805b7bf6db6fe58f2772ff97a1e33528040bfed1104b17a2cc8c; prior proof digest: c96ad3861869d83a74847b608e0d3648ad0b8945f7ceb2d860eab20d38117f20. The existing 24 n8n events remain unchanged, digest 60ccc4e067cb0f5d9883153804320c35b2cc67b0f5e90e28bea32dc97e75dfbb.
+
+Separate carryover adapters retain the original backup and historical journal, permit only native GET observations of that exact published candidate, and require unchanged credential material plus current installed writer verification at the migration stage. They cannot deactivate, update, publish or rewrite credentials. Forty-one focused regressions and build/lint/syntax typecheck pass.
+
+The live stage adapters have not executed. Next: finish the new Preview metadata handoff, native fixed-operation composition and fresh owned acceptance setup before retirement/archive and runtime cutover. Full deployment, main merge and production OPEN remain UNVERIFIED.
+
+
 ## 2026-09-24 — current-runtime preflight passed; protected archive implementation
 
 Clean operator 26e27ae1c362b39cf3f15ccdfad83b9a6d17b6da passed the strengthened native retirement preflight. Protected-state digest remains ede3ccf26694e1050179384e64cbe82427c076053d9e49d73d93fb833370b40c and lifecycle digest e41f5705c50ee235918e4719eefb7d45693d8b73c3481d5fd7c2e9f651d97c4e. Prepared input, database lineage and prior gateway receipt all verified. No stop was sent.
