@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import { getDealEngineDealDetail } from "@/lib/deal-engine-server";
@@ -8,9 +8,8 @@ type RouteContext = {
 };
 
 export async function GET(_: Request, { params }: RouteContext) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   const { dealId } = await params;
   const detail = await getDealEngineDealDetail(dealId);
   if (!detail) return new Response("Deal not found", { status: 404 });

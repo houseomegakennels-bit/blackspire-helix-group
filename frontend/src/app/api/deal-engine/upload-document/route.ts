@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { uploadDealDocument } from "@/lib/deal-engine-server";
@@ -6,9 +6,8 @@ import { uploadDealDocument } from "@/lib/deal-engine-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const dealId = String(form.get("dealId") ?? "").trim();

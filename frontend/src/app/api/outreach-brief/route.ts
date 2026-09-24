@@ -1,7 +1,7 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getCountyOperationalRisk } from "@/lib/buyer-engine-data";
+import { guardSignedInApi } from "@/lib/operator-access";
 
 type OutreachRequest = {
   searchJobId?: string;
@@ -136,9 +136,8 @@ function buildTemplateDraft(
 }
 
 export async function POST(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const body = (await request.json()) as OutreachRequest;
     const buyerName = body.buyerName?.trim();

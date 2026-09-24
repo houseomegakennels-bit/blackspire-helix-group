@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getSellerLeadDetail, listSellerLeads, updateSellerLead } from "@/lib/seller-engine-server";
@@ -8,9 +8,8 @@ import { guardWorkspaceApi } from "@/lib/operator-access";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
@@ -25,9 +24,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;

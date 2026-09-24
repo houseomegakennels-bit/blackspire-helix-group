@@ -1,3 +1,4 @@
+import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
@@ -34,11 +35,12 @@ export async function getDemoSnapshot(): Promise<DemoSnapshot> {
     countRows("harvester_intakes"),
     countRows("seller_leads"),
     countRows("deal_leads"),
-    countRows("BuyerReport"),
+    ownedBuyerStoreEnabled() ? Promise.resolve(0) : countRows("BuyerReport"),
     countRows("sentinel_inbox_items"),
   ]);
 
-  const { data } = client
+  // Owned mode deliberately publishes no customer Buyer rows in the demo.
+  const { data } = client && !ownedBuyerStoreEnabled()
     ? await client
         .from("BuyerReport")
         .select("buyer_name_snapshot,purchase_count,score,is_llc,is_cash_buyer")

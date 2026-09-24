@@ -1,4 +1,3 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
@@ -7,13 +6,13 @@ import {
   listOutreachDraftRecords,
   persistOutreachDraftRecord,
 } from "@/lib/buyer-engine-server";
+import { guardSignedInApi } from "@/lib/operator-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const drafts = await listOutreachDraftRecords(searchJobId);
@@ -47,9 +46,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const record = (await request.json()) as Partial<OutreachDraftRecord>;
 

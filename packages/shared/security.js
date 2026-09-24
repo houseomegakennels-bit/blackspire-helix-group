@@ -35,10 +35,33 @@ function validateProductionExecutionProfile(env, errors) {
   }
 }
 
+// Database authority belongs exclusively to the root/dedicated Buyer Writer
+// gateway. This check is intentionally based on key presence, not truthiness:
+// an empty or partially templated credential in an application service is still
+// configuration drift and must stop the process before it spawns a child.
+export const DIRECT_DATABASE_ENV_KEYS = Object.freeze([
+  'DATABASE_URL', 'POSTGRES_URL', 'POSTGRES_URL_NON_POOLING', 'POSTGRES_PRISMA_URL',
+  'PGHOST', 'PGHOSTADDR', 'PGPORT', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGPASSFILE',
+  'SUPABASE_DB_URL', 'SUPABASE_DATABASE_URL', 'SUPABASE_DB_URI', 'SUPABASE_DB_HOST',
+  'SUPABASE_DB_PORT', 'SUPABASE_DB_NAME', 'SUPABASE_DB_USER', 'SUPABASE_DB_PASSWORD',
+  'BUYER_WRITER_CONFIG_FILE', 'BUYER_WRITER_DATABASE_URL', 'BUYER_WRITER_DB_URI',
+  'BUYER_WRITER_DB_HOST', 'BUYER_WRITER_DB_PORT', 'BUYER_WRITER_DB_NAME',
+  'BUYER_WRITER_DB_USER', 'BUYER_WRITER_DB_PASSWORD', 'BUYER_WRITER_RUNTIME_PASSWORD',
+  'BUYER_WRITER_ISSUER_PASSWORD',
+]);
+
+export function validateApplicationDatabaseIsolation(env = process.env) {
+  const forbidden = DIRECT_DATABASE_ENV_KEYS.filter(key => Object.hasOwn(env, key));
+  return Object.freeze({ok: forbidden.length === 0, forbidden: Object.freeze(forbidden)});
+}
+
 export function requireProductionSafeConfig(env = process.env, { dbDir = path.dirname(DB_PATH), attachmentsDir = ATTACHMENTS_DIR } = {}) {
   const errors = [];
   if (env.NODE_ENV === 'production') {
     if (env.BLACKSPIRE_RUNTIME_MODE === 'production') {
+      for (const key of validateApplicationDatabaseIsolation(env).forbidden) {
+        errors.push(`${key} is forbidden in the production application trust zone.`);
+      }
       validateProductionExecutionProfile(env, errors);
       if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('UNIFIED_IPHONE_TEST_MODE=true is not allowed in production.');
       if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('TELEGRAM_MODE must remain dry-run or unset in the no-provider production profile.');
@@ -147,6 +170,9 @@ export function verifyVpsRuntime(env = process.env, {
 
   if (env.NODE_ENV !== 'production') errors.push('NODE_ENV must be production.');
   if (env.BLACKSPIRE_RUNTIME_MODE !== 'production') errors.push('BLACKSPIRE_RUNTIME_MODE must be production.');
+  for (const key of validateApplicationDatabaseIsolation(env).forbidden) {
+    errors.push(`${key} is forbidden in the production application trust zone.`);
+  }
   // The state owner is what decides the bind profile, so the production runtime requires it to be
   // exactly vps-production. Without this an unrecognized or misspelled owner would classify as
   // non-production and skip the loopback/explicit-port contract entirely. scripts/verify-environment.sh

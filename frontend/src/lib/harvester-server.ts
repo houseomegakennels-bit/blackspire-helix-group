@@ -1,3 +1,4 @@
+import { ownedBuyerStoreEnabled, buyerStoreRequest } from "@/lib/buyer-store-client";
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -734,7 +735,10 @@ async function loadLatestBuyerReportsForMatches(
   const buyerNames = [...new Set(matches.map((match) => match.buyerName.trim()).filter(Boolean))];
   const rows: BuyerReportLookupRow[] = [];
 
-  if (buyerIds.length) {
+  if (ownedBuyerStoreEnabled()) {
+    const page=await buyerStoreRequest<{reports:BuyerReportLookupRow[]}>("reports-list",{searchJobId:null,limit:200,offset:0});
+    rows.push(...page.reports.filter(row=>buyerIds.includes(row.buyer_profile_id??"")||buyerNames.includes(row.buyer_name_snapshot??"")));
+  } else if (buyerIds.length) {
     const { data } = await supabase
       .from("BuyerReport")
       .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at")
@@ -744,7 +748,7 @@ async function loadLatestBuyerReportsForMatches(
     rows.push(...((data ?? []) as BuyerReportLookupRow[]));
   }
 
-  if (buyerNames.length) {
+  if (!ownedBuyerStoreEnabled() && buyerNames.length) {
     const { data } = await supabase
       .from("BuyerReport")
       .select("id,search_job_id,buyer_profile_id,buyer_name_snapshot,mailing_address_snapshot,score,purchase_count,total_spend,is_llc,is_cash_buyer,created_at")

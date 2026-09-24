@@ -32,8 +32,9 @@ async function resolveRole(): Promise<OperatorContext> {
   const expiresAt = typeof operator.app_metadata?.demo_expires_at === "string"
     ? operator.app_metadata.demo_expires_at
     : null;
+  const expiry = expiresAt ? Date.parse(expiresAt) : NaN;
   const expired = (explicitRole === "demo_viewer" || explicitRole === "demo_operator")
-    && (!expiresAt || !Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now());
+    && (!Number.isFinite(expiry) || expiry <= Date.now());
   if (explicitRole) return { role: explicitRole, operatorId: operator.id, expiresAt, expired };
   const users = await listAuthUsers().catch(() => []);
   const isAdmin = users.length > 0 && users[0]?.id === operator.id;
@@ -52,15 +53,23 @@ export async function getOperatorRole(): Promise<OperatorRole> {
  * For API route handlers. Returns a NextResponse to return early when the caller
  * is not an admin (401 anonymous, 403 signed-in non-admin), or null to proceed.
  */
-export async function guardAdminApi(): Promise<NextResponse | null> {
-  const { role } = await resolveRole();
-  if (role === "anonymous") {
-    return NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 });
+export async function guardAdminApiContext(): Promise<
+  | { response: NextResponse }
+  | { operatorId: string; role: "admin" }
+> {
+  const { role, operatorId } = await resolveRole();
+  if (role === "anonymous" || !operatorId) {
+    return { response: NextResponse.json({ ok: false, error: "Authentication required." }, { status: 401 }) };
   }
   if (role !== "admin") {
-    return NextResponse.json({ ok: false, error: "Admin access is required for this action." }, { status: 403 });
+    return { response: NextResponse.json({ ok: false, error: "Admin access is required for this action." }, { status: 403 }) };
   }
-  return null;
+  return { operatorId, role };
+}
+
+export async function guardAdminApi(): Promise<NextResponse | null> {
+  const gate = await guardAdminApiContext();
+  return "response" in gate ? gate.response : null;
 }
 
 /** For API route handlers — require an admitted workspace operator (beta or admin). */

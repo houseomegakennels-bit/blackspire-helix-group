@@ -60,9 +60,28 @@ test('Buyer routing requires explicit buyer/deal intent and does not override Se
   assert.equal(selectCapabilityForTask({ request:'Report status.' }), null);
 });
 
-test('Buyer adapter transport is bounded and rejects oversized/malformed responses', async () => {
+test('Buyer adapter refuses missing receiver authority before transport', async () => {
   const adapters = createDivisionAdapters({ BLACKSPIRE_BUYER_CAPABILITY_URL:'http://127.0.0.1:3000', BLACKSPIRE_BUYER_CAPABILITY_TOKEN:'x'.repeat(32) }, async()=>new Response('not-json', { status:200 }));
-  await assert.rejects(adapters.buyerProfiles({ workspaceId:'buyer-ws', limit:5, signal:null }), /malformed JSON/);
+  await assert.rejects(adapters.buyerProfiles({ workspaceId:'buyer-ws', limit:5, signal:null }), /receiver authority is unavailable/);
+});
+
+test('Buyer match execution carries an explicit deal identifier to the canonical adapter', async () => {
+  const created = task('Find buyers for deal DE-2417.');
+  let received = null;
+  const result = await processTask(created, {
+    capabilityOptions: {
+      adapters: {
+        buyerProfiles: async (input) => {
+          received = input;
+          return { matches: [{ ...canonicalMatches[0], opportunityId: 'DE-2417' }], sourceSnapshotAt: '2026-09-02T00:00:00.000Z' };
+        },
+      },
+    },
+  });
+  assert.equal(result.status, 'completed');
+  assert.equal(received.opportunityId, 'DE-2417');
+  assert.equal(received.matchesOnly, true);
+  assert.equal(received.limit, 5);
 });
 
 test('Buyer capability requires buyer read permission', async () => {

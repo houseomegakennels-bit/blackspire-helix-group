@@ -1,0 +1,299 @@
+import assert from 'node:assert/strict';
+import {spawn,spawnSync} from 'node:child_process';
+import {randomBytes,randomUUID,createHash} from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import net from 'node:net';
+import path from 'node:path';
+import {Pool as PgPool} from 'pg';
+import {createBuyerWriterPostgres} from '../packages/buyer-writer/postgres.js';
+
+assert.equal(process.versions.node,'22.23.1');
+const image=process.env.BUYER_WRITER_TEST_IMAGE;
+assert.match(image??'',/^postgres@sha256:[a-f0-9]{64}$/);
+const owner=randomUUID(),name=`zola-native-${owner}`,networkName=`${name}-net`;
+console.log(JSON.stringify({nativeFixtureOwner:owner,containerName:name,networkName}));
+const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'zola-native-tls-'));
+let cleaning=false;
+const docker=(args,input)=>spawnSync('docker',args,{input,encoding:'utf8',timeout:cleaning?5000:30000,maxBuffer:1024*1024});
+const requireSuccess=result=>{assert.equal(result.status,0,'isolated native operation failed');return result.stdout.trim();};
+let networkId,containerId,networkAttempted=false,containerAttempted=false,pools,proxy;
+let operationWitnessArmed=false,operationWitnessReplacement='';
+class WitnessPool extends PgPool {
+  constructor(config){super(config);this.witnessRuntime=config.user==='buyer_writer_runtime';}
+  async connect(){
+    const client=await super.connect();
+    if(this.witnessRuntime){
+      const query=client.query.bind(client);
+      client.query=async(text,...args)=>{
+        if(operationWitnessArmed&&typeof text==='string'&&text.includes('case when checked.safe then buyer_writer.context(')){
+          operationWitnessArmed=false;
+          sql(operationWitnessReplacement);
+        }
+        return query(text,...args);
+      };
+    }
+    return client;
+  }
+}
+const proxySockets=new Set();
+const checks=[];
+function discover(kind,identifier) {
+  const result=docker(kind==='network'?['network','inspect',identifier]:['inspect',identifier]);
+  if(result.status!==0){assert.match(result.stderr??'',/No such (object|container|network)/,'ambiguous resource ownership');return null;}
+  const record=JSON.parse(result.stdout)[0];
+  assert.equal((kind==='network'?record.Labels:record.Config.Labels)['blackspire.test-owner'],owner,'resource ownership mismatch');
+  assert.match(record.Id,/^[a-f0-9]{64}$/);return record;
+}
+let cleanupPromise;
+function cleanup() {
+  return cleanupPromise??=(async()=>{
+    cleaning=true;
+    const errors=[];
+    try{if(pools){await pools.close();pools=null;}}catch{errors.push('pools');}
+    try{for(const socket of proxySockets)socket.destroy();if(proxy)await new Promise(resolve=>proxy.close(resolve));}catch{errors.push('proxy');}
+    try{if(containerAttempted){const record=discover('container',containerId??name);if(record)requireSuccess(docker(['rm','-f',record.Id]));containerAttempted=false;}}catch{errors.push('container');}
+    try{if(networkAttempted){const record=discover('network',networkId??networkName);if(record)requireSuccess(docker(['network','rm',record.Id]));networkAttempted=false;}}catch{errors.push('network');}
+    try{fs.rmSync(temporary,{recursive:true,force:true});}catch{errors.push('temporary');}
+    assert.equal(errors.length,0,'native fixture cleanup incomplete');
+  })();
+}
+let interrupted=false;
+for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{
+  interrupted=true;void cleanup().then(()=>process.exit(1),()=>process.exit(1));
+});
+const literal=value=>`'${String(value).replaceAll("'","''")}'`;
+let sqlUser='fixture_admin';
+const sql=statement=>requireSuccess(docker(['exec','-i',containerId,'psql','-X','-qAt','-U',sqlUser,'-d','writer_test','-v','ON_ERROR_STOP=1'],statement));
+const copy=(filename,contents)=>requireSuccess(docker(['exec','-i','--user','postgres',containerId,'sh','-c',`umask 077; cat > ${filename}`],contents));
+let failed=false,phase='network';
+try {
+  networkAttempted=true;
+  networkId=requireSuccess(docker(['network','create','--internal','--label',`blackspire.test-owner=${owner}`,networkName]));
+  assert.equal(discover('network',networkId).Internal,true);
+  phase='container';
+  containerAttempted=true;
+  const bootstrap='umask 077; od -An -N32 -tx1 /dev/urandom | tr -d " \\n" > /tmp/bootstrap-password; export POSTGRES_PASSWORD_FILE=/tmp/bootstrap-password; exec docker-entrypoint.sh postgres';
+  containerId=requireSuccess(docker(['create','--name',name,'--label',`blackspire.test-owner=${owner}`,'--network',networkId,
+    '--read-only','--memory','512m','--cpus','1','--pids-limit','128',
+    '--tmpfs','/var/lib/postgresql/data:rw,size=192m','--tmpfs','/var/run/postgresql:rw,size=8m','--tmpfs','/tmp:rw,size=16m',
+    '-e','POSTGRES_HOST_AUTH_METHOD=reject','-e','POSTGRES_INITDB_ARGS=--auth-host=reject --auth-local=trust','-e','POSTGRES_USER=fixture_admin','-e','POSTGRES_DB=writer_test',
+    '--entrypoint','sh',image,'-c',bootstrap]));
+  const created=discover('container',containerId);
+  assert.equal(created.HostConfig.ReadonlyRootfs,true);assert.equal(created.Mounts.some(m=>m.Type==='bind'||m.Type==='volume'),false);
+  requireSuccess(docker(['start',containerId]));
+  phase='bootstrap';
+  let ready=false;
+  for(let i=0;i<60;i++){
+    if(docker(['exec',containerId,'sh','-c','test "$(cat /proc/1/comm)" = postgres && pg_isready -U fixture_admin -d writer_test']).status===0){ready=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  assert.ok(ready&&!interrupted,'isolated PostgreSQL did not become ready');
+  phase='server-version';assert.match(sql('show server_version'),/^17\.6/);
+  sql(`create role fixture_oid_padding_1;create role fixture_oid_padding_2;create role fixture_oid_padding_3;
+    create role postgres superuser createdb createrole replication bypassrls login;
+    alter database writer_test owner to postgres`);
+  sqlUser='postgres';
+  sql('create database writer_other');
+  sql('revoke connect on database postgres,writer_other from public');
+  phase='loopback-binding';
+  const network=discover('network',networkId), running=discover('container',containerId);
+  assert.equal(network.Internal,true);
+  assert.equal(Object.keys(network.Containers).length,1);
+  assert.ok(network.Containers[containerId]);
+  assert.equal(Object.keys(running.NetworkSettings.Networks).length,1);
+  const attachment=Object.values(running.NetworkSettings.Networks)[0];
+  assert.equal(attachment.NetworkID,networkId);
+  const target=attachment.IPAddress;assert.equal(net.isIP(target),4);
+  assert.equal(network.Containers[containerId].IPv4Address.split('/')[0],target);
+  assert.ok(Object.values(running.NetworkSettings.Ports??{}).every(value=>value===null));
+  proxy=net.createServer(client=>{
+    if(proxySockets.size>=16){client.destroy();return;}
+    const upstream=new net.Socket();proxySockets.add(client);proxySockets.add(upstream);
+    let bytes=0;const close=()=>{client.destroy();upstream.destroy();};
+    const connectTimer=setTimeout(close,2000);
+    const lifetime=setTimeout(close,30000);
+    for(const socket of [client,upstream]){
+      socket.on('error',close);socket.setTimeout(15000,close);
+      socket.on('data',chunk=>{bytes+=chunk.length;if(bytes>1024*1024)close();});
+      socket.once('close',()=>{clearTimeout(connectTimer);clearTimeout(lifetime);proxySockets.delete(socket);close();});
+    }
+    upstream.connect(5432,target,()=>clearTimeout(connectTimer));
+    client.pipe(upstream);upstream.pipe(client);
+  });
+  await new Promise((resolve,reject)=>{proxy.once('error',reject);proxy.listen(0,'127.0.0.1',()=>{proxy.removeListener('error',reject);resolve();});});
+  proxy.on('error',()=>{for(const socket of proxySockets)socket.destroy();});
+  assert.equal(proxy.address().address,'127.0.0.1');
+  const port=proxy.address().port;
+  phase='tls-and-schema';
+  const key=path.join(temporary,'server.key'),cert=path.join(temporary,'server.crt');
+  requireSuccess(spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1',
+    '-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],{encoding:'utf8',timeout:15000,maxBuffer:8192}));
+  fs.chmodSync(key,0o600);copy('/tmp/server.key',fs.readFileSync(key));copy('/tmp/server.crt',fs.readFileSync(cert));
+  sql("alter system set log_statement='none';alter system set log_min_error_statement='panic';alter system set ssl='on';alter system set ssl_cert_file='/tmp/server.crt';alter system set ssl_key_file='/tmp/server.key';select pg_reload_conf();");
+  sql(fs.readFileSync(new URL('../tests/fixtures/buyer-writer/schema.sql',import.meta.url),'utf8'));
+  sql('begin;'+fs.readFileSync(new URL('../frontend/supabase/migrations/20260904223151_buyer_browser_security.sql',import.meta.url),'utf8')+'commit;');
+  const creatorOid=Number(sql("select oid from pg_roles where rolname='postgres'"));
+  sql('alter role postgres nosuperuser createrole');
+  const installSql=fs.readFileSync(new URL('../packages/buyer-writer/sql/install.sql',import.meta.url),'utf8');
+  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+installSql);
+  sql(`create role buyer_writer_admission_login login noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+    revoke all privileges on database writer_test from buyer_writer_admission_login;
+    grant buyer_writer_admission to buyer_writer_admission_login with admin false,inherit false,set true granted by postgres;`);
+  sql(`set blackspire.buyer_writer_creator_oid=${literal(creatorOid)};`+installSql);
+  const runtimePassword=randomBytes(32).toString('base64url'),issuerPassword=randomBytes(32).toString('base64url');
+  sql(`set password_encryption='scram-sha-256';alter role buyer_writer_runtime login password ${literal(runtimePassword)};alter role buyer_writer_issuer login password ${literal(issuerPassword)};`);
+  copy('/var/lib/postgresql/data/pg_hba.conf','local all all trust\nhostssl writer_test,template1 buyer_writer_runtime,buyer_writer_issuer 0.0.0.0/0 scram-sha-256\nhost all all 0.0.0.0/0 reject\nhost all all ::0/0 reject\n');
+  sqlUser='fixture_admin';sql('select pg_reload_conf();');assert.equal(sql('select count(*) from pg_hba_file_rules where error is not null'),'0');sqlUser='postgres';
+  const base={host:'127.0.0.1',port,database:'writer_test',ca:fs.readFileSync(cert,'utf8')};
+  const config={creatorOid,runtime:{...base,password:runtimePassword},issuer:{...base,password:issuerPassword}};
+  phase='driver-identities';
+  pools=await createBuyerWriterPostgres({...config,Pool:WitnessPool});
+  sqlUser='fixture_admin';assert.equal(sql("select count(distinct a.usename)=2 and bool_and(s.ssl) from pg_stat_activity a join pg_stat_ssl s using(pid) where a.usename in('buyer_writer_runtime','buyer_writer_issuer')"),'t');sqlUser='postgres';
+  await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,ca:undefined},issuer:{...config.issuer,ca:undefined}}),/unavailable/);
+  await assert.rejects(createBuyerWriterPostgres({...config,runtime:{...config.runtime,password:randomBytes(32).toString('base64url')}}),/unavailable/);
+  checks.push('actual driver rejects untrusted TLS and wrong SCRAM credentials; both dedicated TLS identities accepted');
+  // Seed one valid current dispatch through the issuer, then exercise the
+  // runtime's only remaining operation: the scoped context read.
+  sqlUser='fixture_admin';
+  const jobId=randomUUID(),userId=randomUUID(),requestId=randomUUID();
+  sql(`insert into auth.users(id) values(${literal(userId)});
+    insert into public."SearchJob"(id,user_id,state,county,property_type,date_range_start,date_range_end)
+    values(${literal(jobId)},${literal(userId)},'NC','Wake','land','2026-01-01','2026-12-31')`);
+  const captured=JSON.parse(sql(`select jsonb_build_object('criteria',buyer_writer.criteria(to_jsonb(j)),'updatedAt',j.updated_at)
+    from public."SearchJob" j where id=${literal(jobId)}`));
+  const payload=Buffer.from('[]'),permitDigest=createHash('sha256').update(randomBytes(32)).digest('hex');
+  const sourceContext={version:1,mode:'frontend_payload',
+    sources:[{sourceId:randomUUID(),sourceType:'arcgis',endpointId:'isolated',
+      endpointConfigDigest:'b'.repeat(64),cashDisabled:false}],
+    budgets:{maxRequests:1,maxRows:1,maxBytes:1048576},
+    rawPayload:{digest:createHash('sha256').update(payload).digest('hex'),
+      byteCount:payload.length,rowCount:0}};
+  const issueSql='select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result';
+  const issued=(await pools.issuerQuery(issueSql,[jobId,userId,'isolated',permitDigest,
+    sourceContext,captured.criteria,captured.updatedAt,requestId])).rows[0].result;
+  sql(`update buyer_writer.dispatches set state='processing' where id=${literal(issued.dispatchId)}`);
+  const contextSql='select buyer_writer.context($1,$2,$3,$4,$5) as result';
+  const contextArgs=[permitDigest,'isolated',jobId,issued.dispatchId,issued.generation];
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  phase='operation-nonentry-witness';
+  const contextDefinition=sql("set role buyer_writer_owner;select pg_get_functiondef('buyer_writer.context(text,text,uuid,uuid,bigint)'::regprocedure)");
+  sql(`set role buyer_writer_owner;create sequence buyer_writer.operation_nonentry_witness;
+    grant usage on sequence buyer_writer.operation_nonentry_witness to buyer_writer_owner;reset role`);
+  operationWitnessReplacement=`set role buyer_writer_owner;
+    create or replace function buyer_writer.context(p_digest text,p_workspace text,p_job uuid,p_dispatch uuid,p_generation bigint)
+    returns jsonb language plpgsql security definer set search_path=pg_catalog set lock_timeout='5s' as $$
+    begin perform nextval('buyer_writer.operation_nonentry_witness');return '{"unsafe":true}'::jsonb;end $$;reset role;`;
+  operationWitnessArmed=true;
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+  assert.equal(operationWitnessArmed,false,'operation witness drift was not injected after the fence');
+  assert.equal(sql('set role buyer_writer_owner;select is_called from buyer_writer.operation_nonentry_witness'),'f',
+    'unsafe runtime context entered despite fresh identity denial');
+  sql(`set role buyer_writer_owner;${contextDefinition};
+    drop sequence buyer_writer.operation_nonentry_witness;reset role`);
+  checks.push('fresh unsafe identity prevents runtime context entry with a non-rollback sequence witness');
+  sqlUser='fixture_admin';
+  phase='privilege-drift';
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  sql('grant create on schema buyer_writer to buyer_writer_runtime');
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+  sql('revoke create on schema buyer_writer from buyer_writer_runtime');
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  checks.push('privilege drift rejects the next real runtime context checkout');
+  phase='native-trigger-race-setup';
+  const jobBefore=sql(`select jsonb_build_object('status',status,'updatedAt',updated_at)
+    from public."SearchJob" where id=${literal(jobId)}`);
+  sql(`create table public.trigger_probe(hit integer);
+    create function public.hidden_trigger() returns trigger language plpgsql security definer
+      as 'begin insert into public.trigger_probe values(1);return new;end';
+    revoke execute on function public.hidden_trigger() from public,buyer_writer_owner,
+      buyer_writer_runtime,buyer_writer_issuer,buyer_writer_admission`);
+  const raceDdl=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt',
+    '-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],
+    {stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+  let raceOutput='',raceBytes=0,raceReadyResolve,raceReadyReject;
+  const raceReady=new Promise((resolve,reject)=>{
+    raceReadyResolve=resolve;raceReadyReject=reject;
+  });
+  const raceDeadline=setTimeout(()=>{
+    raceDdl.kill('SIGKILL');raceReadyReject(new Error('trigger race fixture timed out'));
+  },12000);
+  const raceDone=new Promise((resolve,reject)=>{
+    raceDdl.once('error',()=>{
+      raceReadyReject(new Error('trigger race fixture failed'));
+      reject(new Error('trigger race fixture failed'));
+    });
+    raceDdl.once('close',code=>{
+      clearTimeout(raceDeadline);raceReadyReject(new Error('trigger race fixture closed'));
+      code===0?resolve():reject(new Error('trigger race fixture failed'));
+    });
+  });
+  void raceDone.catch(()=>{});
+  for(const stream of [raceDdl.stdout,raceDdl.stderr])stream.on('data',chunk=>{
+    raceBytes+=chunk.length;if(raceBytes>8192)raceDdl.kill('SIGKILL');
+  });
+  raceDdl.stdout.on('data',chunk=>{
+    if(raceBytes<=8192){
+      raceOutput+=chunk.toString('utf8');
+      if(raceOutput.includes('trigger_attached'))raceReadyResolve();
+    }
+  });
+  raceDdl.stdin.on('error',()=>{});
+  raceDdl.stdin.end(`begin;
+    create trigger hidden_trigger before update on public."SearchJob"
+      for each row execute function public.hidden_trigger();
+    select 'trigger_attached';select pg_sleep(1);commit;`);
+  await raceReady;
+  phase='native-trigger-race-rejection';
+  await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+  await raceDone;
+  assert.equal(sql(`select jsonb_build_object('status',status,'updatedAt',updated_at)
+    from public."SearchJob" where id=${literal(jobId)}`),jobBefore);
+  assert.equal(sql('select count(*) from public.trigger_probe'),'0');
+  sql('drop trigger hidden_trigger on public."SearchJob";drop function public.hidden_trigger();drop table public.trigger_probe');
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  checks.push('concurrent hidden-trigger DDL serializes against the runtime fence; fresh identity rejects without operation entry');
+  phase='native-lock-timeout';
+  const oldPid=sql("select pid from pg_stat_activity where usename='buyer_writer_runtime' and datname='writer_test'");
+  assert.match(oldPid,/^[0-9]+$/);
+  const blocker=spawn('docker',['exec','-i',containerId,'psql','-X','-qAt','-U','fixture_admin','-d','writer_test','-v','ON_ERROR_STOP=1'],{stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin'}});
+  let blockerOutput='',blockerBytes=0,lockedResolve,lockedReject;
+  const locked=new Promise((resolve,reject)=>{lockedResolve=resolve;lockedReject=reject;});
+  const blockerDeadline=setTimeout(()=>{blocker.kill('SIGKILL');lockedReject(new Error('isolated lock fixture timed out'));},12000);
+  const blockerDone=new Promise((resolve,reject)=>{
+    blocker.once('error',()=>{lockedReject(new Error('isolated lock fixture failed'));reject(new Error('isolated lock fixture failed'));});
+    blocker.once('close',code=>{clearTimeout(blockerDeadline);lockedReject(new Error('isolated lock fixture closed'));code===0?resolve():reject(new Error('isolated lock fixture failed'));});
+  });
+  // Consume rejection immediately; both promises are awaited below.
+  void blockerDone.catch(()=>{});
+  for(const stream of [blocker.stdout,blocker.stderr])stream.on('data',chunk=>{
+    blockerBytes+=chunk.length;if(blockerBytes>8192)blocker.kill('SIGKILL');
+  });
+  blocker.stdout.on('data',chunk=>{if(blockerBytes<=8192){blockerOutput+=chunk.toString('utf8');if(blockerOutput.includes('fixture_locked'))lockedResolve();}});
+  blocker.stdin.on('error',()=>{});
+  blocker.stdin.end("begin;lock table buyer_writer.receipts in access exclusive mode;select 'fixture_locked';select pg_sleep(7);rollback;");
+  try {
+    await locked;
+    phase='native-lock-rejection';
+    const started=performance.now();
+    await assert.rejects(pools.runtimeQuery(contextSql,contextArgs),/unavailable/);
+    phase='native-lock-duration';
+    const elapsed=performance.now()-started;
+    console.log(JSON.stringify({lockElapsedMs:Math.round(elapsed)}));
+    assert.ok(elapsed>=4500&&elapsed<9000,'native lock deadline not enforced');
+    phase='native-lock-connection-destruction';
+    let removed=false;
+    for(let i=0;i<20;i++){
+      await new Promise(resolve=>setTimeout(resolve,50));
+      if(sql(`select count(*) from pg_stat_activity where pid=${oldPid}`)==='0'){removed=true;break;}
+    }
+    assert.ok(removed,'failed connection was retained');
+  } finally {await blockerDone;}
+  phase='native-lock-recovery';
+  assert.deepEqual((await pools.runtimeQuery(contextSql,contextArgs)).rows[0].result.criteria,captured.criteria);
+  checks.push('real PostgreSQL lock timeout surfaces failure, destroys the failed connection and permits a fresh verified checkout');
+
+}catch{failed=true;console.error(JSON.stringify({error:'Native Buyer writer verification failed',phase}));}
+finally{try{await cleanup();}catch{failed=true;console.error('Native Buyer writer cleanup failed');}}
+if(failed||interrupted)process.exitCode=1;
+else console.log(JSON.stringify({driver:'pg 8.23.0',postgres:'17.6',checks,productionConnections:0,providerCalls:0,outreach:0,cleanup:true}));

@@ -2,8 +2,8 @@
 # systemd terminating the other; stopping this target intentionally stops both.
 [Unit]
 Description=Blackspire Command API and worker
-Wants=blackspire-command.service blackspire-command-worker.service
-After=network-online.target
+Wants=blackspire-buyer-writer-gateway.service blackspire-command.service blackspire-command-worker.service
+After=network-online.target blackspire-buyer-writer-gateway.service
 
 [Install]
 WantedBy=multi-user.target

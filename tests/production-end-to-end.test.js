@@ -7,7 +7,8 @@
 //
 // Everything around the external client is production code: production runtime
 // mode, the production Hermes mode, the real worker loop, the real dispatch
-// guard and the real providers module. Only the Codex executable is substituted,
+// guard and the real providers module. The Codex executable and host release
+// authority observation are explicit synthetic fixtures,
 // so the proof is deterministic, costs nothing, and still exercises the CLI
 // execution mode production now permits.
 import test from 'node:test';
@@ -42,6 +43,14 @@ process.env.OPENAI_MODEL = 'worker-local-default-model';
 delete process.env.BLACKSPIRE_PROVIDER_MODE;
 delete process.env.HERMES_TEST_PROVIDER;
 delete process.env.UNIFIED_IPHONE_TEST_MODE;
+
+// This fixture exercises production behavior with synthetic admission authority,
+// not a systemd production installation or generation-fencing proof.
+const { installDisposableReleaseAdmission } = await import('./helpers/disposable-release-admission.js');
+const closeAdmissionFixture = installDisposableReleaseAdmission();
+test.after(closeAdmissionFixture);
+const { withReleaseAdmission } = await import('../packages/shared/release-admission.js');
+
 
 const { prepareDisposableDatabase } = await import('./helpers/prepare-disposable-database.js');
 prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
@@ -206,6 +215,20 @@ async function submit(request, idempotencyKey, executionIntent = 'workspace_muta
 }
 
 let taskId = null;
+
+test('synthetic release authority exercises real held denial and open admission',()=>{
+  const prior=process.env.BLACKSPIRE_RUNTIME_MODE;
+  try {
+    process.env.BLACKSPIRE_RUNTIME_MODE='production';
+    closeAdmissionFixture.setHeld(true);
+    assert.throws(()=>withReleaseAdmission(()=>assert.fail('held dispatch')),/Release admission held/);
+    closeAdmissionFixture.setHeld(false);
+    assert.equal(withReleaseAdmission(()=>17),17);
+  } finally {
+    closeAdmissionFixture.setHeld(false);
+    if(prior===undefined)delete process.env.BLACKSPIRE_RUNTIME_MODE;else process.env.BLACKSPIRE_RUNTIME_MODE=prior;
+  }
+});
 
 test('unauthenticated callers cannot create a production task', async () => {
   const response = await fetch(`${BASE}/api/tasks`, {

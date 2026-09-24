@@ -1,12 +1,11 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { importSellerCsv } from "@/lib/seller-engine-server";
 
 export async function POST(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const file = form.get("file");

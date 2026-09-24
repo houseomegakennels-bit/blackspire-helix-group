@@ -1,0 +1,214 @@
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import {randomBytes} from 'node:crypto';
+import {captureBuyerJobVersion,validateBuyerJobRevision} from './criteria.js';
+import {validateBuyerSourceContext} from './source-context.js';
+import {parseWriterContext,parseWriterOperation,parseWriterReceipt} from './protocol.js';
+import {validateBuyerWriterGatewayAuthority} from './configuration.js';
+import {BUYER_WRITER_DEFAULT_SOCKET,BUYER_WRITER_LOCAL_MAX_BYTES,BUYER_WRITER_LOCAL_TIMEOUT_MS,
+  BuyerWriterLocalProtocolError,decodeLocalGatewayJson,validateLocalGatewayRequest} from './local-gateway-protocol.js';
+
+const statements=Object.freeze({
+  issue:'select buyer_writer.issue($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7::timestamptz,$8::uuid) as result',
+  cancel:'select buyer_writer.cancel($1,$2,$3) as result',
+  reconcile:'select buyer_writer.reconcile($1,$2,$3,$4,$5::timestamptz) as result',
+  context:'select buyer_writer.context($1,$2,$3,$4,$5) as result',
+  apply:'select buyer_writer.apply($1,$2,$3::jsonb) as result',
+  receipt:'select buyer_writer.receipt($1,$2,$3,$4,$5,$6,$7) as result',
+});
+const genericError=error=>error instanceof BuyerWriterLocalProtocolError?error.code:'GATEWAY_UNAVAILABLE';
+const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
+const rejectResult=()=>{throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');};
+
+function validateResult(operation,p,result){
+  if(operation==='cancel'){if(result!==null&&result!==undefined)rejectResult();return null;}
+  if(operation==='issue'){
+    if(!exact(result,['dispatchId','generation'])||result.dispatchId!==p.requestId||!Number.isSafeInteger(result.generation)||result.generation<1)rejectResult();
+  }else if(operation==='reconcile'){
+    if(!exact(result,['dispatchId','generation','state'])||result.dispatchId!==p.requestId||!['absent','cancelled','completed','failed'].includes(result.state)
+      ||(result.state==='absent'?result.generation!==null:!Number.isSafeInteger(result.generation)||result.generation<1))rejectResult();
+  }else if(operation==='apply'){
+    if(!exact(result,['ok','operation','chunkIndex'])||result.ok!==true||result.operation!==p.request.operation||result.chunkIndex!==p.request.chunkIndex)rejectResult();
+  }else if(operation==='receipt'){
+    if(!exact(result,['found','receipt'])||typeof result.found!=='boolean')rejectResult();
+    if(result.found&&!(exact(result.receipt,['ok','operation','chunkIndex'])&&result.receipt.ok===true
+      &&result.receipt.operation===p.request.operation&&result.receipt.chunkIndex===p.request.chunkIndex)
+      &&!(exact(result.receipt,['ok','code'])&&result.receipt.ok===false&&result.receipt.code==='WRITE_FAILED'))rejectResult();
+    if(!result.found&&result.receipt!==null)rejectResult();
+  }else if(operation==='context'){
+    if(!exact(result,['criteria','sourceContext','sourceContextDigest'])||typeof result.sourceContextDigest!=='string'||!/^[a-f0-9]{64}$/.test(result.sourceContextDigest))rejectResult();
+    if(!exact(result.criteria,['state','county','property_type','date_range_start','date_range_end','min_purchases','cash_buyers_only','llc_buyers_only']))rejectResult();
+    for(const field of ['state','county','property_type','date_range_start','date_range_end'])if(typeof result.criteria[field]!=='string'||result.criteria[field].length>128)rejectResult();
+    if(result.criteria.min_purchases!==null&&(!Number.isSafeInteger(result.criteria.min_purchases)||result.criteria.min_purchases<1||result.criteria.min_purchases>5))rejectResult();
+    for(const field of ['cash_buyers_only','llc_buyers_only'])if(result.criteria[field]!==null&&typeof result.criteria[field]!=='boolean')rejectResult();
+    validateBuyerSourceContext(result.sourceContext);
+  }
+  return result;
+}
+
+function dispatcher({workspace,runtimeQuery,issuerQuery,authority,admissionBridge}) {
+  return async request=>{
+    const p=request.payload;
+    if(request.operation==='ready')return Object.freeze({status:'ready',protocolVersion:1,releaseShaMatch:true,workspaceMatch:true,
+      authorityBindingLoaded:true,databaseConfigurationPresent:true,gatewayIdentityMatch:true});
+    if(request.operation==='admit'){
+      if(typeof admissionBridge!=='function')throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+      const result=await admissionBridge({origin:p.origin,method:p.method,path:p.path,rawHeaders:[...p.rawHeaders],body:Buffer.from(p.body,'base64url')});
+      if(!exact(result,['status','body'])||![200,400,401,403,409,503].includes(result.status)
+        ||!result.body||typeof result.body!=='object'||Array.isArray(result.body)
+        ||Buffer.byteLength(JSON.stringify(result.body))>65536)throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+      return result;
+    }
+    if(admissionBridge&&['issue','cancel','reconcile','apply','receipt'].includes(request.operation))throw new BuyerWriterLocalProtocolError('GATEWAY_UNAVAILABLE');
+    if(request.operation==='issue'){
+      const captured=captureBuyerJobVersion({...p.criteria,updated_at:p.updatedAt});
+      const context=validateBuyerSourceContext(p.sourceContext);
+      if(context.mode!=='frontend_payload'||context.rawPayload.byteCount>6*1024*1024)throw new BuyerWriterLocalProtocolError('PAYLOAD_REJECTED');
+      const result=(await issuerQuery(statements.issue,[p.jobId,p.ownerId,workspace,p.permitDigest,JSON.stringify(context),
+        JSON.stringify(captured.criteria),captured.updatedAt,p.requestId]))?.rows?.[0]?.result;
+      return validateResult(request.operation,p,result);
+    }
+    if(request.operation==='cancel')return validateResult(request.operation,p,(await issuerQuery(statements.cancel,[p.jobId,p.ownerId,workspace]))?.rows?.[0]?.result);
+    if(request.operation==='reconcile'){
+      validateBuyerJobRevision(p.updatedAt);
+      return validateResult(request.operation,p,(await issuerQuery(statements.reconcile,[p.jobId,p.ownerId,workspace,p.requestId,p.updatedAt]))?.rows?.[0]?.result);
+    }
+    if(request.operation==='context'){
+      const q=parseWriterContext({jobId:p.jobId,body:Buffer.from(JSON.stringify({version:1,dispatchId:p.dispatchId,generation:p.generation}))});
+      return validateResult(request.operation,p,(await runtimeQuery(statements.context,[p.permitDigest,workspace,q.jobId,q.dispatchId,q.generation]))?.rows?.[0]?.result);
+    }
+    if(request.operation==='apply'){
+      const {payloadDigest:_,...q}=parseWriterOperation({jobId:p.jobId,body:Buffer.from(JSON.stringify(p.request))});
+      return validateResult(request.operation,p,(await runtimeQuery(statements.apply,[p.permitDigest,workspace,JSON.stringify(q)]))?.rows?.[0]?.result);
+    }
+    const q=parseWriterReceipt({jobId:p.jobId,body:Buffer.from(JSON.stringify(p.request))});
+    return validateResult(request.operation,p,(await runtimeQuery(statements.receipt,[p.permitDigest,workspace,q.jobId,q.dispatchId,q.generation,q.operation,q.chunkIndex]))?.rows?.[0]?.result);
+  };
+}
+
+function verifySocketParent(socketPath,io,uid) {
+  if(typeof socketPath!=='string'||socketPath!==BUYER_WRITER_DEFAULT_SOCKET&&!socketPath.startsWith('/tmp/'))throw new Error('Buyer writer gateway configuration rejected');
+  const parent=new URL('.',`file://${socketPath}`).pathname.replace(/\/$/,'');
+  const stat=io.lstatSync(parent);
+  if(!stat.isDirectory()||stat.isSymbolicLink()||![0,uid].includes(stat.uid)||(stat.mode&0o0022)!==0)throw new Error('Buyer writer gateway socket directory rejected');
+}
+
+const sameSocket=(left,right)=>left?.isSocket?.()&&right?.isSocket?.()&&left.dev===right.dev&&left.ino===right.ino;
+const descriptorOwnsPath=(descriptor,socketPath,io)=>{
+  if(!Number.isInteger(descriptor)||descriptor<0)return false;
+  const descriptorStat=io.fstatSync(descriptor);if(!descriptorStat.isSocket())return false;
+  const inode=String(descriptorStat.ino),table=io.readFileSync('/proc/net/unix','utf8');
+  return table.split('\n').some(line=>{const fields=line.trim().split(/\s+/);return fields[6]===inode&&fields.slice(7).join(' ')===socketPath;});
+};
+const waitForDescriptorPath=async(descriptor,socketPath,io)=>{
+  for(let attempt=0;attempt<10;attempt++){
+    try{if(descriptorOwnsPath(descriptor,socketPath,io))return true;}catch{}
+    if(attempt<9)await new Promise(resolve=>setTimeout(resolve,2));
+  }
+  return false;
+};
+export const BUYER_WRITER_SOCKET_LIFECYCLE=Object.freeze({platform:'linux',descriptorProof:'/proc/net/unix',publication:'hard-link',
+  publicPathCleanup:'trusted-supervisor-only'});
+
+export function createBuyerWriterLocalGateway({socketPath=BUYER_WRITER_DEFAULT_SOCKET,capability,authority,gatewayIdentityVerified,runtimeQuery,issuerQuery,admissionBridge,
+  timeoutMs=BUYER_WRITER_LOCAL_TIMEOUT_MS,maxConnections=32,io=fs,uid=process.getuid?.()??-1,now=Date.now,log=()=>{},
+  descriptorOf=server=>server?._handle?.fd}={}) {
+  if(typeof runtimeQuery!=='function'||typeof issuerQuery!=='function'||gatewayIdentityVerified!==true||!authority||typeof authority!=='object'
+    ||(admissionBridge!==undefined&&typeof admissionBridge!=='function')||typeof descriptorOf!=='function'
+    ||!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000)throw new Error('Buyer writer gateway configuration rejected');
+  try{authority=validateBuyerWriterGatewayAuthority(authority);}catch{throw new Error('Buyer writer gateway configuration rejected');}
+  verifySocketParent(socketPath,io,uid);
+  const workspace=authority.workspace,dispatch=dispatcher({workspace,runtimeQuery,issuerQuery,authority,admissionBridge});
+  const nonces=new Map(),sockets=new Map(),drainWaiters=new Set();
+  let stopped=false,active=0,ready=false,closePromise=null,listenPromise=null,ownedSocket=null,backingPath=null;
+  const consumeNonce=(nonce,timestamp)=>{
+    const cutoff=now()-30_000;for(const [key,value] of nonces)if(value<cutoff)nonces.delete(key);
+    if(nonces.has(nonce))return false;nonces.set(nonce,timestamp);return true;
+  };
+  const server=net.createServer({allowHalfOpen:true},socket=>{
+    if(stopped||active>=maxConnections)return socket.destroy();
+    active++;let bytes=0,settled=false,processed=false;const chunks=[];
+    sockets.set(socket,()=>processed);
+    // An EOF without a complete request has no pending response to preserve.
+    socket.once('end',()=>{if(!processed)socket.destroy();});
+    socket.setTimeout(timeoutMs,()=>socket.destroy());
+    const finish=()=>{
+      if(settled)return;
+      settled=true;sockets.delete(socket);active--;
+      if(active===0)for(const resolve of drainWaiters)resolve();
+    };
+    socket.once('close',finish);socket.once('error',()=>{});
+    socket.on('data',chunk=>{
+      if(processed)return;
+      bytes+=chunk.length;if(bytes>BUYER_WRITER_LOCAL_MAX_BYTES+1){processed=true;socket.end(JSON.stringify({version:1,requestId:null,ok:false,code:'PAYLOAD_TOO_LARGE'})+'\n');return;}
+      chunks.push(chunk);
+      const data=Buffer.concat(chunks,bytes),newline=data.indexOf(0x0a);
+      if(newline<0)return;
+      processed=true;
+      socket.pause();
+      const trailing=data.subarray(newline+1);let parsed,requestId=null,operation=null,started=now();
+      Promise.resolve().then(async()=>{
+        if(trailing.some(byte=>![0x09,0x0d,0x20].includes(byte)))throw new BuyerWriterLocalProtocolError('MALFORMED_JSON');
+        parsed=decodeLocalGatewayJson(data.subarray(0,newline));
+        requestId=typeof parsed?.requestId==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(parsed.requestId)?parsed.requestId:null;
+        operation=['ready','admit','issue','cancel','reconcile','context','apply','receipt'].includes(parsed?.operation)?parsed.operation:'invalid';
+        const request=validateLocalGatewayRequest(parsed,{capability,authority,now,consumeNonce});
+        const result=await dispatch(request);
+        socket.end(JSON.stringify({version:1,requestId,ok:true,result:result??null})+'\n');
+        log({requestId,operation,outcome:'settled',durationMs:Math.max(0,now()-started)});
+      }).catch(error=>{
+        socket.end(JSON.stringify({version:1,requestId,ok:false,code:genericError(error)})+'\n');
+        log({requestId,operation,outcome:'rejected',durationMs:Math.max(0,now()-started)});
+      });
+    });
+  });
+  server.maxConnections=maxConnections;
+  const closeListener=()=>new Promise(resolve=>{if(!server.listening&&!server._handle)return resolve();server.close(()=>resolve());});
+  const listen=()=>{
+    if(listenPromise||stopped)return Promise.reject(new Error('Buyer writer gateway listen rejected'));
+    listenPromise=(async()=>{
+      try{io.lstatSync(socketPath);throw new Error('Buyer writer gateway public socket exists; trusted supervisor cleanup required');}
+      catch(error){if(error?.code!=='ENOENT')throw error;}
+      if(stopped)throw new Error('Buyer writer gateway listen rejected');
+      backingPath=path.join(path.dirname(socketPath),`.bw-${randomBytes(6).toString('hex')}`);
+      try{
+        await new Promise((resolve,reject)=>{
+          const failed=error=>{server.off('error',failed);reject(error);};server.once('error',failed);
+          server.listen(backingPath,()=>{server.off('error',failed);resolve();});
+        });
+        io.chmodSync(backingPath,0o660);
+        const descriptor=descriptorOf(server),backing=io.lstatSync(backingPath);
+        if(!await waitForDescriptorPath(descriptor,backingPath,io)||!backing.isSocket()||backing.uid!==uid||(backing.mode&0o777)!==0o660)throw new Error();
+        ownedSocket=backing;io.linkSync(backingPath,socketPath);
+        const published=io.lstatSync(socketPath);
+        if(!sameSocket(ownedSocket,published)||published.uid!==uid||(published.mode&0o777)!==0o660)throw new Error();
+        ready=true;
+      }catch{
+        ready=false;await closeListener();
+        throw new Error('Buyer writer gateway listen rejected');
+      }
+    })();
+    return listenPromise;
+  };
+  const close=()=>{
+    if(closePromise)return closePromise;
+    stopped=true;ready=false;
+    closePromise=(async()=>{
+      try{await listenPromise;}catch{}
+      const drained=active===0?Promise.resolve():new Promise(resolve=>drainWaiters.add(resolve));
+      // Idle/partial clients have no accepted operation. Accepted responses retain
+      // the existing bounded timeout/drain behavior rather than losing a reply.
+      for(const [socket,hasCompleteFrame] of sockets)if(!hasCompleteFrame())socket.destroy();
+      try{await closeListener();}finally{await drained;drainWaiters.clear();}
+    })();
+    return closePromise;
+  };
+  const isReady=()=>{
+    if(!ready||stopped||!server.listening||!ownedSocket)return false;
+    try{return sameSocket(ownedSocket,io.lstatSync(socketPath));}catch{return false;}
+  };
+  return Object.freeze({listen,close,isReady,isDrained:()=>active===0,address:()=>server.address()});
+}
+
+export {statements as BUYER_WRITER_LOCAL_STATEMENTS};

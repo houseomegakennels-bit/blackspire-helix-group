@@ -1,4 +1,6 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { captureBuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
+import { isBuyerDispatchUncertainError, scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
+import { guardSignedInApi } from "@/lib/operator-access";
 import { after, NextResponse } from "next/server";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
 import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
@@ -14,10 +16,11 @@ import {
 import { guardBetaAction } from "@/lib/beta-server";
 import { guardWorkspaceApi } from "@/lib/operator-access";
 
-export async function GET(request: Request) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
+export const maxDuration = 300;
 
+export async function GET(request: Request) {
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;
@@ -51,12 +54,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const requestStartedAt = performance.now();
   try {
+    const denied = await guardSignedInApi();
+    if (denied) return denied;
+    // Beta admission records activity. Refuse configuration before that write.
+    scopedBuyerWriterEnabled();
     const gate = await guardBetaAction("sweep");
     if ("response" in gate) return gate.response;
+    const authority = scopedBuyerWriterEnabled() ? await captureBuyerDispatchAuthority(gate, requestStartedAt) : null;
     const body = await request.json();
 
     const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -127,7 +133,7 @@ export async function POST(request: Request) {
       dateRangeEnd,
       minPurchases,
       notes,
-    });
+    }, authority);
 
     const workflow = {
       webhookUrl: `${process.env.N8N_WEBHOOK_BASE_URL?.replace(/\/$/, "") || "https://cpearson0312.app.n8n.cloud/webhook"}/buyer-engine`,
@@ -136,9 +142,15 @@ export async function POST(request: Request) {
 
     after(async () => {
       try {
-        await triggerBuyerEngineWorkflow(job);
+        await triggerBuyerEngineWorkflow(job, authority);
       } catch (error) {
-        console.error("Buyer Engine trigger failed:", error);
+        if (isBuyerDispatchUncertainError(error)) {
+          console.error("Buyer dispatch reconciliation required", {
+            jobId: error.jobId, requestId: error.requestId, updatedAt: error.updatedAt,
+          });
+        } else {
+          console.error("Buyer Engine trigger failed:", error);
+        }
       }
     });
 
@@ -146,7 +158,7 @@ export async function POST(request: Request) {
       ok: true,
       job,
       workflow,
-      message: "Search job stored and Buyer Engine triggered.",
+      message: "Search job stored; Buyer Engine dispatch queued.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown search job creation failure.";

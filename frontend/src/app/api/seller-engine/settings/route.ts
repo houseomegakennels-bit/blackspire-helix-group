@@ -1,13 +1,12 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { updateSellerWeights } from "@/lib/seller-engine-server";
 import type { SellerScoringWeights } from "@/lib/seller-engine";
 
 export async function PUT(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   try {
     const weights = await request.json() as SellerScoringWeights;
     await updateSellerWeights(weights);

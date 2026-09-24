@@ -7,11 +7,11 @@ import {
   listExports,
 } from "@/lib/buyer-engine-server";
 import { guardBetaAction } from "@/lib/beta-server";
+import { guardSignedInApi } from "@/lib/operator-access";
 
 export async function GET(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const searchJobId = request.nextUrl.searchParams.get("searchJobId")?.trim() || undefined;
     const exports = await listExports({ searchJobId });

@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardSignedInApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { matchBuyerGroupWithRegistry } from "@/lib/buyer-groups";
@@ -12,9 +12,8 @@ import {
 import { guardWorkspaceApi } from "@/lib/operator-access";
 
 export async function GET(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardSignedInApi();
+  if (denied) return denied;
   try {
     const denied = await guardWorkspaceApi();
     if (denied) return denied;

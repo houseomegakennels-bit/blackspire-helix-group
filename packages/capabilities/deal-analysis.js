@@ -1,6 +1,7 @@
 import { defineCapability } from './contract.js';
 
 const RESULT_KEYS = [
+  'found',
   'dealId',
   'propertyAddress',
   'county',
@@ -45,6 +46,13 @@ function input(raw) {
 
 function output(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some((key) => !RESULT_KEYS.includes(key))) throw new Error('invalid deal analysis result');
+  if (raw.found === false) {
+    const allowedNotFound = new Set(['found', 'dealId', 'sourceSnapshotAt']);
+    if (Object.keys(raw).some((key) => !allowedNotFound.has(key))) throw new Error('invalid deal analysis not-found result');
+    const sourceSnapshotAt = boundedText(raw.sourceSnapshotAt, 'sourceSnapshotAt');
+    if (!Number.isFinite(Date.parse(sourceSnapshotAt))) throw new Error('invalid deal source snapshot timestamp');
+    return Object.freeze({ found: false, dealId: boundedText(raw.dealId, 'dealId'), sourceSnapshotAt });
+  }
   const score = Number(raw.motivationScore);
   if (!Number.isSafeInteger(score) || score < 0 || score > 100) throw new Error('invalid deal motivation score');
   if (!Array.isArray(raw.missingInputs)) throw new Error('invalid deal missingInputs: must be an array');
@@ -71,6 +79,7 @@ function output(raw) {
   const sourceSnapshotAt = boundedText(raw.sourceSnapshotAt, 'sourceSnapshotAt');
   if (!Number.isFinite(Date.parse(sourceSnapshotAt))) throw new Error('invalid deal source snapshot timestamp');
   return Object.freeze({
+    found: true,
     dealId: boundedText(raw.dealId, 'dealId'),
     propertyAddress: boundedText(raw.propertyAddress, 'propertyAddress'),
     county: boundedText(raw.county, 'county', { nullable: true }),
@@ -122,7 +131,7 @@ export const dealAnalysisCapability = defineCapability({
 });
 
 export function summarizeDealAnalysis(result) {
-  if (!result.dealId) return 'No Deal Engine analysis is available.';
+  if (result.found === false) return `No Deal Engine analysis is available for ${result.dealId}.`;
   const { dealId, propertyAddress, estimatedArv, maximumAllowableOffer, dealRating, missingInputs, readyForContract } = result;
   const rating = dealRating ? ` — ${dealRating}` : '';
   const ready = readyForContract ? ' [contract-ready]' : '';

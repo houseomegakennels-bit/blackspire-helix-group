@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
 import { downloadDealDocument, listDealDocuments } from "@/lib/deal-engine-server";
@@ -6,9 +6,8 @@ import { downloadDealDocument, listDealDocuments } from "@/lib/deal-engine-serve
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   const dealId = request.nextUrl.searchParams.get("dealId")?.trim() || "";
   const documentId = request.nextUrl.searchParams.get("documentId")?.trim() || "";
   const category = request.nextUrl.searchParams.get("category")?.trim() || "";

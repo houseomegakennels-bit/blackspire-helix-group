@@ -1,4 +1,4 @@
-import { guardWorkspaceApi as requireProductionWorkspaceApi } from "@/lib/operator-access";
+import { guardAdminApi } from "@/lib/operator-access";
 import { NextResponse } from "next/server";
 
 import { listSellerLeads } from "@/lib/seller-engine-server";
@@ -10,9 +10,8 @@ function csvCell(value: unknown) {
 }
 
 export async function GET() {
-  const accessDenied = await requireProductionWorkspaceApi();
-  if (accessDenied) return accessDenied;
-
+  const denied = await guardAdminApi();
+  if (denied) return denied;
   const gate = await guardBetaAction("export");
   if ("response" in gate) return gate.response;
 

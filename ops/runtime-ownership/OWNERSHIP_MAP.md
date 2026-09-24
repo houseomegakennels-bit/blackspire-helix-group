@@ -16,6 +16,10 @@ does not establish production activation and remains separate from the disabled 
 
 - **API user:** `blackspire-api`; **worker user:** `blackspire-worker`. Both are distinct system
   accounts with no login shell or password.
+- **Buyer Writer gateway user:** `blackspire-writer`, a system account with `/usr/sbin/nologin`,
+  no usable home, and its own private `blackspire-writer` group. It is never a member of the broad
+  `blackspire` application group. The service uses the API-specific group only to publish the
+  `0660` Unix socket and retains its private group solely to traverse the gateway secret hierarchy.
 - **Shared group:** `blackspire`. Persistent state is group-writable where both roles require it.
 - The runtime gates require the declared role user to match the effective user and persistent state
   to be writable and owned by either that user or one of its groups.
@@ -38,7 +42,12 @@ Layout rooted at `/opt/blackspire-command` (the code default).
 | `/etc/blackspire/` | `root:blackspire` | `0750` | Config dir. |
 | `/etc/blackspire/command.env` | `root:blackspire` | `0640` | Shared non-authentication production settings. Loaded by API and worker; must contain no password verifier, bearer token, or session secret. |
 | `/etc/blackspire/command-api.env` | `root:blackspire-api` | `0640` | API-only password verifier, optional machine bearer token, and session secret. The distinct worker UID and group cannot read it. |
+| `/etc/blackspire-buyer-writer-gateway/` | `root:blackspire-writer` | `0750` | Dedicated gateway-only hierarchy outside `/etc/blackspire`; API and worker cannot traverse it. |
+| `/etc/blackspire-buyer-writer-gateway/gateway.json` | `root:blackspire-writer` | `0640` | Gateway capability, server authority binding, and PostgreSQL configuration. Only root and the isolated writer group can read it. |
+| `/run/blackspire/` | `blackspire-writer:blackspire-api` | `0750` | Ephemeral local-transport directory; API may traverse, worker and world may not. |
+| `/run/blackspire/buyer-writer.sock` | `blackspire-writer:blackspire-api` | `0660` | Fixed Unix socket. The gateway owns it and the API-specific group may connect; no TCP listener is permitted. |
 | `/etc/systemd/system/blackspire-command.service`, `blackspire-command-worker.service`, `blackspire-command.target` | `root:root` | `0644` | Reviewed API, worker, and coordination units; only root manages. |
+| `/etc/systemd/system/blackspire-buyer-writer-gateway.service` | `root:root` | `0644` | Rendered gateway unit whose executable and working directory name one immutable release SHA; `current`, workspace paths, and unexpanded tokens are prohibited. |
 
 ### Directories that MUST remain root-owned (runtime must NOT own or write)
 
@@ -48,6 +57,9 @@ Layout rooted at `/opt/blackspire-command` (the code default).
   target broad host or container globs.
 - `/etc/blackspire/command.env` is `root:blackspire 0640`; the API-only file is
   `root:blackspire-api 0640`. Both are root-owned and runtime read-only.
+- `/etc/blackspire-buyer-writer-gateway` and its files remain root-owned and are never readable by
+  `blackspire-api`, `blackspire-worker`, or the broad `blackspire` group. The writer receives no
+  write access to the hierarchy or configuration.
 
 ### Config that must not be broadly readable
 
