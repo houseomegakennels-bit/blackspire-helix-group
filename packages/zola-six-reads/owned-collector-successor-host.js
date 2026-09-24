@@ -44,8 +44,8 @@ function envelopes(bytes){
  if(!bytes.length||bytes.at(-1)!==10)successorFail();let previous='0'.repeat(64);return bytes.toString().trimEnd().split('\n').map((line,i)=>{
  const r=JSON.parse(line);if(Object.keys(r).sort().join(',')!=='digest,event,previous,sequence'||r.sequence!==i||r.previous!==previous||r.digest!==hash({sequence:i,previous,event:r.event}))successorFail();previous=r.digest;return r.event;});
 }
-function originals(){
- const config=json(RENEWAL.configPath);assertRenewalConfig(config);
+function originals(config=json(RENEWAL.configPath)){
+ assertRenewalConfig(config);
  const rb=protectedBytes(SUCCESSOR.releasePath);if(rb.length<SUCCESSOR.prefixLength||rawHash(rb.subarray(0,SUCCESSOR.prefixLength))!==SUCCESSOR.prefixDigest)successorFail();
  const events=envelopes(rb),cb=protectedBytes(config.journalDirectory+'/'+config.runId+'.jsonl');
  if(rawHash(cb)!==SUCCESSOR.collectorDigest)successorFail();
@@ -100,8 +100,12 @@ async function liveFence(config,claims){
  if(runtime.api.pid!==config.apiPid||runtime.worker.pid!==config.workerPid||runtime.api.generation!==claims.apiGeneration||runtime.worker.generation!==claims.workerGeneration)successorFail();
  noCollector();zeroAdmissions(config);return runtime;
 }
-export function readTerminalProof(){
- checkSuccessorSource();const o=originals(),intent=json(SUCCESSOR.archive+'/intent.json'),completion=json(SUCCESSOR.archive+'/completion.json'),terminal=json(SUCCESSOR.archive+'/terminal.json');
+export function readTerminalProof(){checkSuccessorSource();return terminalProof(originals());}
+// Historical validation may use only a configuration accepted by the original
+// pinned renewal predicate. This performs no publication or authority issuance.
+export function readRetainedTerminalProof(config){checkSuccessorSource();return terminalProof(originals(config));}
+function terminalProof(o){
+ const intent=json(SUCCESSOR.archive+'/intent.json'),completion=json(SUCCESSOR.archive+'/completion.json'),terminal=json(SUCCESSOR.archive+'/terminal.json');
  const expectedLog={unit:'blackspire-owned-postgres.service',timestamp:'1790140208365124',messageDigest:SUCCESSOR.logDigest,classification:'SET_ROLE_AUTHENTICATED_PERMISSION_DENIED'};
  const expectedIntent={version:1,kind:'owned-collector-archive-intent',operatorSha:SUCCESSOR.archiveOperatorSha,releaseSha:RENEWAL.releaseSha,operationId:RENEWAL.operationId,attemptId:RENEWAL.attemptId,runId:RENEWAL.runId,configDigest:RENEWAL.configDigest,originalReleasePrefixDigest:SUCCESSOR.prefixDigest,collectorDigest:SUCCESSOR.collectorDigest,originalClaimsDigest:SUCCESSOR.claimsDigest,collectorIntentDigest:o.collectorIntentDigest,files,runtime:intent.runtime,logProof:expectedLog};
  validateHeldLifecycleProof(intent.runtime,{releaseSha:RENEWAL.releaseSha,runId:RENEWAL.runId});

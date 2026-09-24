@@ -3,18 +3,18 @@ const fail=()=>{throw new Error('ADMITTED_READ_RECOVERY_REFUSED');};
 export const recoveryDigest=v=>createHash('sha256').update(typeof v==='string'||Buffer.isBuffer(v)?v:JSON.stringify(v)).digest('hex');
 export const ADMITTED_READ_RECOVERY=Object.freeze({
  releaseSha:'a8e05ef40e44b6695df5b30356af0e411fe36f1a',operationId:'c8b00904-7017-434a-918e-8aaadbae82fd',
- runId:'c2681636-b47f-4c66-8569-be0744c60f16',attemptId:'e0a5951a-287f-4f84-9ec8-5b44c926153b',
- configDigest:'bc04dc2c98d5d4ee167e2ace3e0dde0b40ff7256ab7de90b0b87500e29b21148',
- releaseDigest:'e777a95f4e447d59a67c82f52447fcafd700a295a504cde7eb2ce72612381a5b',
- collectorDigest:'341e067dbc2a7b9c9dde2c62b351029ffb699d6e8bfebbfb8c1f6eeffd77d6a7',
- taskId:'task_6d87d5be99669436',taskDigest:'d074da8ff385cbd38bd86cda1fcb37bbabaf677c47bc59127fd4ac21c8bdd936',
- providerAttemptId:'cap_dispatch_task_6d87d5be99669436_seller_opportunities_search',
- providerAttemptDigest:'91ab456bc3ca283e6f07a95a4e1bab6381d319978a328838b5597d9f248bd1e8',
- inputDigest:'110011d5c250894aa7ab309649e088b75476398c602e32f608c8ab04c4838e95',
- oldDeploymentId:'dpl_88HwD1heHyhM3gAJ5NxYzUzjVmbc',
- newDeploymentId:'dpl_EfJVukRyw39vR6P7koqm99TiaNCw',
- oldOrigin:'https://frontend-3qnw8695h-houseomegakennels-4825s-projects.vercel.app',
- newOrigin:'https://frontend-hjgsm49to-houseomegakennels-4825s-projects.vercel.app'
+ runId:'2cc33dc9-486b-4f59-ab79-386f81c6b2f5',attemptId:'e0a5951a-287f-4f84-9ec8-5b44c926153b',
+ configDigest:'d249c5d60d366ebf4768aa3ade9f2eac7e9b52019a1b588b1d94b205b6e14ae1',
+ releaseDigest:'cd36d04dde54bda546ea7da51b19bd3c5ea314ecc181922f791e62cf38a5a426',
+ collectorDigest:'009ee43f3d9ed7f68274653db2177faea754ca08415089ec0706205b09df3994',
+ taskId:'task_c5c8d9bca504952a',taskDigest:'7ff28e8213bb2edf9a6da656ab1032a402868655eba54c00aca2a28b48cb49d0',
+ providerAttemptId:'cap_dispatch_task_c5c8d9bca504952a_seller_opportunities_search',
+ providerAttemptDigest:'e543cd23198ac79d784fc7ea6371b662618d9550e5567191617d2211fea8ccb0',
+ inputDigest:'3dfe1f52e6a428e60d6532a304e5b2f6ce178afd1854489187e623122d6e0804',
+ oldDeploymentId:'dpl_EfJVukRyw39vR6P7koqm99TiaNCw',
+ newDeploymentId:'dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1',
+ oldOrigin:'https://frontend-hjgsm49to-houseomegakennels-4825s-projects.vercel.app',
+ newOrigin:'https://frontend-dtm0w29el-houseomegakennels-4825s-projects.vercel.app'
 });
 export function readRecoveryJournal(bytes,expectedDigest){
  if(!Buffer.isBuffer(bytes)||recoveryDigest(bytes)!==expectedDigest||bytes.at(-1)!==10)fail();

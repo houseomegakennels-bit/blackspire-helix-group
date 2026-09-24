@@ -9,7 +9,7 @@ import {observeHeldLifecycle} from './held-lifecycle.js';
 import {readOwnedConfigurationBytes} from './owned-buyer-configuration-host.js';
 import {createBuyerStoreProtectedFiles} from '../buyer-store/protected-files.js';
 import {openReleaseJournal} from './commander-journal.js';
-export const READ_RECOVERY_ROOT='/var/lib/blackspire-operator/preparation/admitted-read-recovery-20260924';
+export const READ_RECOVERY_ROOT='/var/lib/blackspire-operator/preparation/credential-recovery-20260924';
 export const READ_RECOVERY_ADMISSION='/etc/blackspire/release-admission';
 const fail=()=>{throw Error('ADMITTED_READ_TRANSITION_PREPARATION_REFUSED');};
 const command=(file,args)=>execFileSync(file,args,{encoding:'utf8',timeout:5000,maxBuffer:65536,stdio:['ignore','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}}).trim();

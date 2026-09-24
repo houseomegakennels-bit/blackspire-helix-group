@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — corrected-credential successor recovery verified
+
+A separate credential-recovery worktree preserves frozen admitted-read recovery 093c0983d5c180ceb3c42564f1f36f7830c344ca. Its observer binds the completed predecessor transition, retired UNKNOWN acceptance, collector, archived original claims/secret and both unchanged failed task/provider/input records. It rejects additional historical admissions, active authority, expired-proof drift, configuration mismatch and source drift. Historical terminal validation accepts only the original renewal predicate using retained snapshot configuration; it never treats present configuration as historical evidence.
+
+The existing fifteen-step durable HELD transition is bound to old epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5 and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. New plan, archive, collector and permit records use a separate protected credential-recovery root. Prior UNKNOWN histories remain unchanged. Fresh acceptance and post-merge writer binding revalidate predecessor lineage; other native release gates remain in place.
+
+Actual read-only preparation passed across seventeen protected files and four services. Inspection digest: 123f6ff717246716c380e170a264108fcb78915ada30ff52a1803ee86e2a38c2. Snapshot digest: 41ce168d69771b3dcdbbc265995b640c75e3c23b68e3feb51673640836be68b8. Deterministic offline npm ci completed. Focused tests passed 112/112; build, lint and syntax typecheck passed. This milestone verifies preparation, not transition execution or acceptance. Production remains HELD. Next: clean operator check, retain plan, apply the coordinated transition and immediately run native fresh acceptance from the canonical worktree.
+
 ## 2026-09-24 — branch credential replaced; corrected Preview Ready
 
 Authenticated Supabase cloud-browser access recovered without another sign-in. The existing project service-role credential was read privately and its JWT role/project claims checked before replacing only the release/zola-production-live Preview value in Vercel. Vercel acknowledged the update. No credential value was printed or recorded; no key rotation or Production environment edit occurred.

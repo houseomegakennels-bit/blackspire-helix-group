@@ -19,7 +19,7 @@ let phase='preflight';
 try{
  if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==3
  ||!['--check','--prepare','--apply','--continue','--repair-preparation'].includes(process.argv[2])
- ||root!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-admitted-read-recovery-20260924')fail();
+ ||root!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-credential-recovery-20260924')fail();
  const mode=process.argv[2],operatorSha=git(root,['rev-parse','HEAD']);
  const verify=()=>{
   if(fs.realpathSync(root)!==root||git(root,['rev-parse','HEAD'])!==operatorSha||git(root,['status','--porcelain','--untracked-files=all']))fail();

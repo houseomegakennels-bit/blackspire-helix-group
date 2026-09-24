@@ -1,3 +1,4 @@
+import {readPriorReadRecovery} from './admitted-read-prior-recovery.js';
 import {readCompletedReadRecovery} from './admitted-read-fresh-acceptance.js';
 import {READ_RECOVERY_ROOT as R} from './admitted-read-transition-preparation.js';
 import {ADMITTED_READ_RECOVERY as P,recoveryDigest as hash} from './admitted-read-recovery.js';
@@ -7,7 +8,7 @@ const canonical='/mnt/blackspire-builds/development-cache/0/workspaces/zola-fina
 const fail=()=>{throw Error('READ_RECOVERY_POSTMERGE_WRITER_REFUSED');};
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export async function ensureReadRecoveryWriterBinding({journal,...input}){
- readCompletedReadRecovery();
+ await readPriorReadRecovery();readCompletedReadRecovery();
  const {inspectReleaseSequenceHistory}=await import(canonical+'/packages/zola-release/commander-sequence.js');
  const state=inspectReleaseSequenceHistory(journal.stream('release').events());
  if(input.stage!=='post_merge_held_epoch'||state.pending?.stage!==input.stage||state.context.operationId!==P.operationId

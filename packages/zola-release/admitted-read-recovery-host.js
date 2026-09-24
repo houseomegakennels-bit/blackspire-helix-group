@@ -1,3 +1,4 @@
+import {readPriorReadRecovery,PRIOR_READ_ROOT} from './admitted-read-prior-recovery.js';
 import fs from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {ADMITTED_READ_RECOVERY as P,recoveryDigest as hash,readRecoveryJournal,classifyAdmittedReadRecovery} from './admitted-read-recovery.js';
@@ -6,11 +7,10 @@ import {acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shar
 import {observeHeldLifecycle} from './held-lifecycle.js';
 import {observeReceiverDeployment} from './receiver-origin-transition.js';
 import {inspectReleaseSequence} from './commander-sequence.js';
-import {readTerminalProof} from '../zola-six-reads/owned-collector-successor-host.js';
 const fail=()=>{throw Error('ADMITTED_READ_RECOVERY_OBSERVATION_REFUSED');};
 const root='/etc/blackspire/release-admission';
 const releasePath='/var/lib/blackspire-operator/release-operations/release.jsonl';
-const collectorPath='/var/lib/blackspire-operator/preparation/owned-collector-successor-20260923/collector/'+P.runId+'.jsonl';
+const collectorPath=PRIOR_READ_ROOT+'/collector/'+P.runId+'.jsonl';
 function protectedBytes(file,max=2097152){
  const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
  try {const s=fs.fstatSync(fd);if(!s.isFile()||s.uid!==0||s.nlink!==1||(s.mode&0o022)||s.size>max)fail();
@@ -41,12 +41,11 @@ export async function observeAdmittedReadRecovery(){
   const sequence=inspectReleaseSequence(events.slice(starts[0])),pending=sequence.pending;
   const state=validateReleaseAdmissionState(readRootOwnedJson(root+'/state.json',{groupId:gid}));
   if(state.releaseSha!==P.releaseSha||state.runId!==P.runId||state.apiGeneration!==null||state.workerGeneration!==null)fail();
-  const originalArchive=readTerminalProof();
-  if(originalArchive.terminalProofDigest!=='f773d1d179841c5d598879deaa4b72514fee379686d700405f1fb34ee82c48e6')fail();
-  const permit=events.filter(e=>e.type==='premerge_successor_reads_intent');
-  const retired=events.filter(e=>e.type==='premerge_successor_reads_retired');
-  if(permit.length!==1||retired.length!==1||retired[0].outcome!=='UNKNOWN'||retired[0].claimsDigest!==permit[0].claimsDigest
-   ||hash(permit[0].claims)!==permit[0].claimsDigest)fail();
+  const prior=await readPriorReadRecovery();
+  const permit=[{claims:prior.claims}];
+  if(hash(readRootOwnedJson(root+'/premerge-reads.json',{groupId:gid}))!==hash(prior.claims))fail();
+  const secret=readRootOwnedJson(root+'/premerge-reads-secret.json',{groupId:0});
+  if(secret.permitId!==prior.claims.permitId||hash(secret.token)!==prior.claims.tokenDigest)fail();
   const runtime=await observeHeldLifecycle({releaseSha:P.releaseSha,runId:P.runId});
   if(runtime.api.pid!==config.apiPid||runtime.worker.pid!==config.workerPid
    ||runtime.api.generation!==permit[0].claims.apiGeneration||runtime.worker.generation!==permit[0].claims.workerGeneration)fail();
@@ -84,6 +83,7 @@ export async function observeAdmittedReadRecovery(){
    ||hash(protectedBytes('/etc/blackspire/receiver-origin.env',4096))!==hash(receiver)
    ||hash(await observeHeldLifecycle({releaseSha:P.releaseSha,runId:P.runId}))!==hash(runtime)
    ||hash(readRootOwnedJson(root+'/state.json',{groupId:gid}))!==hash(state))fail();
+  if(hash((await readPriorReadRecovery()).proof)!==hash(prior.proof))fail();
   return proof;
  }finally{if(db){try{db.exec('ROLLBACK');}finally{db.close();}}lock.close();}
 }

@@ -1,3 +1,4 @@
+import {readPriorReadRecovery} from './admitted-read-prior-recovery.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -141,6 +142,7 @@ export function createNativeReadRecoveryHost(plan){
    return {status:'BINDING_PREPARATION_RECONCILED',planDigest:hash(plan),productionOpen:false};
   },
   async fence(){
+   await readPriorReadRecovery();
    if(hash(fs.readFileSync('/var/lib/blackspire-operator/release-operations/release.jsonl'))!==P.releaseDigest
     ||fs.realpathSync('/opt/blackspire-command/current')!=='/opt/blackspire-command/releases/'+P.releaseSha)fail();
    const state=validateReleaseAdmissionState(JSON.parse(current('state')));
@@ -196,7 +198,7 @@ export function createNativeReadRecoveryHost(plan){
    const l=await lifecycle();if(!same(l,get('lifecycle')))fail();
    await observe('publish_store_manifest');await observe('start_owned_store');await observe('publish_writer_binding');await observe('prepare_collector');
    await observeReceiverDeployment({releaseSha:P.releaseSha,mode:'preview',origin:P.newOrigin,deploymentId:P.newDeploymentId});
-   unchangedRows();
+   unchangedRows();await readPriorReadRecovery();
   },
   events:()=>eventsJournal.stream('release').events(),
   append:e=>eventsJournal.stream('release').append(e),

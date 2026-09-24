@@ -1,3 +1,4 @@
+import {readPriorReadRecovery} from './admitted-read-prior-recovery.js';
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {randomBytes,randomUUID} from 'node:crypto';
@@ -32,6 +33,7 @@ export function readCompletedReadRecovery(){
  return {plan,snapshot,inspection,transitionDigest:hash(raw),state};
 }
 export async function fenceFreshReadRecovery(context,call){
+ await readPriorReadRecovery();
  const h=readCompletedReadRecovery(),plan=h.plan,config=validateCollectorConfig(value('collector-config'));
  const {inspectReleaseSequenceHistory}=await import(canonical+'/packages/zola-release/commander-sequence.js');
  const state=inspectReleaseSequenceHistory(context.journal.stream('release').events());
