@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-09-24 — coordinated admitted-read recovery implemented
+
+The separate recovery operator now implements a durable HELD-only transition: stop services, preserve the expired permit files, prepare and publish the new receiver and owned-store bindings, create a new epoch, restart the exact candidate, publish the runtime manifest, renew the writer binding through native checks, and prepare a fresh collector configuration. Each step records intent before execution and observes an uncertain result without dispatching that step again. The original task and provider attempt remain UNKNOWN and unchanged.
+
+Fresh acceptance uses the installed canonical collector and shared delegated-session subsystem with a new epoch and six new idempotency keys. A separately retained permit history refuses unknown collection replay. The exact frozen native release entry is source-hash checked; its fixed operation set receives the fresh six-read adapter and a post-merge writer-binding adapter that uses the real recovery binding as its predecessor. Other release gates stay native. The old main journal and its failed permit histories are not rewritten or relabeled.
+
+Read-only native preparation passed across 17 protected files and four running services. Remote main still matches f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8. Focused tests pass 64/64, covering interrupted transition steps, missing durable intents, unobservable effects, wrong/duplicated acceptance reads, permit/deployment mismatches, mutations, paid requests and frozen-entry source drift. Build, lint and syntax typecheck pass. This entry records implementation only: live transition, fresh acceptance and production OPEN remain UNVERIFIED. Next, run the clean operator check, retain its plan, apply the coordinated transition and immediately continue the native release. User authorization remains in force.
+
 ## 2026-09-24 — admitted Seller failure inspection passes; runtime recovery unfinished
 
 A separate read-only recovery observer now validates the exact retained release and collector hash chains, original archive proof, current HELD lifecycle, expired inactive successor permit, sole Seller task and provider attempt, and absence of the other five task/input admissions. It also verifies the new Vercel deployment by both ID and hostname. Its first host run exposed an incompatibility in the historical retirement reader; the observer now validates the full pinned journal bytes/hash chain and independently parses the exact current-operation segment with the native sequence grammar. Historical records are not rewritten or discarded on disk.
