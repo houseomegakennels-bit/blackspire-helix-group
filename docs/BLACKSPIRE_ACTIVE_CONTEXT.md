@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-09-24 — mixed-read retirement implementation and successor preflight
+
+The exact merged candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e passed PR125 CI36006474929. Native verifyReleaseSource and verifyReleaseCi verified the exact branch, required jobs and immutable CI artifact against main f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8. The sealed production artifact remains e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a, deployed=false and productionAccepted=false.
+
+A separate schema-six retirement validator now pins all 186 predecessor release events, their current-operation segment, mixed completed/UNKNOWN evidence, current HELD epoch and exact repaired successor. The coordinator retains stop intent before dispatch, never repeats an uncertain stop, requires observed quiescence with no detached service users, preserves protected writer/permit files, and appends retirement only after repeated successor and unchanged-state verification. Existing retirement schemas retain their original validators.
+
+The native running observer passed with admission exclusion held. It verified both older recoveries, unchanged task/provider/input rows, inactive expired authority, writer archives, installed writer manifest and content-addressed configuration, source provisioning records and loaded service unit/drop-in files. Protected-state digest ede3ccf26694e1050179384e64cbe82427c076053d9e49d73d93fb833370b40c; lifecycle digest e41f5705c50ee235918e4719eefb7d45693d8b73c3481d5fd7c2e9f651d97c4e. No credential bytes were recorded. Forty-two focused tests pass, including synthetic lost-acknowledgement, survivor, disk-failure and drift cases; build, lint and syntax typecheck pass.
+
+No retirement or stop was executed. Current a8e05ef runtime remains HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a. Full successor preparation/activation and fresh acceptance remain UNVERIFIED. Before executing the retirement, complete the exact current-predecessor input/migration preparation, schema-six activation/configuration/gateway/HELD consumers, permit/writer archival and native operator composition. These still contain2636-only predecessor or old canonical-root guards. Preserve them until explicit successor support is tested; do not weaken or bypass them. User release authorization remains in force.
+
 ## 2026-09-24 — Buyer repair merged; successor artifact sealed and Preview Ready
 
 PR155 merged into release/zola-production-live as f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e after exact repair-head af6c58ba8eb4b32743b0b5124c7249a51b0e41eb passed all CI36005166601 gates and Vercel contexts. PR125 now targets the new candidate; its own exact merged-head CI36006474929 is running and remains a required gate.

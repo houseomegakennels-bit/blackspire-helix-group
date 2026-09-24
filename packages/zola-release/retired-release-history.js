@@ -1,3 +1,4 @@
+import {partitionMixedRetirement} from './mixed-retirement-history.js';
 import {PARTIAL_RELEASE,validatePartialReleasePrefix,validatePartialRetirementEvent} from './partial-retirement-history.js';
 import {hash} from './commander-journal.js';
 export const BLOCKED_RELEASE=Object.freeze({
@@ -20,6 +21,7 @@ export function validateBlockedReleasePrefix(events){
 export function partitionRetiredReleaseHistory(events){
  const indices=events.flatMap((row,index)=>row?.type==='sequence_retired'?[index]:[]);
  if(!indices.length)return {current:events,retired:null,prefix:null};
+ if(indices.length===3)return partitionMixedRetirement(events);
  if(indices.length===2){
   const index=indices[1],prefix=events.slice(0,index),event=events[index];validatePartialReleasePrefix(prefix);validatePartialRetirementEvent(event);
   const previous=partitionRetiredReleaseHistory(prefix);if(previous.retired.schema!==4||previous.retired.successorReleaseSha!==PARTIAL_RELEASE.releaseSha||previous.retired.profileDigest!==PARTIAL_RELEASE.profileDigest)fail();
@@ -48,6 +50,6 @@ export function partitionRetiredReleaseHistory(events){
 // Called by the production composition before constructing any stage adapters.
 export function assertRetiredReleaseSuccessor(events,release){
  const {retired}=partitionRetiredReleaseHistory(events);
- if(retired&&(release?.releaseSha!==retired.successorReleaseSha||release?.backendProfile!==retired.backendProfile||release?.profileDigest!==retired.profileDigest||retired.schema===5&&Object.hasOwn(release??{},'operationId')&&release.operationId!==retired.successorOperationId))fail();
+ if(retired&&(release?.releaseSha!==retired.successorReleaseSha||release?.backendProfile!==retired.backendProfile||release?.profileDigest!==retired.profileDigest||[5,6].includes(retired.schema)&&Object.hasOwn(release??{},'operationId')&&release.operationId!==retired.successorOperationId))fail();
  return true;
 }

@@ -23,14 +23,15 @@ const noCollector=()=>{for(const n of fs.readdirSync('/proc').filter(n=>/^[0-9]+
   if(args.some(a=>/(?:^|\/)zola-(?:six-read-collect|release-owned[^/]*)\.js$/.test(a)))fail();
  }catch(e){if(!['ENOENT','ESRCH'].includes(e.code))throw e;}
 }};
-export async function observeMixedReadFailure(){
+export async function observeMixedReadFailure({lease:borrowedLease}={}){
  if(process.getuid?.()!==0||process.versions.node!=='22.23.1')fail();
  checkSource();noCollector();
  const old=await import(source+'/packages/zola-release/admitted-read-fresh-acceptance.js');
  const prior=await import(source+'/packages/zola-release/admitted-read-prior-recovery.js');
  const h=old.readCompletedReadRecovery();await prior.readPriorReadRecovery();
  if(hash(h.plan)!==P.planDigest||h.transitionDigest!==P.transitionDigest||!h.state.completed||h.plan.newRunId!==P.runId)fail();
- const gid=fs.lstatSync(A+'/state.json').gid,lease=acquireReleaseAdmissionLock({exclusive:false,allowPending:true,owner:0,groupId:gid});
+ const gid=fs.lstatSync(A+'/state.json').gid,lease=borrowedLease??acquireReleaseAdmissionLock({exclusive:false,allowPending:true,owner:0,groupId:gid});
+ lease.assertIdentity();
  try{
   const state=()=>validateReleaseAdmissionState(JSON.parse(required(A+'/state.json',gid,0o640)));
   const before=state(),config=value('collector-config'),lifecycle=value('lifecycle');
@@ -95,5 +96,5 @@ export async function observeMixedReadFailure(){
    rowsUnchanged:true,archivesUnchanged:true,otherReadTasks:0,otherReadInputs:0,collected:collected.length,admitted:admitted.length,
    serviceCount:units.length,lifecycleBound:true,writerBound:true,deploymentVerified:true,stage:sequence.pending?.stage,
    ordinal:sequence.nextOrdinal,pendingAttemptId:sequence.pending?.attemptId});
- }finally{lease.close();}
+ }finally{if(!borrowedLease)lease.close();}
 }
