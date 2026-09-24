@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {hash} from './commander-journal.js';
-import {MIXED_WRITER_REJECTION as P,validateMixedWriterRejectionEvent,validateMixedWriterRejectionPrefix} from './mixed-writer-rejection.js';
+import {MIXED_WRITER_REJECTION as P,MIXED_WRITER_UNRESERVED,validateRetiredWriterPrefix,validateMixedWriterRejectionEvent,validateMixedWriterRejectionPrefix} from './mixed-writer-rejection.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
 import {observeHeldLifecycle} from './held-lifecycle.js';
 import {acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
@@ -102,6 +102,35 @@ export async function repairMixedRejectedWriter(context,call,{fence}){
   if(read()!==plan.after)fail();
   lease.assertIdentity();fence();
   files.record(root+'/result.json',{version:1,status:'EXPIRED_UNISSUED_WRITER_RETIRED',eventDigest:hash(plan.event),targetAfterDigest:hash(plan.after)});
+  const finalRows=stream.events(),Q=MIXED_WRITER_UNRESERVED;
+  if(finalRows.length===Q.eventCount){
+   const event=observeMixedUnreservedRetirement(finalRows,read());
+   lease.assertIdentity();fence();stream.append(event);
+  }else validateRetiredWriterPrefix(finalRows.slice(0,Q.eventCount),finalRows[Q.eventCount]);
+  files.record(root+'/unreserved-result.json',{version:1,eventDigest:hash(stream.events()[Q.eventCount])});
   return {status:'EXPIRED_UNISSUED_WRITER_RETIRED'};
  }finally{lease?.close();}
+}
+
+export function observeMixedUnreservedRetirement(rows,targetBytes){
+ const Q=MIXED_WRITER_UNRESERVED;
+ if(rows.length!==Q.eventCount||hash(rows)!==Q.prefixDigest||hash(targetBytes)!==Q.targetDigest)fail();
+ const handles=rows.filter(r=>r.type==='bounded_writer_admission_handle'&&r.attemptId===Q.attemptId);
+ const old=handles[0]?.handle,current=handles[1]?.handle,t=JSON.parse(targetBytes);
+ if(handles.length!==2||hash(handles[1])!==Q.handleRowDigest||current.requestId!==old.requestId||current.jti===old.jti)fail();
+ const sql='BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SELECT json_build_object('+
+ "'admissionAbsent',not exists(select from buyer_writer.operation_admissions where issuer="+lit(current.authority.issuer)+" and jti="+lit(current.jti)+"::uuid),"+
+ "'originalExpiredReserved',a.expires_at<clock_timestamp() and a.state='reserved' and a.subject is null and a.result is null,"+
+ "'requestCollision',a.request_id="+lit(current.requestId)+"::uuid and a.raw_body_digest="+lit(old.bodyDigest)+","+
+ "'dispatchAbsent',not exists(select from buyer_writer.dispatches where id="+lit(current.requestId)+"::uuid),"+
+ "'targetCurrent',j.updated_at="+lit(t.updatedAt)+"::timestamptz and j.user_id="+lit(t.ownerId)+"::uuid"+
+ " and j.user_id="+lit(current.authority.subject)+"::uuid and buyer_writer.criteria(to_jsonb(j))="+lit(JSON.stringify(t.criteria))+"::jsonb"+
+ " and j.county='Zola Acceptance' and j.property_type='acceptance' and j.status='failed',"+
+ "'noActiveDispatches',not exists(select from buyer_writer.dispatches where job_id=j.id and state in('pending','processing')))"+
+ " from buyer_writer.operation_admissions a cross join public.\"SearchJob\" j where a.issuer="+lit(old.authority.issuer)+" and a.jti="+lit(old.jti)+"::uuid and j.id="+lit(t.jobId)+"::uuid; ROLLBACK;";
+ const raw=execFileSync('/usr/bin/docker',['exec','--user','70:70','-i','blackspire-owned-postgres','psql','-X','-qAt','-U','blackspire_cluster_admin','-d','postgres','-v','ON_ERROR_STOP=1'],
+ {input:sql,encoding:'utf8',timeout:10000,maxBuffer:8192,stdio:['pipe','pipe','pipe'],env:{PATH:'/usr/bin:/bin',LC_ALL:'C'}});
+ const proof=JSON.parse(raw.trim()),event={schema:1,type:Q.type,releaseSha:Q.releaseSha,operationId:Q.operationId,attemptId:Q.attemptId,
+ prefixDigest:Q.prefixDigest,handleDigest:Q.handleDigest,targetDigest:Q.targetDigest,proof,proofDigest:hash(proof)};
+ validateRetiredWriterPrefix(rows,event);return event;
 }

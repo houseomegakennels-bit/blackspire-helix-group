@@ -1,4 +1,4 @@
-import {MIXED_WRITER_REJECTION,validateMixedWriterRejectionPrefix} from './mixed-writer-rejection.js';
+import {RETIRED_WRITER_EVENT_TYPES,validateRetiredWriterPrefix} from './mixed-writer-rejection.js';
 import {partitionRetiredReleaseHistory} from './retired-release-history.js';
 import {buyerWriterAdmissionHandleDigest} from '../buyer-writer/admitted-local-client.js';
 import {inspectReleaseSequenceHistory} from './commander-sequence.js';
@@ -16,12 +16,12 @@ export function inspectBoundedWriterAdmissionHistory(events){
  inspectReleaseSequenceHistory(events);
  const found=[];
  for(let index=0;index<events.length;index++){
-  const row=events[index];if(![type,MIXED_WRITER_REJECTION.type].includes(row?.type))continue;
-  const origin=row.type===MIXED_WRITER_REJECTION.type?events.slice(0,index).filter(x=>x.type===type&&x.attemptId===row.attemptId).at(-1):row;
+  const row=events[index];if(![type,...RETIRED_WRITER_EVENT_TYPES].includes(row?.type))continue;
+  const origin=RETIRED_WRITER_EVENT_TYPES.includes(row.type)?events.slice(0,index).filter(x=>x.type===type&&x.attemptId===row.attemptId).at(-1):row;
   const bound=Object.fromEntries(keys.map(key=>[key,origin?.[key]]));
   const prefix=events.slice(0,index+1);
   const journal=createBoundedWriterAdmissionJournal({events:()=>prefix,append:()=>{reject();}},bound);
-  const entries=journal.entries();if(row.type===MIXED_WRITER_REJECTION.type){if(entries.length)reject();continue;}
+  const entries=journal.entries();if(RETIRED_WRITER_EVENT_TYPES.includes(row.type)){if(entries.length)reject();continue;}
   const validated=entries.find(entry=>entry.operation===row.operation);
   if(!validated||JSON.stringify(validated)!==JSON.stringify(row))reject();
   found.push(validated);
@@ -41,9 +41,9 @@ export function createBoundedWriterAdmissionJournal(stream,bound){
    ||sequence.context.principal!==bound.principal
    ||['attemptId','inputDigest','checkOutputDigest'].some(k=>pending[k]!==bound[k]))reject();
   const found=new Map();
-  for(const event of partitionRetiredReleaseHistory(events).current.filter(row=>[type,MIXED_WRITER_REJECTION.type].includes(row?.type))){
-   if(event.type===MIXED_WRITER_REJECTION.type){
-    validateMixedWriterRejectionPrefix(events.slice(0,events.indexOf(event)),event);
+  for(const event of partitionRetiredReleaseHistory(events).current.filter(row=>[type,...RETIRED_WRITER_EVENT_TYPES].includes(row?.type))){
+   if(RETIRED_WRITER_EVENT_TYPES.includes(event.type)){
+    validateRetiredWriterPrefix(events.slice(0,events.indexOf(event)),event);
     if(bound.releaseSha!==event.releaseSha||bound.operationId!==event.operationId||bound.attemptId!==event.attemptId
      ||found.size!==1||found.get('issue')?.handleDigest!==event.handleDigest)reject();
     found.clear();continue;

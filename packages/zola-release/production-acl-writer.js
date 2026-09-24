@@ -1,3 +1,4 @@
+import {mixedWriterRequestSeed} from './mixed-writer-rejection.js';
 import {matchesAcceptanceTargetBackend,verifyAcceptanceTargetProfile} from '../buyer-writer/acceptance-target-backend.js';
 import {createHash} from 'node:crypto';
 import {readOwnedDatabaseProfile,databaseProfileDigest,validateManagementCredential,databaseTlsOptions} from '../buyer-writer/database-profile.js';
@@ -198,7 +199,7 @@ const inspectionKeys=['schema','kind','releaseSha','operationId','attemptId','wo
  'state','businessRowsChanged','paidProviderCalls','receiptDigest','compensationComplete','outcomeUnknown'];
 const admittedReceiptKeys=['admittedGatewayReceiptWitness','admittedGatewayReceiptDigest','admittedGatewayReceiptAttemptId'];
 function mutationUuid(bound){
- const bytes=createHash('sha256').update(JSON.stringify(bound)).digest('hex');
+ const bytes=createHash('sha256').update(JSON.stringify(mixedWriterRequestSeed(bound))).digest('hex');
  return `${bytes.slice(0,8)}-${bytes.slice(8,12)}-4${bytes.slice(13,16)}-8${bytes.slice(17,20)}-${bytes.slice(20,32)}`;
 }
 function writerRequest(bound){

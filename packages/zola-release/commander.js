@@ -90,7 +90,7 @@ function history(journal){
    'buyer_writer_activation_intent','buyer_writer_activation_result',
    'candidate_deployment_intent','candidate_deployment_step_intent','candidate_deployment_step_result','candidate_deployment_result',
    'held_writer_binding_intent','held_writer_binding_step_intent','held_writer_binding_step_result','held_writer_binding_result',
-   'bounded_writer_admission_handle','bounded_writer_unissued_retired','rollback_acceptance_probe_intent','rollback_acceptance_probe_result',
+   'bounded_writer_admission_handle','bounded_writer_unissued_retired','bounded_writer_unreserved_retired','rollback_acceptance_probe_intent','rollback_acceptance_probe_result',
    'rollback_verification_probe_intent','rollback_verification_probe_result',
    'final_release_record_intent','final_release_open_record_intent',
    'held_acceptance_mint_intent','held_acceptance_minted','held_acceptance_consume_intent',

@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-24 — request-ID collision recovery verified
+
+Clean d95fca5e24f87406cdeb0ad6ff6123891b24924a recorded the expired unissued retirement and refreshed the protected test target. Its replacement token reused the original request ID, so the database uniqueness constraint correctly refused reservation. The release stopped with a second retained issue handle at 236 events. Native read-only observation confirms the second admission is absent, the original reservation is expired and unbound, both share the request ID, neither has a dispatch, the target version is current and no active dispatch exists.
+
+The correction derives a distinct deterministic request identity only for this exact rejected attempt. A second explicit retirement is pinned to the exact 236-event prefix and second handle; it cannot apply to an admitted request or another operation. Both blocked requests remain preserved. Twenty-six focused tests pass. The full commander validates an in-memory native model of the second retirement with zero selected handles and no physical mutation. Next: execute the fixed CLI, then continue acceptance. Runtime remains HELD; no merge or OPEN is claimed.
+
+
 ## 2026-09-24 — expired writer issuance diagnosed; exact recovery prepared
 
 Clean e20986021db1a14fb3c88749fe007759bad0c585 retained the current writer issue handle, then stopped at the bounded writer gate. Native recovery returned ADMISSION_REJECTED. A read-only cluster-administrator observation proved the original admission is expired, reserved and unbound, matches its durable request/body, and has no dispatch. The dedicated synthetic acceptance job matches owner, signer and criteria but its saved version is stale after prior completed acceptance. No active dispatch exists and the job is failed. No business change resulted from this rejected issuance.

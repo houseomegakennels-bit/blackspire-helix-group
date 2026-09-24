@@ -25,3 +25,33 @@ export function validateMixedWriterRejectionPrefix(events,row){
  if(handles.length!==1||handles[0].operation!=='issue'||hash(handles[0])!==P.handleRowDigest)fail();
  return true;
 }
+
+export const MIXED_WRITER_UNRESERVED=Object.freeze({...P,
+ type:'bounded_writer_unreserved_retired',eventCount:236,
+ prefixDigest:'f3f0124f659308437825367753fb6f7858e33b37601bb999296b9f8e49a4e424',
+ handleDigest:'562bfecfde16b433b2d7c7937ddccd6e26e3e7b5d28e4e076e0b22a8761de0fc',
+ handleRowDigest:'4b688214103585eee7e9d30dfc96941b26dec799c0a529e9156178f61160c7b2',
+ targetDigest:'1142db3c42add69f6095752b7c8a16d133eac6e5f5345baba5c19a7aed2fc6de'
+});
+export const RETIRED_WRITER_EVENT_TYPES=Object.freeze([P.type,MIXED_WRITER_UNRESERVED.type]);
+export function validateMixedUnreservedEvent(row){
+ const Q=MIXED_WRITER_UNRESERVED;
+ if(!exact(row,'schema,type,releaseSha,operationId,attemptId,prefixDigest,handleDigest,targetDigest,proof,proofDigest')
+  ||row.schema!==1||['type','releaseSha','operationId','attemptId','prefixDigest','handleDigest','targetDigest'].some(k=>row[k]!==Q[k])
+  ||!exact(row.proof,'admissionAbsent,originalExpiredReserved,requestCollision,dispatchAbsent,targetCurrent,noActiveDispatches')
+  ||Object.values(row.proof).some(x=>x!==true)||hash(row.proof)!==row.proofDigest)fail();
+ return row;
+}
+export function validateRetiredWriterPrefix(events,row){
+ if(row?.type===P.type)return validateMixedWriterRejectionPrefix(events,row);
+ const Q=MIXED_WRITER_UNRESERVED;validateMixedUnreservedEvent(row);
+ if(events.length!==Q.eventCount||hash(events)!==Q.prefixDigest)fail();
+ const handles=events.filter(x=>x.type==='bounded_writer_admission_handle'&&x.attemptId===Q.attemptId);
+ if(handles.length!==2||hash(handles[1])!==Q.handleRowDigest||handles[1].operation!=='issue'
+  ||handles[0].handle.requestId!==handles[1].handle.requestId||handles[0].handle.jti===handles[1].handle.jti)fail();
+ return true;
+}
+export function mixedWriterRequestSeed(bound){
+ if(bound.releaseSha!==P.releaseSha||bound.operationId!==P.operationId||bound.attemptId!==P.attemptId)return bound;
+ return {...bound,rejectedIssuanceSuccessor:MIXED_WRITER_UNRESERVED.handleDigest};
+}

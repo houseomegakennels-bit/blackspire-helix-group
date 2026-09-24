@@ -23,3 +23,22 @@ test('retirement rejects changed bindings, absent fields and fabricated history'
  for(const rows of [[],Array.from({length:233},()=>({schema:1,type:'invented'}))])
   assert.throws(()=>validateMixedWriterRejectionPrefix(rows,event()));
 });
+
+import {MIXED_WRITER_UNRESERVED as Q,validateMixedUnreservedEvent,mixedWriterRequestSeed} from '../packages/zola-release/mixed-writer-rejection.js';
+function unreserved(){
+ const proof=Object.fromEntries('admissionAbsent,originalExpiredReserved,requestCollision,dispatchAbsent,targetCurrent,noActiveDispatches'.split(',').map(k=>[k,true]));
+ return {schema:1,type:Q.type,releaseSha:Q.releaseSha,operationId:Q.operationId,attemptId:Q.attemptId,prefixDigest:Q.prefixDigest,handleDigest:Q.handleDigest,targetDigest:Q.targetDigest,proof,proofDigest:hash(proof)};
+}
+test('request collision retirement requires absent admission and expired original reservation',()=>{
+ validateMixedUnreservedEvent(unreserved());
+ for(const k of Object.keys(unreserved().proof)){const e=unreserved();e.proof[k]=false;e.proofDigest=hash(e.proof);assert.throws(()=>validateMixedUnreservedEvent(e));}
+ for(const k of Object.keys(unreserved())){const e=unreserved();delete e[k];assert.throws(()=>validateMixedUnreservedEvent(e));}
+});
+test('only the exact rejected attempt gets a distinct deterministic request identity',()=>{
+ const bound={releaseSha:P.releaseSha,operationId:P.operationId,attemptId:P.attemptId,workspace:'zola-production',principal:'blackspire-release-root',inputDigest:'a'.repeat(64),checkOutputDigest:'b'.repeat(64)};
+ assert.notEqual(hash(mixedWriterRequestSeed(bound)),hash(bound));
+ assert.equal(hash(mixedWriterRequestSeed(bound)),hash(mixedWriterRequestSeed({...bound})));
+ for(const k of ['releaseSha','operationId','attemptId']){
+  const other={...bound,[k]:'different'};assert.equal(mixedWriterRequestSeed(other),other);
+ }
+});
