@@ -1,3 +1,5 @@
+import {readFixedCollectorEvidence} from './production-zero-proofs.js';
+import {readRootOwnedJson} from '../buyer-writer/protected-json.js';
 import {repairMixedRejectedWriter} from './mixed-writer-rejection-host.js';
 import {wrapMixedLivePreparation} from './mixed-live-preparation.js';
 import {execFileSync} from 'node:child_process';
@@ -72,7 +74,11 @@ export function createMixedNativeOperations(context,{fence}){
   prepareVps:input=>prepareVpsCutoverPlan(input,{host:createOwnedRuntimeVpsHost()}),
   runVps:(input,options)=>runVpsCutover(input,{...options,host:createOwnedRuntimeVpsHost()})
  };
- const fixed=createFixedProductionOperations(context,{providerQuery,isolationProof,deployment,held:{
+ const fixed=createFixedProductionOperations(context,{providerQuery,isolationProof,deployment,
+  zeroProof:{readCollector:binding=>{stable();return readFixedCollectorEvidence(binding,{
+   root:'/var/lib/blackspire-operator/preparation/mixed-successor-acceptance-'+P.successorOperationId+'/live/collector',
+   config:readRootOwnedJson('/var/lib/blackspire-operator/preparation/six-read-live-config.json',{groupId:0,maxBytes:16384})});}},
+  held:{
   candidate:()=>collectMixedIsolatedCandidate(fence),
   establishHeld:()=>establishCandidateHeld(context,{ownedStore:()=>createOwnedRuntimeStoreTransition()})
  }});

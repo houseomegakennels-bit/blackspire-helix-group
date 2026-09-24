@@ -2728,3 +2728,11 @@ Next: execute the clean fixed CLI to reconcile store startup, verify readiness a
 Clean 2e5a805058ff9e0854368c09ce7ffec3881dd66c reconciled the retained store startup, completed VPS readiness/generation checks and confirmed journaled_vps_cutover. All four services run the merged release under HELD. Postmerge writer binding and held epoch are confirmed. Main CI run 36035924867 completed successfully at 6cdd47e9222501980d2dce0e0e42e05e91db05b0.
 
 The acceptance permit was minted and api_health intent retained at 314 events. Its fixed HTTP client suppressed Host, causing HTTP 400 before the health handler; native comparison with the same fixed endpoint and Host enabled returns 200. The client now emits the standard Host header while retaining the fixed loopback destination, response checks and timeout. Six tests pass, including a real HTTP server that verifies the generated header. Next: reconcile the same health observation and continue bounded postmerge acceptance. OPEN remains UNVERIFIED.
+
+## 2026-09-24 — six live reads passed; owned zero-proof binding corrected
+
+Clean fa0299e743f8c0982d9d7d90b8772820310105c6 confirmed API health, worker readiness, generation fence, all six live reads and production smoke. The retained collector reports PASS_LIVE_ACCEPTANCE. At 335 events zero_paid_nexus blocked because the default reader searched the old journal directory.
+
+The fixed mixed operator now selects its exact protected live collector directory and validates its protected configuration. Owned mutation verification uses the existing dual-source validators, binding configuration digest, merged SHA, epoch, identity and profile before comparing all seventeen tables. The legacy path remains separately validated. Four zero-proof tests pass. Native read-only operation checks against the retained report and authoritative command usage return paidProviderCalls=0 and mutationDelta=0 across seventeen tables, with no physical journal writes.
+
+Next: resume the pending zero-proof operation, finish rollback verification and final release records, then guarded OPEN. All services run the merged release HELD; OPEN remains UNVERIFIED.

@@ -1,3 +1,5 @@
+import {compareOwnedDivisionSnapshots,validateOwnedOwnerWitness} from '../zola-six-reads/owned-database-observer.js';
+import {validateCollectorConfig} from '../zola-six-reads/collector.js';
 import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -58,7 +60,7 @@ function parseJournal(filename,root){
  return events;
 }
 
-export function readFixedCollectorEvidence(binding,{root=PRODUCTION_COLLECTOR_JOURNAL_ROOT}={}){
+export function readFixedCollectorEvidence(binding,{root=PRODUCTION_COLLECTOR_JOURNAL_ROOT,config}={}){
  try{
   const rootStat=fs.lstatSync(root);if(!rootStat.isDirectory()||rootStat.isSymbolicLink()||rootStat.uid!==0||(rootStat.mode&0o7777)!==0o700)reject();
   const names=fs.readdirSync(root).filter(name=>name.endsWith('.jsonl'));
@@ -70,7 +72,7 @@ export function readFixedCollectorEvidence(binding,{root=PRODUCTION_COLLECTOR_JO
    if(reports.length!==1)continue;
    const reportEvent=reports[0],run=events.filter(row=>row?.type==='run');
    if(run.length===1&&run[0].releaseSha===binding.releaseSha&&reportEvent.status==='PASS_LIVE_ACCEPTANCE'
-    &&reportEvent.digest===heldReadEvidence(binding).collectorDigest)matches.push({events,reportDigest:reportEvent.digest});
+    &&reportEvent.digest===heldReadEvidence(binding).collectorDigest)matches.push({events,reportDigest:reportEvent.digest,...(config?{config:validateCollectorConfig(config)}:{})});
   }
   return matches.length===1?matches[0]:null;
  }catch(error){if(error?.message==='Fixed production zero-proof operation rejected')throw error;return null;}
@@ -141,10 +143,15 @@ function paidEvidence(binding,source,command){
 function mutationEvidence(context,binding,source){
  const reportDigest=validateCollector(binding,source),before=source.events.filter(row=>row?.type==='database_before'),after=source.events.filter(row=>row?.type==='database_after');
  if(before.length!==1||after.length!==1)reject();
- const config={releaseSha:binding.releaseSha,runId:before[0].observation?.snapshot?.runId};
- validateOwnerWitness(before[0].observation?.owner,config,'before');validateOwnerWitness(after[0].observation?.owner,config,'after');
+ const owned=context.release?.backendProfile==='owned-postgres-v1';
+ const config=owned?validateCollectorConfig(source.config):{releaseSha:binding.releaseSha,runId:before[0].observation?.snapshot?.runId};
+ if(owned&&(config.version!==7||config.backendProfile!==context.release.backendProfile||config.profileDigest!==context.release.profileDigest
+  ||config.releaseSha!==binding.releaseSha||config.runId!==binding.epochRunId||config.releaseRunId!==binding.epochRunId
+  ||config.workspace!==binding.workspace||config.principal!==binding.principal||source.events.find(e=>e.type==='run')?.binding!==collectorDigest(config)))reject();
+ const witness=owned?validateOwnedOwnerWitness:validateOwnerWitness;
+ witness(before[0].observation?.owner,config,'before');witness(after[0].observation?.owner,config,'after');
  if(before[0].observation.owner.witness!==after[0].observation.owner.witness)reject();
- const compared=compareDivisionSnapshots(before[0].observation.snapshot,after[0].observation.snapshot,config);
+ const compared=(owned?compareOwnedDivisionSnapshots:compareDivisionSnapshots)(before[0].observation.snapshot,after[0].observation.snapshot,config);
  if(compared.netMutationDelta!==0||compared.tupleVersionDelta!==0||!after[0].evidence
   ||Object.entries(compared).some(([key,value])=>JSON.stringify(after[0].evidence[key])!==JSON.stringify(value))
   ||typeof after[0].evidence.ownerDenial!=='string'||typeof after[0].evidence.ownerScope!=='string')reject();
