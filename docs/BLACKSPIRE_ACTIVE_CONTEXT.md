@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-24 — expired writer issuance diagnosed; exact recovery prepared
+
+Clean e20986021db1a14fb3c88749fe007759bad0c585 retained the current writer issue handle, then stopped at the bounded writer gate. Native recovery returned ADMISSION_REJECTED. A read-only cluster-administrator observation proved the original admission is expired, reserved and unbound, matches its durable request/body, and has no dispatch. The dedicated synthetic acceptance job matches owner, signer and criteria but its saved version is stale after prior completed acceptance. No active dispatch exists and the job is failed. No business change resulted from this rejected issuance.
+
+Recovery is pinned to the exact 233-event prefix, operation, attempt, handle and protected target digest. It retains the old request, records an explicit unissued retirement only after all thirteen identity/no-effect predicates pass, then refreshes only the protected synthetic target timestamp using compare-and-publish. A subsequent gateway request gets a new durable handle. The expired original request is never replayed, and uncertain or successful originals cannot use this recovery.
+
+Twenty-four focused tests pass. A native in-memory model validated the real 233-event prefix plus the proposed retirement through the full commander reader and selected zero current handles; physical journal and target were unchanged. Prepared target digest is 1142db3c42add69f6095752b7c8a16d133eac6e5f5345baba5c19a7aed2fc6de. Next: execute the committed fixed CLI recovery and continue acceptance. All services remain HELD; main merge and production OPEN remain UNVERIFIED.
+
+
 ## 2026-09-24 — HELD lifecycle confirmed; undispatched writer recovery
 
 Clean operator 27f1a707d7a5d14ccf453a8d1da3584fa6661eba resumed the retained admission attempt. Initial startup produced a lifecycle intent without a result; a later native observation verified the exact running f1f artifact and epoch d2619093-f021-42d0-8507-72acad955ec6. Same-intent reconciliation confirmed lifecycle, started the owned store, installed the writer binding, and passed generation, provider ACL and GET-only published n8n carryover gates. All four services now run HELD.

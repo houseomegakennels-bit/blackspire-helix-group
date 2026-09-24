@@ -1,3 +1,4 @@
+import {repairMixedRejectedWriter} from './mixed-writer-rejection-host.js';
 import {wrapMixedLivePreparation} from './mixed-live-preparation.js';
 import {execFileSync} from 'node:child_process';
 import {Pool} from 'pg';
@@ -75,7 +76,9 @@ export function createMixedNativeOperations(context,{fence}){
   candidate:()=>collectMixedIsolatedCandidate(fence),
   establishHeld:()=>establishCandidateHeld(context,{ownedStore:()=>createOwnedRuntimeStoreTransition()})
  }});
+ const writer=fixed.bounded_writer_e2e;
  const operations=wrapMixedLivePreparation(context,wrapMixedReadAcceptanceOperations(context,{...fixed,
+  bounded_writer_e2e:{...writer,reconcile:async call=>{await repairMixedRejectedWriter(context,call,{fence});return writer.reconcile(call);}},
   ...createNativeMixedN8nCarryover(context).operations(),
   provider_acl_check:bindOwnedProviderInput({operation:provider,input:context.input,release:context.release,
    protectedInputDigest:loaded.inputDigest,fence:stable})
