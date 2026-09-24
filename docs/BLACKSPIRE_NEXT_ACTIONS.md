@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — corrected Preview variables and verified new deployment
+
+Operator screenshots show branch-scoped Preview entries for SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. The operator reported removing the additional all-Preview service-role entry. Exact complete branch names, secret correctness, and post-removal inventory are UNVERIFIED through the connected API; no secrets were requested in chat or logged. The operator then redeployed the existing candidate in Vercel.
+
+Authenticated connected Vercel deployment listing confirms dpl_EfJVukRyw39vR6P7koqm99TiaNCw is READY, Preview (target null), on release/zola-production-live at a8e05ef40e44b6695df5b30356af0e411fe36f1a. Its origin is https://frontend-hjgsm49to-houseomegakennels-4825s-projects.vercel.app. This confirms a successful build, not Seller authorization, successful six-read acceptance, or production OPEN.
+
+Read-only host inspection confirms all four receiver entries still reference the old frontend-3qnw8695h deployment. A metadata-only authenticated request using the native protected Vercel token returns HTTP403 for the new deployment, while the connected app can list it. The connected deploy action returns tool-not-found. Native provider access must be restored through an authorized credential update before its deployment verification can pass. Preserve both UNKNOWN histories, the admitted Seller task, original archive, existing receiver metadata and frozen operators. Do not rerun the collector or overwrite its bound evidence. Next work is exact failed-read reconciliation and a reviewed transition to the newly observed deployment; new runtime acceptance remains UNVERIFIED. Production remains HELD.
+
 ## 2026-09-23 — successor checks passed; first Seller read outcome unknown
 
 Clean frozen successor2 734d9ada0924a981d423111e2088a36f034500db passed actual session preflight and one-time issuance. Immediate native continuation stopped at six_reads after 34.90 seconds. All five fresh before-baseline database queries completed, including authenticated owner visibility one and foreign visibility zero. The authenticated admission-denial check was confirmed. Index zero was admitted once for seller.opportunities.search, then its task and sole provider attempt became outcome_unknown. No collected record exists; indices one through five have no tasks at the subsequent read-only observation. Release events 180 through 183 retain successor intent, active, retired UNKNOWN and sequence stop. Production remains HELD; six-read acceptance and OPEN remain UNVERIFIED.
