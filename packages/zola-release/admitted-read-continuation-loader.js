@@ -17,5 +17,7 @@ export async function load(url,context,nextLoad){
  if(result.format!=='module'||createHash('sha256').update(original).digest('hex')!==expected)throw Error('Read recovery source refused');
  let source=change(original,"return {...fixed,provider_acl_check:providerAdapter};","return wrapReadRecoveryOperations(context,{...fixed,provider_acl_check:providerAdapter});");
  source=change(source,"held:{activate,establishHeld:","held:{ensureWriterBinding:ensureReadRecoveryWriterBinding,activate,establishHeld:");
+ source=change(source,"}catch{process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_N8N_OPERATOR_REJECTED'", "}catch(error){console.error(String(error.stack).split('\\n').slice(1,5).join('\\n'));process.stdout.write(JSON.stringify({status:'STOPPED',reason:'OWNED_N8N_OPERATOR_REJECTED'");
+
  return {...result,source:"import {wrapReadRecoveryOperations} from '"+root+"/packages/zola-release/admitted-read-fresh-acceptance.js';\nimport {ensureReadRecoveryWriterBinding} from '"+root+"/packages/zola-release/admitted-read-postmerge-writer.js';\n"+source};
 }
