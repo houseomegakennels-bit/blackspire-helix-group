@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {selectSuccessorWorkflowBackup} from '../packages/zola-release/owned-successor-final-inputs-host.js';
+import {selectSuccessorWorkflowBackup,publishSuccessorWorkflowBackup} from '../packages/zola-release/owned-successor-final-inputs-host.js';
 import {MIXED_RETIREMENT as P} from '../packages/zola-release/mixed-retirement-history.js';
 import {validateMixedSuccessorRequest,createMixedSuccessorFinalInputHost} from '../packages/zola-release/mixed-successor-preparation.js';
 const request={releaseSha:P.successorReleaseSha,operationId:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',profileDigest:P.profileDigest};
@@ -49,4 +49,22 @@ test('published workflow carryover preserves exact original backup bytes instead
  assert.equal(selectSuccessorWorkflowBackup({carryPublishedCandidate:true,originalBackup,observation}),originalBackup);
  assert.equal(selectSuccessorWorkflowBackup({carryPublishedCandidate:false,originalBackup,observation}),JSON.stringify(observation)+'\n');
  assert.throws(()=>selectSuccessorWorkflowBackup({carryPublishedCandidate:'true',originalBackup,observation}));
+});
+
+test('workflow backup publication preserves larger bounded bytes and rejects excess before publication',()=>{
+ const bytes='{  "synthetic": "'+'x'.repeat(131072)+'" }\n';let calls=0;
+ const files={publish:(p,b)=>{calls++;assert.equal(p,'/fixed/backup.json');assert.equal(b.toString(),bytes);}};
+ publishSuccessorWorkflowBackup('/fixed/backup.json',bytes,{files});assert.equal(calls,1);
+ assert.throws(()=>publishSuccessorWorkflowBackup('/fixed/backup.json','x'.repeat(2097153),{files}));assert.equal(calls,1);
+});
+test('native protected backup publication preserves exact bytes and inode on repeat',{skip:process.getuid?.()!==0},async()=>{
+ const fs=await import('node:fs'),path=await import('node:path');
+ const root=fs.mkdtempSync('/root/zola-backup-copy-test-'),file=path.join(root,'backup.json');
+ try{
+  const bytes='{ "synthetic": "'+'x'.repeat(131072)+'" }\n';
+  publishSuccessorWorkflowBackup(file,bytes);const inode=fs.statSync(file).ino;
+  assert.equal(fs.readFileSync(file,'utf8'),bytes);assert.equal(fs.statSync(file).mode&0o777,0o600);
+  publishSuccessorWorkflowBackup(file,bytes);assert.equal(fs.statSync(file).ino,inode);
+  assert.throws(()=>publishSuccessorWorkflowBackup(file,'different\n'));assert.equal(fs.readFileSync(file,'utf8'),bytes);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-09-24 — workflow carryover retained; empty bundle repair
+
+The same successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9 completed the explicit candidate workflow carryover with mutationSent=false. Its carryover observation digest is31172a5318c42604ddde2068636252763151a4da7e52b8c1ea8869d7c7e33180. Bundle initialization then stopped at the configuration publisher's64KiB limit before any backup or bundle output was written. The bundle intent a07c6d3f1ee619ce3959edacdc98bf91f4874e3c526f9373b9f64d10ef3fe44c remains unchanged; actual observation confirms both outputs absent.
+
+Backup copying now uses the existing protected2MiB byte publisher, retaining exact original bytes, ACL/ownership checks, atomic publication and fsync. An explicit one-shot empty-bundle reconciliation retains its own intent only when the backup, its staging names and bundle directory are absent. Existing partial or foreign outputs remain rejected. Twenty-five preparation tests pass, including a native root-owned128KiB disposable backup, exact-byte/inode replay and size-limit rejection. The native repair is not yet executed. Resume clean input preparation, then lineage; services and the original release/acceptance journals remain unchanged and HELD.
+
 ## 2026-09-24 — published n8n candidate carryover preparation
 
 Native input preparation retained successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9, plan digest fa66fcc2ea0008addc3d97da70b1fb4102e445bf5418f940bc0f9b48e27b8a3b, and workflow GET intent digest925906865e7602e0388e9dc1eb1e605e588d2de81d7e6ec74c44fbaaf8c646d6. It stopped before bundle/backup/input publication because the live workflow is already CANDIDATE and active. Two fresh GET-only native observations confirmed that exact generated candidate and published-version consistency; mutationSent=false. The legacy preparer correctly required BASELINE.

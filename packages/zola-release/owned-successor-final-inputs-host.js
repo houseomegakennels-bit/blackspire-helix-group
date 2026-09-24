@@ -1,4 +1,4 @@
-import {publishOwnedConfigurationBytes} from './owned-buyer-configuration-host.js';
+import {createBuyerStoreProtectedFiles} from '../buyer-store/protected-files.js';
 import {PREDECESSOR_MAIN,bindSuccessorMain,observeSuccessorMain} from './owned-successor-main.js';
 import {createHash} from 'node:crypto';
 import fs from 'node:fs';
@@ -19,6 +19,10 @@ const hash=v=>createHash('sha256').update(typeof v==='string'?v:JSON.stringify(v
 export async function synchronizeKnownSuccessorOutputs(paths,verify){
  if(!Array.isArray(paths)||!paths.length||paths.length>16||new Set(paths).size!==paths.length||paths.some(p=>typeof p!=='string'||!path.isAbsolute(p)||path.resolve(p)!==p))fail();
  await verify();for(const p of [...paths,...new Set(paths.map(p=>path.dirname(p)))]){const fd=fs.openSync(p,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}await verify();
+}
+export function publishSuccessorWorkflowBackup(file,bytes,{files=createBuyerStoreProtectedFiles()}={}){
+ if(typeof bytes!=='string'||!bytes.length||Buffer.byteLength(bytes)>2097152)fail();
+ files.publish(file,Buffer.from(bytes));
 }
 export function selectSuccessorWorkflowBackup({carryPublishedCandidate,originalBackup,observation}){
  if(typeof carryPublishedCandidate!=='boolean'||typeof originalBackup!=='string'||!originalBackup.length)fail();
@@ -56,7 +60,19 @@ export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=f
  const reconcile=async(stage,plan,results)=>{
   let value,paths;if(stage==='bundle'){const b=bundle(plan,results.workflow);value={manifestSha256:b.prepared.manifestSha256};paths=[root+'/n8n-backup.json',...Object.keys(b.prepared.files).map(name=>root+'/bundle/'+name)];}
   else if(stage==='input'){const expected=input(plan,results);value={productionInputFile:root+'/production-release.json',successorLineageFile:expected.successorLineageFile};paths=[root+'/disk.json',root+'/activation-location.json',value.productionInputFile];}else fail();
-  // Observe only complete exact outputs; do not call either publication primitive.
+  if(stage==='bundle'&&carryPublishedCandidate&&!fs.existsSync(root+'/bundle')
+   &&!['n8n-backup.json','n8n-backup.json.pending','n8n-backup.json.owned-buyer-stage'].some(n=>fs.existsSync(root+'/'+n))){
+   // The prior size-limit refusal created no outputs. Preserve its intent and
+   // retain a separate one-shot, local metadata initialization intent.
+   const name=root+'/bundle-empty-reconciliation.intent.json';
+   if(fs.existsSync(name)||fs.existsSync(name+'.pending'))fail();
+   const b=bundle(plan,results.workflow);
+   files.publish(name,{version:1,kind:'empty-bundle-initialization',planDigest:hash(plan),
+    manifestSha256:b.prepared.manifestSha256,backupDigest:hash(b.backupBytes),outputsAbsent:true});
+   publishSuccessorWorkflowBackup(root+'/n8n-backup.json',b.backupBytes);
+   writeOfflineReleaseBundle(root+'/bundle',b.prepared);
+  }
+  // Existing outputs must be complete and exact; only the empty case above initializes them.
   await synchronizeKnownSuccessorOutputs(paths,()=>verify(stage,plan,results,value));return value;
  };
  const observeWorkflow=async plan=>{
@@ -81,7 +97,7 @@ export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=f
  }:undefined;
  return {snapshot,read,reconcile,reconcileWorkflow,publish:(n,v)=>files.publish(filename(n),v),verify,async execute(stage,plan,results){if(inspect)fail();
   if(stage==='workflow'){const p=prepareN8nTransition({configuration:{...captured.n8n,releaseSha:plan.releaseSha},backupBytes:captured.oldBackup}),transport=createN8nTransport(readReleaseProtectedBytes('/var/lib/blackspire-operator/n8n-api-key',16384).trim());const rows=[];const observed=await executeN8nTransition({plan:p,mode:'inspect',request:async(method,url,body)=>{if(method!=='GET'||url!==`/api/v1/workflows/${WORKFLOW_ID}`||body!==undefined||rows.length>=2)fail();const v=await transport(method,url);rows.push(v);return v;},journal:{events:()=>[],append:()=>{}}});if(rows.length!==2||observed.mutationSent!==false||observed.state.kind!==(carryPublishedCandidate?'CANDIDATE':'BASELINE')||observed.state.active!==true)fail();return {requests:2,observation:rows[1]};}
-  if(stage==='bundle'){const b=bundle(plan,results.workflow);if(carryPublishedCandidate)publishOwnedConfigurationBytes(root+'/n8n-backup.json',null,b.backupBytes);else files.publish(root+'/n8n-backup.json',results.workflow.observation);writeOfflineReleaseBundle(root+'/bundle',b.prepared);return {manifestSha256:b.prepared.manifestSha256};}
+  if(stage==='bundle'){const b=bundle(plan,results.workflow);if(carryPublishedCandidate)publishSuccessorWorkflowBackup(root+'/n8n-backup.json',b.backupBytes);else files.publish(root+'/n8n-backup.json',results.workflow.observation);writeOfflineReleaseBundle(root+'/bundle',b.prepared);return {manifestSha256:b.prepared.manifestSha256};}
   if(stage==='backup'){const v=captureProtectedReleaseBackup(plan.releaseSha);return {manifestFile:v.manifestFile};}
   const value=input(plan,results);files.publish(root+'/disk.json',captured.disk);files.publish(root+'/activation-location.json',{workspace:'blackspire-command',bindingFile:'/etc/blackspire/buyer-writer-binding.json'});files.publish(root+'/production-release.json',value);return {productionInputFile:root+'/production-release.json',successorLineageFile:value.successorLineageFile};
  }};
