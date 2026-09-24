@@ -2736,3 +2736,15 @@ Clean fa0299e743f8c0982d9d7d90b8772820310105c6 confirmed API health, worker read
 The fixed mixed operator now selects its exact protected live collector directory and validates its protected configuration. Owned mutation verification uses the existing dual-source validators, binding configuration digest, merged SHA, epoch, identity and profile before comparing all seventeen tables. The legacy path remains separately validated. Four zero-proof tests pass. Native read-only operation checks against the retained report and authoritative command usage return paidProviderCalls=0 and mutationDelta=0 across seventeen tables, with no physical journal writes.
 
 Next: resume the pending zero-proof operation, finish rollback verification and final release records, then guarded OPEN. All services run the merged release HELD; OPEN remains UNVERIFIED.
+
+## 2026-09-24 — Zola production OPEN and release complete
+
+The fixed release CLI from clean 9a1278e4e1db48a92c84eb9027ec6324d42efb7e returned COMPLETE / PASS. Candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e merged through PR125 as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Main CI 36035924867 succeeded. Vercel production dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x is READY at that exact SHA, and the VPS pointer matches.
+
+The protected journal contains 359 events ending in release_open_result, guarded_held_to_open confirmation and sequence_completed. Admission is OPEN at epoch fa25de00-5c65-44f0-b437-03e4f2b295aa; pending.json is absent. Exact accepted-held and OPEN records are retained and independently read back as OPEN. The previously missing release-records directory was created root-owned mode 0700 before same-intent publication resumed.
+
+All four services are active/running. Loopback health and readiness return 200/ok=true with all nine readiness checks true. Public https://command.blackspirehelix.com/health and /ready return 200/ok=true at the exact merged SHA. https://blackspirehelix.com/ returns 200.
+
+All six postmerge live reads passed with six cross-owner denials; authoritative command usage verifies zero paid provider calls. Dual-source before/after evidence verifies zero row and tuple-version changes across seventeen tables. Production smoke and rollback verification passed, and the bounded acceptance permit is consumed. Historical uncertain requests and retired evidence remain preserved and were not replayed. Recovery remains the explicitly verified stopped-HELD containment mode; no broader business-compatible recovery claim is made.
+
+Release work is complete. Do not rerun admission, writer acceptance or old collector requests. Use the retained final records and journal for subsequent operational review.
