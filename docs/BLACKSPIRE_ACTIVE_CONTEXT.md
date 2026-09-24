@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-24 — candidate cutover retained; lifecycle history repair
+
+The fixed successor CLI from clean bf4bc529f7e4391d10ae0e158c3d42c72ea45ed2 completed schema-six predecessor retirement, protected authority archival, exact Preview metadata adoption, successor configuration and gateway installation, and native candidate deployment. The current pointer is f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e. All four services remain stopped; the new epoch is HELD. No lifecycle start intent was issued. The release journal retains 213 events and the same admission_lease attempt 8de020dd-b0ae-460a-a6fe-7b7892f68213 for operation b9679cbd-5331-45ae-a026-02b7f5e117e9.
+
+Startup stopped because the legacy commander history validator did not recognize the mixed retirement and retained successor collector grammar. The repair validates those historical collector records strictly before accepting their event types; schema-six activation requires an empty legacy activation segment, while older completion requirements remain unchanged. Twenty-four focused regressions pass. A read-only native check validates all 213 real events and rejects three tampered in-memory copies. The new partition unit fixture mocks partitioning only; the separate native check is the real-history evidence.
+
+Next: commit the verified repair and reconcile the same fixed CLI attempt. Do not manually start services or repeat old admissions. Main remains f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8 and PR125 remains open. Fresh acceptance, main merge, production deployment and OPEN remain UNVERIFIED.
+
+
 ## 2026-09-24 — native pre-cutover model passed; fixed successor CLI
 
 Clean operator 35d097852754f3f2c80b18e96e3abe6b6d1669a8 executed the real first five native stage adapters against an in-memory copy of the protected 186-event history plus a modeled retirement. Exact source, receiver audit, Preview checks, GET-only n8n carryover and all six isolated candidate reads passed. The model intentionally blocked at admission_lease; both physical journals remained unchanged. Its mutationSent field describes model journal/candidate activity, not a production cutover.

@@ -81,7 +81,8 @@ export function inspectBuyerWriterActivationHistory(events){
  const partition=partitionRetiredReleaseHistory(events);
  if(partition.retired){
   const prior=inspectBuyerWriterActivationHistory(partition.prefix);
-  if(prior.completed.size!==(partition.retired.schema===5?6:3))reject();
+  if(partition.retired.schema===6){if(prior.intent!==null||prior.completed.size!==0)reject();}
+  else if(prior.completed.size!==(partition.retired.schema===5?6:3))reject();
   const active=partition.current.find(row=>row?.type==='buyer_writer_activation_intent');
   if(active)assertRetiredReleaseSuccessor(events,active.binding);
   return inspectBuyerWriterActivationHistory(partition.current);

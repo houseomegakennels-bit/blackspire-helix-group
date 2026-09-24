@@ -1,3 +1,6 @@
+import {SUCCESSOR_TYPES,inspectSuccessorHistory} from '../zola-six-reads/owned-collector-successor.js';
+import {validatePremergeReadClaims} from '../shared/release-admission.js';
+import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import {inspectHeldWriterBindingHistory} from './held-writer-binding.js';
 import {inspectPremergeReadHistory} from './premerge-read-permit.js';
 import {inspectCandidateSixReadsHistory,inspectSequencedHeldAcceptanceHistory} from './production-stage-history.js';
@@ -53,6 +56,7 @@ function history(journal){
  inspectReleaseSequenceHistory(events);
  inspectCandidateSixReadsHistory(events);
  inspectPremergeReadHistory(events);
+ if(events.some(row=>SUCCESSOR_TYPES.includes(row?.type)))inspectSuccessorHistory(events,{inspectOriginal:inspectPremergeReadHistory,inspectSequence:inspectReleaseSequenceHistory,validateClaims:validatePremergeReadClaims,identity:isProductionAcceptanceIdentity});
  inspectBuyerWriterActivationHistory(events);
  inspectRollbackProbeHistory(events);
  inspectFinalReleaseRecordHistory(events);
@@ -76,9 +80,10 @@ function history(journal){
  // them as harmless observations or permit a new SHA/run ID to bypass them.
  const runs=new Map();
  for(const row of events){
-  if(row?.schema===5&&row.type==='sequence_retired')continue;
+  if([5,6].includes(row?.schema)&&row.type==='sequence_retired')continue;
   if([3,4].includes(row?.schema)&&(String(row.type).startsWith('sequence_')||String(row.type).startsWith('release_postmerge_')||String(row.type).startsWith('release_open_')))continue;
   if([3,4,5,6].includes(row?.schema)&&String(row.type).startsWith('vps_'))continue;
+  if(row?.schema===2&&SUCCESSOR_TYPES.includes(row.type))continue;
   if(row?.schema===2&&String(row.type).startsWith('candidate_deployment_'))continue;
   if(row?.schema===1&&['candidate_six_reads_intent','candidate_six_reads_result',
    'premerge_reads_intent','premerge_reads_active','premerge_reads_result','premerge_reads_retired',
