@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-24 — branch credential replaced; corrected Preview Ready
+
+Authenticated Supabase cloud-browser access recovered without another sign-in. The existing project service-role credential was read privately and its JWT role/project claims checked before replacing only the release/zola-production-live Preview value in Vercel. Vercel acknowledged the update. No credential value was printed or recorded; no key rotation or Production environment edit occurred.
+
+Connected Vercel deployment inspection confirms dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1 is READY Preview on release/zola-production-live at candidate a8e05ef40e44b6695df5b30356af0e411fe36f1a. Origin: https://frontend-dtm0w29el-houseomegakennels-4825s-projects.vercel.app. This is build/configuration evidence only; deployed Seller acceptance remains UNVERIFIED.
+
+Read-only host inspection confirms HELD epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5, unchanged API/worker generations, four active services, no active permit and the old receiver origin. The latest Seller task task_c5c8d9bca504952a and its sole provider attempt remain outcome_unknown. Acceptance and collector digests still match the prior entry. The main release journal digest is cd36d04dde54bda546ea7da51b19bd3c5ea314ecc181922f791e62cf38a5a426. No runtime transition, new read admission, merge or OPEN occurred.
+
+Next: preserve this completed recovery and failed acceptance, validate an exact successor transition to the corrected deployment, establish a new HELD epoch, and perform separately retained fresh acceptance before native release continuation. Do not rerun the failed collector or alter its UNKNOWN history. User authorization remains in force.
+
 ## 2026-09-24 — runtime recovery complete; malformed Supabase key blocks Seller acceptance
 
 Recovery operator 7d2d17d completed the fifteen-step HELD transition using epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5 and Preview dpl_EfJVukRyw39vR6P7koqm99TiaNCw. API, worker, buyer-store and gateway are active. Receiver/store configuration, installed manifest and writer binding were verified. An early lifecycle observation preceded readiness; resume observed the running services without issuing another start. Native continuation must run with the canonical release worktree as cwd. Diagnostic-only 3bb4063 reports sanitized source locations.
