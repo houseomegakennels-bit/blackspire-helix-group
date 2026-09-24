@@ -1,5 +1,15 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — successor input preparation bound to current mixed failure
+
+Clean operator b4233f67742a27ad9b22584ce5a67db0ec602075 passed the complete native retirement preflight, including exact successor source/CI/artifact/Preview and current protected runtime observation. Retirement was not executed.
+
+The input host now accepts an explicit source root and preparation observer while preserving its original defaults. A fixed mixed-successor wrapper permits only f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e, validates the exact current release prefix and mixed-read proof, and retains the original2636 database migration lineage through native source/copy/security readers. Its four-mode CLI prepares or inspects inputs and lineage, with clean source fences and native global journal exclusion. Twenty focused preparation regressions pass.
+
+The first native input snapshot stopped at the unchanged disk headroom gate: root free space482521088 was below required506097664 bytes. Cleared only unused ignored Next build caches in two inactive development review worktrees (separate mounted volume) and the two regenerable APT binary caches on root. Tracked source, sealed releases, historical evidence, backups and the package database were preserved. Root free space rose to598736896 bytes. The repeated native input snapshot passed with digest4dfc3854f2852dc69bba2f6fcd8aa89c40365cff57b1570a55bd3e86a2c99d40 and the expected sealed artifact and retained mixed-read proof. Disk capacity remains a point-in-time gate and must be remeasured.
+
+No final inputs or lineage were published by this read-only snapshot; service retirement, successor activation and fresh acceptance remain UNVERIFIED. Next: execute clean native input preparation, verify its live workflow observations, retain a new operation and database backup, prepare original migration lineage, then finish schema-six activation and archival before any service stop. Current a8 runtime stays HELD.
+
 ## 2026-09-24 — mixed-read retirement implementation and successor preflight
 
 The exact merged candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e passed PR125 CI36006474929. Native verifyReleaseSource and verifyReleaseCi verified the exact branch, required jobs and immutable CI artifact against main f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8. The sealed production artifact remains e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a, deployed=false and productionAccepted=false.

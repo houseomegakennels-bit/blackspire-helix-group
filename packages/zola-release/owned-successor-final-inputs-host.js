@@ -22,18 +22,18 @@ export async function synchronizeKnownSuccessorOutputs(paths,verify){
 const OLD='/var/lib/blackspire-operator/preparation/owned-final-2636a1e-95a11ea1-289f-46a9-b5cd-cc7805497242-56ef766c-ed0d-413d-a9fb-730cd38654bc/production-release.json';
 const RECOVERY='2c0b600c268faa0571f08322e16d7f81f37789be';
 const metadata=p=>{const r=readRootOwnedMetadataSnapshot(p,{groupId:0});if(r.identity.uid!==0||r.identity.gid!==0||(r.identity.mode&4095)!==0o600)fail();return r.value;};
-export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=false}){
+export function createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect=false,sourceRoot,observePreparationHeld=observeOwnedMigrationPreparationHeld}){
  if(process.getuid?.()!==0||!/^[a-f0-9]{40}$/.test(releaseSha??'')||releaseSha===P.releaseSha)fail();
  const root='/var/lib/blackspire-operator/preparation/owned-successor-final-'+releaseSha,files=createOwnedSourceSecurityFiles();if(!inspect)files.directory(root);
  const filename=n=>{if(!/^[a-z0-9.-]+\.json$/.test(n))fail();return root+'/'+n;};
  const read=n=>{const p=filename(n),v=files.read(p),pending=files.read(p+'.pending');if(v!==null&&pending!==null)fail();return v??pending;};
  let captured;
  const snapshot=async sha=>{
-  verifyReleaseSource(sha);const currentMainSha=observeSuccessorMain(sha);const profile=readOwnedDatabaseProfile(),old=metadata(OLD);if(databaseProfileDigest(profile)!==P.profileDigest||old.schema!==2||old.releaseSha!==P.releaseSha||old.previousMainSha!==PREDECESSOR_MAIN||old.recoverySha!==RECOVERY||old.profileDigest!==P.profileDigest||old.sourceSecurityConfigurationFile!==F.sourceSecurityConfigurationFile||old.ownedMigrationConfigurationFile!==F.ownedMigrationConfigurationFile)fail();
+  verifyReleaseSource(sha,{root:sourceRoot});const currentMainSha=observeSuccessorMain(sha,{root:sourceRoot});const profile=readOwnedDatabaseProfile(),old=metadata(OLD);if(databaseProfileDigest(profile)!==P.profileDigest||old.schema!==2||old.releaseSha!==P.releaseSha||old.previousMainSha!==PREDECESSOR_MAIN||old.recoverySha!==RECOVERY||old.profileDigest!==P.profileDigest||old.sourceSecurityConfigurationFile!==F.sourceSecurityConfigurationFile||old.ownedMigrationConfigurationFile!==F.ownedMigrationConfigurationFile)fail();
   const originals={};for(const [key,p]of Object.entries(F)){originals[key]=metadata(p);if(hash(originals[key])!==D[key])fail();}
   const n8n=metadata(old.packageConfigurationFile),disk={...metadata(old.diskConfigurationFile),artifactRoot:'/opt/blackspire-command/releases/'+sha};
   if(disk.databasePath!=='/opt/blackspire-command/shared/database/command.sqlite'||disk.releaseRoot!=='/opt/blackspire-command')fail();
-  const proof=await verifyReleaseArtifactDisk({releaseSha:sha,configuration:disk}),held=await observeOwnedMigrationPreparationHeld(journal);
+  const proof=await verifyReleaseArtifactDisk({releaseSha:sha,configuration:disk}),held=await observePreparationHeld(journal);
   const oldBackup=readReleaseProtectedBytes(old.n8nBackupFile,2*1024*1024);captured={currentMainSha,profile,old,originals,n8n,disk,oldBackup};
   return {currentMainSha,oldInputDigest:hash(old),profileDigest:P.profileDigest,originalDigests:D,n8nDigest:hash(n8n),oldBackupDigest:hash(oldBackup),disk,artifactDigest:proof.artifact.artifactDigest,held};
  };
