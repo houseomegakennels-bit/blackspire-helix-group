@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-09-24 — credential recovery complete; Seller passed and Buyer fence defect reproduced
+
+Credential recovery operator 9162c2262f23f350e0087299755fc9a6ea340eff completed all fifteen steps after explicit epoch-scoped writer archive reconciliation. The running candidate remains a8e05ef40e44b6695df5b30356af0e411fe36f1a, now HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Transition journal has thirty-one rows, digest 840264d6e46408c0fbb2a2a247bae8c9ea68d4df561dad9517c6b126b1ede7d9.
+
+Fresh Seller index zero completed as task_218dbf70abb2d715; Vercel recorded HTTP200. Buyer profiles index one was admitted as task_b0331114f772152e and its sole provider attempt became outcome_unknown. Vercel and the local authority consumer recorded HTTP404. The permit retired UNKNOWN and its active marker is absent. No full six-read PASS or production OPEN is claimed. Acceptance journal digest e992c0aa653036919f112b00017d8e78de42558d04f778a2a02f5bbf9175a09a; collector digest aadb5c459b6c4230552b7f5018a7c3a6897d312cf8d3ae3a82fbd70dba8a7dcd; main release journal digest 7e958a8c22de9cf720f0a3191ba49227a08f7d8d6d91d5d009c1f1b462c4f206. Keep the completed Seller result, failed Buyer result and all previous UNKNOWN histories unchanged.
+
+A disposable real-lock reproduction confirmed that the Buyer daemon profiles-read fence rejects the retained pending marker before its allowed HELD read logic. Separate source fix 6117ae6bdeafb2cdbf5115814a3225b3f227c05d permits the pending marker only after observing HELD, then rechecks HELD under the shared lock and preserves generation and mutation denials. Twenty-nine related tests and build/lint/typecheck pass. Draft PR155 targets release/zola-production-live; exact-head CI36004343479 is running. The one authorized feature-branch publication used the fixed repository URL and left the default disabled push URL intact.
+
+The repair is not deployed. A new sealed successor is required; existing retirement/preparation code pins the older2636 predecessor and does not authorize retiring this admitted six-read failure or replacing the current artifact. Next: finish exact-head CI/review, retain the new release candidate, implement and validate a separately journaled successor preserving this mixed completed/UNKNOWN acceptance and both prior recoveries, then execute native release gates. Do not patch the installed artifact or rerun this failed collector.
+
 ## 2026-09-24 — writer archive collision stopped successor transition
 
 Credential recovery b626dab retained plan 3775ac8968ffddc5c7680a56dcc9f602452ec1c023b646946431bb53c813b6d9 and installed new HELD epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with the corrected Preview. Readiness resume observed the original start without repeating it. Transition journal stopped at its twenty-third event, archive_writer_commit intent: the native archive name reused the fixed outer stage attempt and collided with the preserved previous recovery archive. No writer archive was overwritten.
