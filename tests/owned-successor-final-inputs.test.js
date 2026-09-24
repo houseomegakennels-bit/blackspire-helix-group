@@ -15,3 +15,24 @@ test('partial deterministic output remains blocked without redispatch',async()=>
 test('actual deterministic output files synchronize without rewriting and reject partial/foreign files',async()=>{const fs=await import('node:fs'),os=await import('node:os'),path=await import('node:path');const {synchronizeKnownSuccessorOutputs}=await import('../packages/zola-release/owned-successor-final-inputs-host.js');const root=fs.mkdtempSync(path.join(os.tmpdir(),'successor-output-adoption-'));try{const files=[path.join(root,'input.json'),path.join(root,'disk.json')];for(const p of files)fs.writeFileSync(p,'exact\n',{mode:0o600});const inodes=files.map(p=>fs.statSync(p).ino);let observations=0;const verify=()=>{observations++;for(const p of files)assert.equal(fs.readFileSync(p,'utf8'),'exact\n');};await synchronizeKnownSuccessorOutputs(files,verify);assert.equal(observations,2);assert.deepEqual(files.map(p=>fs.statSync(p).ino),inodes);fs.unlinkSync(files[1]);await assert.rejects(synchronizeKnownSuccessorOutputs(files,verify));fs.writeFileSync(files[1],'foreign\n');await assert.rejects(synchronizeKnownSuccessorOutputs(files,verify));assert.equal(fs.readFileSync(files[1],'utf8'),'foreign\n');}finally{fs.rmSync(root,{recursive:true,force:true});}});
 
 test('reconciled outputs promote staged prerequisite intent before result',async()=>{const f=fixture(),execute=f.host.execute;let retained;f.host.execute=async(...args)=>{const value=await execute(...args);if(args[0]==='bundle'){retained=value;throw Error('lost ACK');}return value;};await assert.rejects(prepareOwnedSuccessorFinalInputs({releaseSha:sha},f));const staged=f.records.get('bundle.intent.json');f.records.delete('bundle.intent.json');const read=f.host.read,publish=f.host.publish;let promoted=false;f.host.read=n=>n==='bundle.intent.json'&&!promoted?staged:read(n);f.host.publish=(n,v)=>{if(n==='bundle.intent.json'){assert.deepEqual(v,staged);promoted=true;}if(n==='bundle.result.json')assert.equal(promoted,true);publish(n,v);};f.host.reconcile=async()=>retained;f.host.execute=execute;await prepareOwnedSuccessorFinalInputs({releaseSha:sha},f);assert.equal(promoted,true);assert.equal(f.effects.filter(s=>s==='bundle').length,1);});
+
+test('retained workflow read intent requires explicit carryover reconciliation and never re-executes the original step',async()=>{
+ const f=fixture(),execute=f.host.execute;
+ f.host.execute=async(...args)=>{const value=await execute(...args);if(args[0]==='workflow')throw Error('candidate already published');return value;};
+ await assert.rejects(prepareOwnedSuccessorFinalInputs({releaseSha:sha},f));
+ const original=structuredClone(f.records.get('workflow.intent.json'));
+ f.host.execute=execute;
+ await assert.rejects(prepareOwnedSuccessorFinalInputs({releaseSha:sha},f));
+ assert.deepEqual(f.effects,['workflow']);
+ let reads=0;f.host.reconcileWorkflow=async()=>{reads++;return {stage:'workflow'};};
+ await prepareOwnedSuccessorFinalInputs({releaseSha:sha},f);
+ assert.equal(reads,1);assert.equal(f.effects.filter(s=>s==='workflow').length,1);
+ assert.deepEqual(f.records.get('workflow.intent.json'),original);
+});
+test('failed carryover observation cannot publish workflow result or capture backup',async()=>{
+ const f=fixture();f.host.execute=async()=>{throw Error('original read stopped');};
+ await assert.rejects(prepareOwnedSuccessorFinalInputs({releaseSha:sha},f));
+ f.host.reconcileWorkflow=async()=>{throw Error('candidate drift');};
+ await assert.rejects(prepareOwnedSuccessorFinalInputs({releaseSha:sha},f));
+ assert.equal(f.records.has('workflow.result.json'),false);assert.equal(f.records.has('backup.intent.json'),false);
+});

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {selectSuccessorWorkflowBackup} from '../packages/zola-release/owned-successor-final-inputs-host.js';
 import {MIXED_RETIREMENT as P} from '../packages/zola-release/mixed-retirement-history.js';
 import {validateMixedSuccessorRequest,createMixedSuccessorFinalInputHost} from '../packages/zola-release/mixed-successor-preparation.js';
 const request={releaseSha:P.successorReleaseSha,operationId:'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',profileDigest:P.profileDigest};
@@ -31,7 +32,7 @@ test('preparation binds exact mixed history while preserving original migration 
  const journal={stream:()=>({events:()=>structuredClone(events)})};
  const host=m.createMixedSuccessorFinalInputHost({releaseSha:P.successorReleaseSha,journal,inspect:true});
  assert.equal(host.sourceRoot,'/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-successor-20260924');
- assert.equal(host.inspect,true);await host.observePreparationHeld(journal);assert.equal(prefixes,2);assert.equal(observers,1);
+ assert.equal(host.inspect,true);assert.equal(host.carryPublishedCandidate,true);await host.observePreparationHeld(journal);assert.equal(prefixes,2);assert.equal(observers,1);
  const request=${JSON.stringify(request)};
  const prepared=await m.prepareMixedSuccessorLineage(request),read=await m.observeMixedSuccessorLineage(request);
  assert.equal(sourceChecks,2);assert.equal(prepared.deps.observePreparationHeld,m.observeMixedSuccessorPreparationHeld);
@@ -41,4 +42,11 @@ test('preparation binds exact mixed history while preserving original migration 
  console.log('mixed successor boundaries passed');
  `],{encoding:'utf8',env:{PATH:'/usr/bin:/bin',HOME:'/nonexistent',LC_ALL:'C'},stdio:['ignore','pipe','pipe']});
  assert.equal(output.trim(),'mixed successor boundaries passed');
+});
+
+test('published workflow carryover preserves exact original backup bytes instead of relabeling the candidate as baseline',()=>{
+ const originalBackup='{  "original": true }\n',observation={candidate:true};
+ assert.equal(selectSuccessorWorkflowBackup({carryPublishedCandidate:true,originalBackup,observation}),originalBackup);
+ assert.equal(selectSuccessorWorkflowBackup({carryPublishedCandidate:false,originalBackup,observation}),JSON.stringify(observation)+'\n');
+ assert.throws(()=>selectSuccessorWorkflowBackup({carryPublishedCandidate:'true',originalBackup,observation}));
 });

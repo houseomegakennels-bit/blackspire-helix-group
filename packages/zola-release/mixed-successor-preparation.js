@@ -19,7 +19,7 @@ export async function observeMixedSuccessorPreparationHeld(journal){
 }
 export function createMixedSuccessorFinalInputHost({releaseSha,journal,inspect=false}){
  if(releaseSha!==P.successorReleaseSha)fail();
- return createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect,sourceRoot:ROOT,observePreparationHeld:observeMixedSuccessorPreparationHeld});
+ return createOwnedSuccessorFinalInputHost({releaseSha,journal,inspect,sourceRoot:ROOT,observePreparationHeld:observeMixedSuccessorPreparationHeld,carryPublishedCandidate:true});
 }
 // Data lineage remains the immutable original2636 migration. Runtime authority
 // comes from the separately validated a8 mixed failure; no data copy or DDL.

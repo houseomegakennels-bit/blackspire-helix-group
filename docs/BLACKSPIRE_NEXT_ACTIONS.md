@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — published n8n candidate carryover preparation
+
+Native input preparation retained successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9, plan digest fa66fcc2ea0008addc3d97da70b1fb4102e445bf5418f940bc0f9b48e27b8a3b, and workflow GET intent digest925906865e7602e0388e9dc1eb1e605e588d2de81d7e6ec74c44fbaaf8c646d6. It stopped before bundle/backup/input publication because the live workflow is already CANDIDATE and active. Two fresh GET-only native observations confirmed that exact generated candidate and published-version consistency; mutationSent=false. The legacy preparer correctly required BASELINE.
+
+The mixed successor now explicitly carries the already-published candidate. It preserves the exact original baseline backup bytes and package version, retains a separate carryover intent/result, checks two stable GET observations against the generated candidate, and reconciles only the retained GET-only workflow stage. The original failed intent is unchanged. Default baseline preparation and no-replay handling for unknown database backup remain unchanged. No workflow deactivate/update/publish request is added. Twenty-three focused preparation tests pass, including exact original-backup preservation and explicit reconciliation refusal paths.
+
+This is implementation evidence, not completion of native preparation. Resume the clean same-operation input preparation, then verify and prepare original migration lineage. Schema-six activation, protected permit/writer archival, runtime cutover and fresh full acceptance remain unfinished. Current services remain HELD and unchanged.
+
 ## 2026-09-24 — successor input preparation bound to current mixed failure
 
 Clean operator b4233f67742a27ad9b22584ce5a67db0ec602075 passed the complete native retirement preflight, including exact successor source/CI/artifact/Preview and current protected runtime observation. Retirement was not executed.
