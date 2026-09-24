@@ -1,5 +1,17 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — nonroot CI fixture correction
+
+PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.
+
+## 2026-09-24 — Buyer HELD pending-marker fix verified locally
+
+Credential recovery completed its held transition on epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Fresh Seller acceptance completed, with receiver HTTP200. Buyer profiles was then admitted once and returned HTTP404 through the authority consumer; its task/provider result remains outcome_unknown. The permit retired UNKNOWN. Preserve this collector, its completed Seller result, failed Buyer result, all earlier UNKNOWN histories and the frozen candidate. Do not replay it.
+
+Source inspection found that the owned Buyer profiles fence requests a default shared lock that rejects pending.json before reaching its intended HELD read-only check. A disposable real-lock reproduction confirmed rejection before the handler. The fix observes HELD before allowing the profiles-only pending exception, then rechecks HELD state, release/epoch and generation binding under the shared lock before dispatch and after completion. User writes and OPEN profiles reads with a pending marker remain denied; HELD-to-OPEN changes before locking also refuse.
+
+Twenty-nine focused tests pass, including real pending-marker locking, disconnect lease retention, real confined-runtime attestation and receiver callback coverage. Build, lint and syntax typecheck pass. This code is not deployed and live Buyer acceptance remains UNVERIFIED. Next: publish the isolated repair for exact-head CI, review it, then prepare a sealed successor through the native release/retirement gates. No manual patch to the installed artifact, source-proof bypass, production OPEN or main merge occurred.
+
 ## 2026-09-21 — current successor continuation
 
 Finish and independently review the explicit successor current-source-security extension for the already-applied restrictive demo policy. Run final integrated checks and publish the exact reviewed PR154 head against release2636 with current mainf3ac fenced. After release merge and artifact sealing, prepare new schema-three inputs and lineage, retire the exact held predecessor, inherit frontend settings and prepare preview, then run the owned operator through HELD startup, six-read acceptance, controlled PR125 merge, postmerge acceptance and guarded OPEN. Preserve original data and evidence; no SQL replay or source unfreeze.

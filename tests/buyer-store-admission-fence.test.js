@@ -46,3 +46,33 @@ test('stamped live HELD permits exact read-only generation pair but denies mixed
   assert.equal(entered,allowed);await assert.rejects(fence.run('user',async()=>assert.fail()));
  }
 });
+
+test('real pending marker allows only the exact HELD profiles lane and retains the shared lock',async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'buyer-held-pending-'));
+ const lockPath=dir+'/admission.lock';
+ fs.writeFileSync(lockPath,RELEASE_ADMISSION_LOCK,{mode:0o640});
+ fs.writeFileSync(dir+'/pending.json','{}\n',{mode:0o600});
+ let state={version:1,mode:'held',...binding,apiGeneration:null,workerGeneration:null},entered=0;
+ const fence=createBuyerStoreAdmissionFence({groupId:process.getgid(),attestation:{binding:()=>binding},
+  readState:()=>structuredClone(state),
+  acquire:options=>acquireReleaseAdmissionLock({...options,root:dir,owner:process.getuid(),checkDirectory(){}})});
+ const exclusive=()=>spawnSync('/usr/bin/flock',['--exclusive','--nonblock',lockPath,'/usr/bin/true']).status;
+ try{
+  await fence.run('profiles-read',async()=>{entered++;assert.equal(exclusive(),1);await new Promise(resolve=>setImmediate(resolve));assert.equal(exclusive(),1);});
+  assert.equal(entered,1);assert.equal(exclusive(),0);
+  await assert.rejects(fence.run('user',async()=>{entered++;}));
+  state={version:1,mode:'open',...binding};
+  await assert.rejects(fence.run('profiles-read',async()=>{entered++;}));
+  state={version:1,mode:'held',...binding,workerGeneration:'d'.repeat(32)};
+  await assert.rejects(fence.run('profiles-read',async()=>{entered++;}));
+  assert.equal(entered,1);assert.equal(exclusive(),0);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('HELD observation cannot authorize a read after state switches OPEN before locking',async()=>{
+ let reads=0,entered=false,closed=false;
+ const fence=createBuyerStoreAdmissionFence({groupId:1,attestation:{binding:()=>binding},
+  readState:()=>({version:1,...binding,mode:++reads===1?'held':'open'}),
+  acquire:options=>{assert.equal(options.allowPending,true);return{assertIdentity(){},close(){closed=true;}};}});
+ await assert.rejects(fence.run('profiles-read',async()=>{entered=true;}));
+ assert.equal(entered,false);assert.equal(closed,true);
+});

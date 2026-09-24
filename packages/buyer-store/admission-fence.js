@@ -14,10 +14,14 @@ export function createBuyerStoreAdmissionFence({attestation,groupId=admissionGro
  readState=()=>readRootOwnedJson(RELEASE_ADMISSION_ROOT+'/state.json',{groupId,maxBytes:2048})}={}){
  if(typeof attestation?.binding!=='function')fail();
  return Object.freeze({async run(lane,handler){
-  const lease=acquire({groupId});try{
+  // Only an already-observed HELD profiles read may cross the pending marker.
+  // Recheck that mode under the same shared lease before any dispatch.
+  const heldRead=lane==='profiles-read'&&validateReleaseAdmissionState(readState()).mode==='held';
+  const lease=acquire({groupId,allowPending:heldRead});try{
    const binding=attestation.binding();
    const verify=()=>{
     lease.assertIdentity();const state=validateReleaseAdmissionState(readState());
+    if(heldRead&&state.mode!=='held')fail();
     if(lane==='user'&&state.mode!=='open')fail();
     if(!['user','profiles-read','ready'].includes(lane)||state.releaseSha!==binding.releaseSha||state.runId!==binding.runId)fail();
     if(state.mode==='held'){
