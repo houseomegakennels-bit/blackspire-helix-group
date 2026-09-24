@@ -1,3 +1,4 @@
+import {resolveProductionBackup} from './mixed-backup-renewal.js';
 import {ownedBackendFields,createOwnedStoreTransition} from './owned-store-transition.js';
 import {inspectCandidateDeploymentHistory} from './candidate-deployment.js';
 import fs from 'node:fs';
@@ -79,7 +80,7 @@ async function vpsBase(context,args,held,dependencies){
  if(JSON.stringify(ownedBackendFields(candidate.plan))!==JSON.stringify(ownedBackendFields(context.release)))reject();
  return{...ownedBackendFields(context.release),candidateSha:candidate.plan.releaseSha,candidateArtifactDigest:candidate.plan.artifactDigest,candidateDeploymentDigest:hash(candidate.plan),operationId:binding.attemptId,commanderRunId:binding.operationId,epochRunId:held.epochRunId,rollbackEpochRunId:randomUUID(),newMainSha,
   rollbackSha:context.input.recoverySha,artifactDigest:await dependencies.materializeArtifact(newMainSha),rollbackArtifactDigest:rollback.artifactDigest,
-  backupDigest:rollback.backupProofDigest,backupManifestFile:context.release.backupManifestFile,
+  backupDigest:rollback.backupProofDigest,backupManifestFile:resolveProductionBackup(context),
   admissionDigest:hash({version:1,mode:'held',releaseSha:newMainSha,runId:held.epochRunId,apiGeneration:null,workerGeneration:null})};
 }
 async function ensureHeld(context,args,dependencies){

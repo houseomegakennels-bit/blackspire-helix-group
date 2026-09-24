@@ -1,3 +1,4 @@
+import {resolveProductionBackup} from './mixed-backup-renewal.js';
 import {createPostmergeAuthorityRebind} from './postmerge-authority-rebind.js';
 import {isProductionAcceptanceIdentity} from './production-runtime-identity.js';
 import fs from 'node:fs';
@@ -89,16 +90,16 @@ function append(context,event){context.journal.stream('release').append(event);}
 
 async function artifactAndBackup(context,binding){
  const artifactRoot=path.join(RELEASE_ROOT,binding.rollbackSha);
- if(!fs.existsSync(artifactRoot)||!fs.existsSync(context.release.backupManifestFile))return{status:'BLOCKED_EXTERNAL'};
+ if(!fs.existsSync(artifactRoot)||!fs.existsSync(resolveProductionBackup(context)))return{status:'BLOCKED_EXTERNAL'};
  // Recoverability verifies the immutable package; live generations are observed separately.
  const artifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
  if(artifact.releaseSha!==binding.rollbackSha||artifact.environment!=='production'||!digest(artifact.artifactDigest)
   ||binding.rollbackSha!==RECOVERY_SHA||artifact.artifactDigest!==RECOVERY_ARTIFACT)reject();
- const backup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
+ const backup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:resolveProductionBackup(context)});
  if(backup.status!=='PROTECTED_BACKUP_VERIFIED'||backup.releaseSha!==binding.releaseSha
   ||!digest(backup.snapshotSha256)||!digest(backup.manifestSha256)||backup.sourceIdentityBound!==true)reject();
  const secondArtifact=await inspectSealedBuyerWriterArtifact({artifactRoot,releaseSha:binding.rollbackSha,environment:'production'});
- const secondBackup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:context.release.backupManifestFile});
+ const secondBackup=verifyProtectedReleaseBackup({releaseSha:binding.releaseSha,manifestFile:resolveProductionBackup(context)});
  if(!same(artifact,secondArtifact)||!same(backup,secondBackup))reject();
  return{status:'PASS',artifactDigest:artifact.artifactDigest,backupManifestDigest:backup.manifestSha256,
   backupSnapshotDigest:backup.snapshotSha256,backupProofDigest:hash(backup)};
@@ -124,7 +125,7 @@ function acceptanceJournal(context,ids,{pending}){
 function defaultAcceptancePrecheck(context,binding,ids){
  acceptanceJournal(context,ids,{pending:false});
  if(binding.rollbackSha!==RECOVERY_SHA||!fs.existsSync(path.join(RELEASE_ROOT,binding.rollbackSha))
-  ||!fs.existsSync(context.release.backupManifestFile))return{status:'BLOCKED_EXTERNAL'};
+  ||!fs.existsSync(resolveProductionBackup(context)))return{status:'BLOCKED_EXTERNAL'};
  return{status:'PASS',rollbackCandidatePresent:true,protectedBackupPresent:true};
 }
 function defaultVerificationPrecheck(context,binding,ids){
@@ -152,7 +153,7 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
  const events=context.journal.stream('release').events(),cutover=inspectVpsCutoverHistory(events);
  if(!cutover.completed||cutover.rollingBack||cutover.rollbackComplete||cutover.pending||cutover.intent.rollbackSha!==binding.rollbackSha
   ||cutover.intent.commanderRunId!==ids.operationId||cutover.intent.rollbackArtifactDigest!==integrity.artifactDigest
-  ||cutover.intent.backupManifestFile!==context.release.backupManifestFile||cutover.intent.backupDigest!==integrity.backupProofDigest)reject();
+  ||cutover.intent.backupManifestFile!==resolveProductionBackup(context)||cutover.intent.backupDigest!==integrity.backupProofDigest)reject();
  const cutoverStage=events.find(row=>row?.type==='sequence_stage_confirmed'&&row.stage==='journaled_vps_cutover');
  if(!cutoverStage||cutoverStage.attemptId!==cutover.intent.operationId)reject();
  const held=inspectHeldAcceptanceHistory(events);
@@ -174,6 +175,14 @@ async function defaultVerification(context,binding,ids,acceptanceProof){
 
 function operation(context,stage,precheck,collector,integrity){
  const binding=contextBinding(context);
+ const collectAndRecord=async ids=>{
+   const result=await collector(context,binding,ids);
+   if(result?.status==='BLOCKED_EXTERNAL'){append(context,{schema:1,type:stage+'_probe_result',binding,...ids,status:'BLOCKED_EXTERNAL'});return;}
+   if(result?.status!=='PASS')reject();
+   const core={stage,binding,...ids,...result};delete core.status;
+   const proof={status:'PASS',...core,observationDigest:hash(core)};safeProof(proof,stage,binding,ids);
+   append(context,{schema:1,type:stage+'_probe_result',binding,...ids,status:'PASS',proof});
+ };
  return Object.freeze({
   async check(value){const ids=invocation(value,stage,{pending:false}),checked=await precheck(context,binding,ids);
    if(checked?.status==='BLOCKED_EXTERNAL')return checked;if(checked?.status!=='PASS')reject();
@@ -188,7 +197,17 @@ function operation(context,stage,precheck,collector,integrity){
    const proof={status:'PASS',...core,observationDigest:hash(core)};safeProof(proof,stage,binding,ids);
    append(context,{schema:1,type:`${stage}_probe_result`,binding,operationId:ids.operationId,attemptId:ids.attemptId,status:'PASS',proof});
   },
-  async reconcile(value){const ids=invocation(value,stage),result=history(context,stage,binding,ids);
+  async reconcile(value){const ids=invocation(value,stage);
+   const pending=rows(context,stage);
+   if(pending.length===1){
+    const intent=pending[0];
+    if(!exact(intent,['schema','type','binding','operationId','attemptId'])||intent.schema!==1||intent.type!==stage+'_probe_intent'
+     ||!same(intent.binding,binding)||intent.operationId!==ids.operationId||intent.attemptId!==ids.attemptId)reject();
+    // This collector only observes immutable packages/backups and disposable rehearsal.
+    // A retained intent without a result can re-observe; completed proofs never rerun.
+    await collectAndRecord(ids);
+   }
+   const result=history(context,stage,binding,ids);
    if(result.status==='BLOCKED_EXTERNAL')return{status:'BLOCKED_EXTERNAL'};
    if(integrity){const current=await integrity(context,binding,result.proof,ids);if(current?.status==='BLOCKED_EXTERNAL')return current;if(current?.status!=='PASS')reject();}
    return{status:'PASS',evidence:result.proof};},

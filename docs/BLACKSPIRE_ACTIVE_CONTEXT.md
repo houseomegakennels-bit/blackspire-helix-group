@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-24 — fresh acceptance passed; backup renewal prepared
+
+Clean 5c8d36e76988f989d38cc02580db162bad202d62 completed the distinct writer request and all four correlated gateway receipt operations. Bounded writer acceptance, migration preflight, retained migration lineage and postconditions passed. All six fresh premerge reads passed with six cross-owner denials, zero paid calls and zero unintended mutations. The new acceptance report and completed authority are retained separately from old Seller/Buyer evidence.
+
+The sequence stopped at rollback_acceptance with a probe intent and no result, at 251 events. Native read-only diagnosis located the failure in the protected-backup freshness check: the original backup exceeded one hour during repairs. The renewal implementation retains the old backup and binds a fresh protected capture to the exact release/input, operation and original manifest digest. Rollback and VPS planning resolve the same retained replacement. The one-hour validator remains unchanged. Capture has a separate retained intent; an interrupted capture without result cannot automatically repeat.
+
+An incomplete rollback probe may re-observe its exact read-only/disposable rehearsal, while completed results are never rerun. Thirteen rollback/deployment tests pass, including interrupted-probe reconciliation with one retained intent/result and unchanged attempt. Native renewal and rollback readiness remain UNVERIFIED. Next: execute the clean fixed CLI to capture/verify the fresh backup and continue toward merge; runtime remains HELD and production OPEN is not claimed.
+
+
 ## 2026-09-24 — request-ID collision recovery verified
 
 Clean d95fca5e24f87406cdeb0ad6ff6123891b24924a recorded the expired unissued retirement and refreshed the protected test target. Its replacement token reused the original request ID, so the database uniqueness constraint correctly refused reservation. The release stopped with a second retained issue handle at 236 events. Native read-only observation confirms the second admission is absent, the original reservation is expired and unbound, both share the request ID, neither has a dispatch, the target version is current and no active dispatch exists.

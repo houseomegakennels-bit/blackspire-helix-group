@@ -81,3 +81,19 @@ test('changed attempt, operation or proof bytes fail closed during rollback reco
   assert.equal(result.releaseState,'FAIL_CLOSED');assert.equal(result.reason,'RELEASE_SEQUENCE_REJECTED');
  }
 });
+
+test('interrupted read-only rollback probe resumes its exact intent once',async()=>{
+ const j=journal();let probes=0;
+ const rollback=createRollbackProductionOperations(context(j),{...checks,
+  observeAcceptance:async()=>{if(++probes===1)throw Error('backup temporarily unavailable');return acceptanceProof;},
+  observeAcceptanceIntegrity:async()=>({status:'PASS'}),observeVerification:async()=>verificationProof,observeVerificationIntegrity:async()=>({status:'PASS'})});
+ const first=await runReleaseSequence({input,journal:j,adapters:adapters(rollback,'ci_security')});
+ assert.equal(first.stage,'rollback_acceptance');assert.equal(j.events.filter(e=>e.type==='rollback_acceptance_probe_intent').length,1);
+ assert.equal(j.events.filter(e=>e.type==='rollback_acceptance_probe_result').length,0);
+ const next=await runReleaseSequence({input,journal:j,adapters:adapters(rollback,'ci_security')});
+ assert.equal(next.stage,'ci_security');assert.equal(probes,2);
+ assert.equal(j.events.filter(e=>e.type==='rollback_acceptance_probe_intent').length,1);
+ assert.equal(j.events.filter(e=>e.type==='rollback_acceptance_probe_result').length,1);
+ assert.equal(inspectReleaseCommander(j).status,'OBSERVED');
+ await runReleaseSequence({input,journal:j,adapters:adapters(rollback,'ci_security')});assert.equal(probes,2);
+});

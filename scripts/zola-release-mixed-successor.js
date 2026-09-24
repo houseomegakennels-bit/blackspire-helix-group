@@ -42,6 +42,8 @@ try{
    ||result.status!=='MIXED_PREVIEW_ADOPTED'||result.planDigest!==hash(plan)
    ||result.releaseSha!==P.successorReleaseSha||result.deploymentId!==MIXED_PREVIEW.deploymentId)throw Error('MIXED_PREVIEW_RECEIPT_CHANGED');
  }
+ const {prepareMixedBackupRenewal}=await load('mixed-backup-renewal.js');
+ await prepareMixedBackupRenewal({release:loadedInput.value,journal,fence});
  const result=await runProductionRelease({loadedInput,journal},{operations:context=>createMixedNativeOperations(context,{fence})});
  fence();console.log(JSON.stringify({operatorSha,...result}));
  if(!['COMPLETE','OBSERVED'].includes(result.status))process.exitCode=1;
