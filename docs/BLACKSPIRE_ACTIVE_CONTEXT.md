@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-09-24 — Buyer repair merged; successor artifact sealed and Preview Ready
+
+PR155 merged into release/zola-production-live as f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e after exact repair-head af6c58ba8eb4b32743b0b5124c7249a51b0e41eb passed all CI36005166601 gates and Vercel contexts. PR125 now targets the new candidate; its own exact merged-head CI36006474929 is running and remains a required gate.
+
+A separate canonical checkout at /mnt/blackspire-builds/development-cache/0/workspaces/zola-final-successor-20260924 holds the new release branch. The original canonical worktree remains clean at a8e05ef, preserving all frozen history readers. The new production artifact was built at /opt/blackspire-command/releases/f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e. Native sealed inspection passes with artifactDigest e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a, deployed=false and productionAccepted=false.
+
+Connected Vercel inspection confirms dpl_F91bkRA33kQw1X7RsxigNUg9MdJv is READY Preview for the exact new SHA and release branch. Its origin is https://frontend-4rrto278r-houseomegakennels-4825s-projects.vercel.app. This is candidate build evidence, not runtime acceptance.
+
+Installed runtime remains the prior a8e05ef candidate, HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a. Do not run the old continuation after remote release-head advancement, patch the installed artifact, reuse UNKNOWN collector evidence or call the2636-only retirement/preparer. Next implementation must retain the exact mixed-read observer proof and both older recoveries, bind a new successor operation and current lifecycle/configuration, preserve and retire the current writer/permit files with durable intents, and extend native historical parsing and successor preparation explicitly. Then complete native deployment and fresh acceptance. No runtime switch, main merge or production OPEN occurred.
+
 ## 2026-09-24 — mixed Seller/Buyer failure observer verified
 
 Separate read-only recovery observation now pins frozen credential recovery 4ac36431870cc062a321d895acbddd14b88fdbff and verifies its completed transition, retired expired UNKNOWN permit, unchanged archives and both older recovery chains. It checks the complete release/acceptance/collector hash chains, the one completed Seller task and one UNKNOWN Buyer task with their exact provider/input rows, absence of the other four admissions, inactive authority, current HELD lifecycle, writer binding, four services and exact corrected deployment.
