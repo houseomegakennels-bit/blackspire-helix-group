@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-24 — current-runtime preflight passed; protected archive implementation
+
+Clean operator 26e27ae1c362b39cf3f15ccdfad83b9a6d17b6da passed the strengthened native retirement preflight. Protected-state digest remains ede3ccf26694e1050179384e64cbe82427c076053d9e49d73d93fb833370b40c and lifecycle digest e41f5705c50ee235918e4719eefb7d45693d8b73c3481d5fd7c2e9f651d97c4e. Prepared input, database lineage and prior gateway receipt all verified. No stop was sent.
+
+A separate authority archive now binds the exact protected snapshot and schema-six retirement. It retains per-file intents before moving the expired claims/secret and prior writer commit/binding, preserves bytes and inode, refuses existing destinations or changed file identity, and observes uncertain outcomes without redispatch. The native fence requires the exact 187-event retired history, stopped services with no detached survivors, unchanged remaining protected files, inactive authority and unchanged acceptance/collector journals. Read-only completed archive verification allows a later fresh live authority while still validating the original archived files.
+
+Three native disposable filesystem tests pass, covering interrupted moves, replay, collision, identity drift and retirement drift. Build, lint and syntax typecheck pass. The preparation CLI holds the global release journal and admission exclusion, captures metadata-only snapshots, and does not stop services or move authority files. Live archive preparation and execution remain UNVERIFIED. Next: prepare the clean live archive plan, finish native successor operator composition, then execute retirement/archive and the full authorized successor sequence. Current a8 remains HELD; production OPEN is not claimed.
+
+
 ## 2026-09-24 — successor inputs verified; current-runtime activation support
 
 Native preparation from clean operator ebcc0b2078632cdf5904f8cabbd8fe2aa9a56462 completed for candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e and operation b9679cbd-5331-45ae-a026-02b7f5e117e9. The final input digest is d249b16ea4aa576a71dbb0bd04f38f0a9dfed96e1538fe8b06165491d3887e84. A separate SQLite backup and exact original workflow backup were retained. Native migration successor verification passed with lineage digest 7e6aec9a795cb03aa0b0729e9245b0660c5a6bba23a4ae9b4c564af078e0dde8. Existing data was neither copied again nor rehardened; the published n8n candidate was observed without mutation.

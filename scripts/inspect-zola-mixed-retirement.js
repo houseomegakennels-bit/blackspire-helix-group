@@ -3,9 +3,9 @@ import {fileURLToPath} from 'node:url';
 import {register} from 'node:module';
 const root=fileURLToPath(new URL('../',import.meta.url)).replace(/\/$/,'');
 const fail=()=>{throw Error('MIXED_RETIREMENT_INSPECTION_REFUSED');};
-let lease;
+let lease,journal;
 try{
- if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==3||process.argv[2]!=='--inspect'
+ if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==3||!['--inspect','--prepare-archive'].includes(process.argv[2])
   ||root!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-buyer-admitted-successor-20260924')fail();
  const git=args=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',root,...args],{
   encoding:'utf8',timeout:10000,stdio:['ignore','pipe','pipe'],
@@ -19,10 +19,21 @@ try{
  const {createMixedRetirementHost}=await import('../packages/zola-release/mixed-retirement-host.js');
  const {MIXED_RETIREMENT:P}=await import('../packages/zola-release/mixed-retirement-history.js');
  const host=createMixedRetirementHost();await host.verifySuccessor({successorReleaseSha:P.successorReleaseSha,successorOperationId:P.successorOperationId});
- fence();lease=await host.lease();const result=await host.observeRunning();fence();lease.assertIdentity();
+ fence();
+ if(process.argv[2]==='--prepare-archive'){
+  const {prepareMixedAuthorityArchive,createMixedAuthorityArchiveStore}=await import('../packages/zola-release/mixed-authority-archive-host.js');
+  const {openReleaseJournal}=await import('../packages/zola-release/commander-journal.js');
+  const {validateMixedRetirementPrefix}=await import('../packages/zola-release/mixed-retirement-history.js');
+  journal=openReleaseJournal();validateMixedRetirementPrefix(journal.stream('release').events());
+  const result=await prepareMixedAuthorityArchive({host,store:createMixedAuthorityArchiveStore()});
+  validateMixedRetirementPrefix(journal.stream('release').events());fence();
+  console.log(JSON.stringify({...result,operatorSha,retirementExecuted:false,productionOpen:false}));
+ }else{
+ lease=await host.lease();const result=await host.observeRunning();fence();lease.assertIdentity();
  console.log(JSON.stringify({status:'MIXED_RETIREMENT_PREFLIGHT_VERIFIED',operatorSha,successorReleaseSha:P.successorReleaseSha,
   ...result,mutationSent:false,retirementExecuted:false,productionOpen:false}));
+ }
 }catch(e){
  console.log(JSON.stringify({status:'STOPPED',reason:'MIXED_RETIREMENT_INSPECTION_REFUSED',productionOpen:false}));
  console.error(String(e.stack).split('\n').slice(1,4).join('\n'));process.exitCode=1;
-}finally{lease?.close();}
+}finally{lease?.close();journal?.close();}

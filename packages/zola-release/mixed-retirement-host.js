@@ -154,6 +154,7 @@ export function createMixedRetirementHost(){
    lease=acquireReleaseAdmissionLock({exclusive:true,allowPending:true,owner:0,groupId:fs.lstatSync(A+'/state.json').gid});
    lease.assertIdentity();return lease;
   },
+  captureProtectedState:snapshot,
   async observeRunning(){
    lease.assertIdentity();const before=await snapshot(),proof=await observeMixedReadFailure({lease});
    const lifecycle=await observeHeldLifecycle({releaseSha:P.releaseSha,runId:P.runId}),artifact=await deployed();
@@ -174,3 +175,5 @@ export function createMixedRetirementHost(){
   },
  };
 }
+
+export function verifyMixedRetirementQuiescence(){verifyOwnedBuyerMigrationQuiescence();noSurvivors();}
