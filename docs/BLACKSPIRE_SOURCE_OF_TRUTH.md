@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-24 — Buyer HELD pending-marker fix verified locally
+
+Credential recovery completed its held transition on epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Fresh Seller acceptance completed, with receiver HTTP200. Buyer profiles was then admitted once and returned HTTP404 through the authority consumer; its task/provider result remains outcome_unknown. The permit retired UNKNOWN. Preserve this collector, its completed Seller result, failed Buyer result, all earlier UNKNOWN histories and the frozen candidate. Do not replay it.
+
+Source inspection found that the owned Buyer profiles fence requests a default shared lock that rejects pending.json before reaching its intended HELD read-only check. A disposable real-lock reproduction confirmed rejection before the handler. The fix observes HELD before allowing the profiles-only pending exception, then rechecks HELD state, release/epoch and generation binding under the shared lock before dispatch and after completion. User writes and OPEN profiles reads with a pending marker remain denied; HELD-to-OPEN changes before locking also refuse.
+
+Twenty-nine focused tests pass, including real pending-marker locking, disconnect lease retention, real confined-runtime attestation and receiver callback coverage. Build, lint and syntax typecheck pass. This code is not deployed and live Buyer acceptance remains UNVERIFIED. Next: publish the isolated repair for exact-head CI, review it, then prepare a sealed successor through the native release/retirement gates. No manual patch to the installed artifact, source-proof bypass, production OPEN or main merge occurred.
+
 ## 2026-09-21 — concurrent main reviewed and reconciled
 
 The reviewed implementation anchor advances to main3019785; current mainf3ac is its documentation-only descendant. Review and conflict resolution preserve the release’s stricter admin gates, owned Buyer routing and claim-before-authority invitation repair while retaining isolated demo functionality. Fifty-five focused tests, frontend TypeScript and the normal Turbopack production build pass. The predecessor input remains bound to historical2775; new successor input separately pins actual currentf3ac and verifies the full ancestry. This anchor records reviewed implementation, not production acceptance. The already-applied restrictive demo policy changes the source catalog; current source compatibility remains pending its explicit read-only successor proof. Original migration/copy/hardening evidence is retained.

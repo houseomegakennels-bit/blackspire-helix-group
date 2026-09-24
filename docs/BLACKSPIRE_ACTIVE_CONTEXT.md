@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-09-24 — Buyer HELD pending-marker fix verified locally
+
+Credential recovery completed its held transition on epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Fresh Seller acceptance completed, with receiver HTTP200. Buyer profiles was then admitted once and returned HTTP404 through the authority consumer; its task/provider result remains outcome_unknown. The permit retired UNKNOWN. Preserve this collector, its completed Seller result, failed Buyer result, all earlier UNKNOWN histories and the frozen candidate. Do not replay it.
+
+Source inspection found that the owned Buyer profiles fence requests a default shared lock that rejects pending.json before reaching its intended HELD read-only check. A disposable real-lock reproduction confirmed rejection before the handler. The fix observes HELD before allowing the profiles-only pending exception, then rechecks HELD state, release/epoch and generation binding under the shared lock before dispatch and after completion. User writes and OPEN profiles reads with a pending marker remain denied; HELD-to-OPEN changes before locking also refuse.
+
+Twenty-nine focused tests pass, including real pending-marker locking, disconnect lease retention, real confined-runtime attestation and receiver callback coverage. Build, lint and syntax typecheck pass. This code is not deployed and live Buyer acceptance remains UNVERIFIED. Next: publish the isolated repair for exact-head CI, review it, then prepare a sealed successor through the native release/retirement gates. No manual patch to the installed artifact, source-proof bypass, production OPEN or main merge occurred.
+
 ## 2026-09-21 — current successor continuation
 
 The user grants standing authority for all Zola release changes, merges and deployments, including production; earlier entries retain historical approval state. Commander is connected. Zola remains HELD on candidate2636 with four application services running and its writer binding incomplete. Successor code and acceptance fixes are reviewed, and draft PR154 is open. Concurrent main3019785 and docs-onlyf3ac are reconciled locally; their restrictive source demo policy requires a separate current-security compatibility proof before successor lineage preparation. Original migration, copy and hardening receipts and all journals remain untouched. No successor retirement or production switch has executed.
