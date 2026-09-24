@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — stopped-runtime preparation reconciler verified
+
+The live transition stopped API, worker and buyer-store and preserved the expired successor claims and secret with their original bytes/inodes. The original release journal remains unchanged. Its separate recovery journal retains completed stop/archive steps and an unmatched prepare_bindings intent. No receiver URL, epoch, runtime configuration, manifest or writer binding was published.
+
+Native stopped-root validation rejected systemd's retained bin-to-usr/bin link and empty root/var/tmp scaffolding. The compatibility correction accepts only that exact relative link and empty root-owned, non-group/other-writable directories; unexpected content, ownership and link targets remain rejected. Actual stopped-root inventory now passes. Source-hash-pinned loading applies the same correction to frozen native consumers without modifying them.
+
+An explicit preparation reconciler verifies the exact five-event prefix, stopped services, preserved archive, byte-identical runtime configuration and absence of all preparation outputs before retaining its own intent and preparing metadata only. Subsequent ordinary resume must observe that result. Focused tests pass 68/68. Fresh acceptance, restart and production OPEN remain UNVERIFIED. Next: run clean preparation reconciliation, resume the held transition, then continue native fresh acceptance immediately.
+
 ## 2026-09-24 — coordinated admitted-read recovery implemented
 
 The separate recovery operator now implements a durable HELD-only transition: stop services, preserve the expired permit files, prepare and publish the new receiver and owned-store bindings, create a new epoch, restart the exact candidate, publish the runtime manifest, renew the writer binding through native checks, and prepare a fresh collector configuration. Each step records intent before execution and observes an uncertain result without dispatching that step again. The original task and provider attempt remain UNKNOWN and unchanged.

@@ -19,7 +19,7 @@ export function renderBuyerStoreNamespaceDropin(releaseSha){
 // systemd mountpoint scaffolding and the exact artifact symlink may remain.
 export function verifyBuyerStoreNamespaceInventory(releaseSha,{io=fs,root=BUYER_STORE_ROOTFS}={}){
  const files=new Set(['/etc/passwd','/etc/group','/etc/nsswitch.conf','/etc/hosts','/etc/resolv.conf','/run/dbus/system_bus_socket']);
- const directories=new Set(['/', '/tmp','/dev','/proc','/sys','/run/systemd/system','/run/blackspire-buyer-store']);
+ const directories=new Set(['/', '/root','/var/tmp','/tmp','/dev','/proc','/sys','/run/systemd/system','/run/blackspire-buyer-store']);
  for(const target of [...buyerStoreNamespaceBindings(releaseSha),...directories]){
   if(!files.has(target))directories.add(target);
   for(let p=path.posix.dirname(target);p!=='/';p=path.posix.dirname(p))directories.add(p);
@@ -28,6 +28,9 @@ export function verifyBuyerStoreNamespaceInventory(releaseSha,{io=fs,root=BUYER_
  const visit=relative=>{
   const filename=root+(relative==='/'?'':relative),s=io.lstatSync(filename);
   if(s.uid!==0||s.gid!==0)fail();
+  // systemd may retain the usr-merge shim after the service stops. It must
+  // resolve to the existing read-only /usr/bin bind, never outside this root.
+  if(relative==='/bin'){if(!s.isSymbolicLink()||s.nlink!==1||io.readlinkSync(filename)!=='usr/bin')fail();return;}
   if(relative===link){if(!s.isSymbolicLink()||io.readlinkSync(filename)!=='releases/'+releaseSha)fail();return;}
   if(s.isSymbolicLink())fail();
   if(files.has(relative)){if(!s.isFile()||s.nlink!==1||s.size!==0||(s.mode&0o022)!==0)fail();return;}

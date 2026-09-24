@@ -125,6 +125,21 @@ export function createNativeReadRecoveryHost(plan){
    journal=openReleaseJournal();try{records.directory(R+'/events',{create:true});eventsJournal=openReleaseJournal({root:R+'/events'});}catch(e){journal.close();journal=null;throw e;}
    return {close:async()=>{eventsJournal?.close();journal?.close();}};
   },
+  async reconcilePreparation(){
+   const e=eventsJournal.stream('release').events();
+   if(e.length!==5||e.at(-1).type!=='step_intent'||e.at(-1).step!=='prepare_bindings')fail();
+   stopped();archived('claims');archived('secret');
+   for(const name of Object.keys(original))if(!['claims','secret'].includes(name)&&current(name)!==original[name].bytes)fail();
+   for(const name of ['receiver-plan.json','store-plan.json','owned-store','preparation-reconciliation-intent.json'])
+    if(fs.existsSync(R+'/'+name))fail();
+   retain('preparation-reconciliation-intent',{version:1,kind:'plan-only-reconciliation',reason:'EXACT_STOPPED_NAMESPACE_SCAFFOLDING',
+    planDigest:hash(plan),retainedEventsDigest:hash(e),runtimeConfigurationUnchanged:true});
+   const r=await receiver.prepare({releaseSha:P.releaseSha,mode:'preview'});
+   const s=await store.prepare({releaseSha:P.releaseSha,previousSha:P.releaseSha,origin:P.newOrigin,backendProfile:'owned-postgres-v1',profileDigest:snapshot.writer.profileDigest});
+   retain('receiver-plan',r);retain('store-plan',s);
+   retain('preparation-reconciliation-result',{version:1,planDigest:hash(plan),receiverPlanDigest:hash(r),storePlanDigest:hash(s)});
+   return {status:'BINDING_PREPARATION_RECONCILED',planDigest:hash(plan),productionOpen:false};
+  },
   async fence(){
    if(hash(fs.readFileSync('/var/lib/blackspire-operator/release-operations/release.jsonl'))!==P.releaseDigest
     ||fs.realpathSync('/opt/blackspire-command/current')!=='/opt/blackspire-command/releases/'+P.releaseSha)fail();

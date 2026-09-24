@@ -18,7 +18,7 @@ const git=(dir,args)=>execFileSync('/usr/bin/git',['--no-replace-objects','-C',d
 let phase='preflight';
 try{
  if(process.getuid?.()!==0||process.versions.node!=='22.23.1'||process.argv.length!==3
- ||!['--check','--prepare','--apply','--continue'].includes(process.argv[2])
+ ||!['--check','--prepare','--apply','--continue','--repair-preparation'].includes(process.argv[2])
  ||root!=='/mnt/blackspire-builds/development-cache/0/workspaces/zola-admitted-read-recovery-20260924')fail();
  const mode=process.argv[2],operatorSha=git(root,['rev-parse','HEAD']);
  const verify=()=>{
@@ -42,6 +42,11 @@ try{
   console.log(JSON.stringify({...result,operatorSha}));
  }else if(mode==='--prepare'){
   const result=await prepareNativeReadRecovery();verify();console.log(JSON.stringify({...result,operatorSha}));
+ }else if(mode==='--repair-preparation'){
+  const files=createBuyerStoreProtectedFiles(),plan=files.value(R+'/plan.json'),host=createNativeReadRecoveryHost(plan);
+  const lease=await host.acquire();phase='preparation_reconciliation';
+  try{verify();await host.fence();const result=await host.reconcilePreparation();verify();console.log(JSON.stringify(result));}
+  finally{await lease.close();}
  }else{
   const files=createBuyerStoreProtectedFiles(),plan=files.value(R+'/plan.json');
   if(!fs.existsSync(R+'/events/release.jsonl')){

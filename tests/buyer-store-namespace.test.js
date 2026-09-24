@@ -37,3 +37,25 @@ test('namespace rejects foreign content and accepts only empty mountpoint scaffo
   fs.mkdirSync(root+'/home');await assert.rejects(prepareBuyerStoreNamespace(sha,options));
  }finally{fs.rmSync(base,{recursive:true,force:true});}
 });
+
+test('stopped namespace accepts exact systemd scaffolding but rejects populated or redirected paths',{skip:process.getuid()!==0},async()=>{
+ const {verifyBuyerStoreNamespaceInventory:v}=await import('../packages/buyer-store/namespace.js');
+ const root=fs.mkdtempSync('/root/buyer-namespace-scaffold-'),sha='a'.repeat(40);
+ try{
+  for(const p of ['/root','/var/tmp','/usr/bin'])fs.mkdirSync(root+p,{recursive:true,mode:0o755});
+  fs.symlinkSync('usr/bin',root+'/bin');assert.equal(v(sha,{root}),true);
+  for(const target of ['/usr/bin','../../usr/bin','usr/lib']){
+   fs.unlinkSync(root+'/bin');fs.symlinkSync(target,root+'/bin');assert.throws(()=>v(sha,{root}));
+  }
+  fs.unlinkSync(root+'/bin');fs.symlinkSync('usr/bin',root+'/bin');
+  for(const p of ['/root','/var/tmp']){
+   fs.writeFileSync(root+p+'/unexpected','');assert.throws(()=>v(sha,{root}));fs.unlinkSync(root+p+'/unexpected');
+   fs.chmodSync(root+p,0o775);assert.throws(()=>v(sha,{root}));fs.chmodSync(root+p,0o755);
+  }
+  for(const patch of [{uid:1},{gid:1},{nlink:2}]){
+   const io={...fs,lstatSync:p=>{const s=fs.lstatSync(p);if(p===root+'/bin')Object.assign(s,patch);return s;}};
+   assert.throws(()=>v(sha,{root,io}));
+  }
+  assert.equal(v(sha,{root}),true);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});
