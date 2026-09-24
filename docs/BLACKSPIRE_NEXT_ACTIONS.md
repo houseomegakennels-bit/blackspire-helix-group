@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-24 — merged production verified; interrupted store startup recovery
+
+PR125 is merged as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Exact-head merge identity and Vercel production deployment dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x are verified; Vercel is READY at that SHA. The fixed CLI advanced the VPS pointer to the same merged release under HELD epoch fa25de00-5c65-44f0-b437-03e4f2b295aa. API, worker and gateway run; the Buyer store remains stopped. Lifecycle and deployed artifact observations pass. The 287-event journal retains store_start intent with no result; OPEN remains UNVERIFIED.
+
+Pending owned-store startup can now reconcile through its existing durable manifest publication layers under the cutover lease. It verifies retained transition, receiver/authority bindings, service state and stable API/worker generations before startup; drift cannot start the store. Other interrupted steps retain existing observation/rollback behavior. Sixteen focused tests pass, including protected publication replay and lost-rename recovery. An in-memory copy of the native 287-event journal reaches cutover completion at 295 modeled events, without physical writes or redispatch of the original store_start operation.
+
+Next: execute the clean fixed CLI to reconcile store startup, verify readiness and generations, then complete postmerge acceptance and guarded OPEN. No business request or old acceptance is replayed.
+
+
 ## 2026-09-24 — rollback, CI and diff passed; merge proof formatting repaired
 
 Clean 124729ff47261ac5fb8af40eb658f62307e5462d retained the successful successor rollback proof and confirmed rollback_acceptance, ci_security and final_diff. The merge precheck returned PASS from GitHub twice, but the sequence rejected its evidence because it contained attemptId:null before an attempt existed. No expected_head_merge intent or request was sent; PR125 remains open at f1f and main remains f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8.

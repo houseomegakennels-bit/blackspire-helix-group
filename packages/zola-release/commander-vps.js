@@ -68,6 +68,20 @@ function command(file,args,env={}){const result=spawnSync(file,args,{encoding:'u
 export async function verifyVpsRetainedBackup(plan,{verify=verifyProtectedReleaseBackup}={}){
  const proof=await verify({releaseSha:plan.candidateSha,manifestFile:plan.backupManifestFile});return hash(proof)===plan.backupDigest;
 }
+export async function reconcileOwnedStoreStartup(plan,snapshot,{store,assertAdmission,observeLifecycle=observeHeldLifecycle,verifyBindings,activeStore}){
+ if(!plan.backendProfile||!snapshot?.ownedStore)reject();
+ assertAdmission(plan);
+ if(!verifyBindings()||!store.observe(snapshot.ownedStore))reject();
+ const state=activeStore();
+ if(!((state.ActiveState==='inactive'&&state.SubState==='dead'&&state.MainPID==='0')||(state.ActiveState==='active'&&state.SubState==='running'&&/^[1-9][0-9]*$/.test(state.MainPID))))reject();
+ const first=await observeLifecycle({releaseSha:plan.newMainSha,runId:plan.epochRunId});
+ const binding={releaseSha:plan.newMainSha,runId:plan.epochRunId,apiGeneration:first.api.generation,workerGeneration:first.worker.generation};
+ // Both publication layers retain exact before/candidate receipts and refuse drift.
+ await store.publishManifest(binding);
+ if(!same(first,await observeLifecycle({releaseSha:plan.newMainSha,runId:plan.epochRunId}))||!verifyBindings()||!store.observe(snapshot.ownedStore)||!store.observeManifest(binding))reject();
+ assertAdmission(plan);store.start();
+ return true;
+}
 export function createOwnedRuntimeVpsHost(){
  return productionHost({repository:'/mnt/blackspire-builds/development-cache/0/workspaces/zola-final-release-20260921/',store:createOwnedRuntimeStoreTransition()});
 }
@@ -122,6 +136,10 @@ function productionHost({repository=fileURLToPath(new URL('../../',import.meta.u
    if(step==='generation_fence'){const first=await observeHeldLifecycle({releaseSha:plan.newMainSha,runId:plan.epochRunId}),second=await observeHeldLifecycle({releaseSha:plan.newMainSha,runId:plan.epochRunId});return same(first,second);}
    if(step==='enable')return enabled()&&(!plan.backendProfile||command('/usr/bin/systemctl',['show','--value','--property=UnitFileState','--',BUYER_STORE_UNIT])==='enabled');
    reject();
+  },
+  async reconcileStoreStart(plan,snapshot){
+   return reconcileOwnedStoreStartup(plan,snapshot,{store,assertAdmission,activeStore:()=>active(BUYER_STORE_UNIT),
+    verifyBindings:()=>authority(plan).observe(snapshot.authorityRebind)&&receivers.observe(snapshot.receiverOrigin)});
   },
   async execute(step,plan,snapshot){
    assertAdmission(plan);
@@ -198,7 +216,13 @@ export async function runVpsCutover({plan,journal,reconcile=false},{host=product
   if(state.completed)return{status:'VPS_CUTOVER_COMPLETE',newMainSha:p.newMainSha,replayed:true};
   for(let index=state.next;index<steps.length;index++){
    const step=steps[index];
-   if(state.pending){if(await host.observe(step,p,state.intent.snapshot)!==true)return rollbackVpsCutoverWithLease(p,stream,host);}
+   if(state.pending){
+    if(await host.observe(step,p,state.intent.snapshot)!==true){
+     if(step==='store_start'&&p.backendProfile&&typeof host.reconcileStoreStart==='function'){
+      if(await host.reconcileStoreStart(p,state.intent.snapshot)!==true)reject();
+     }else return rollbackVpsCutoverWithLease(p,stream,host);
+    }
+   }
    else{stream.append(event(p,'vps_step_intent',{step}));try{await host.execute(step,p,state.intent.snapshot);}catch{return{status:'STOPPED',reason:'VPS_STEP_OUTCOME_UNKNOWN',step,reconciliationRequired:true};}}
    if(await host.observe(step,p,state.intent.snapshot)!==true)return rollbackVpsCutoverWithLease(p,stream,host);
    stream.append(event(p,'vps_step_result',{step}));state=inspectVpsCutoverHistory(stream.events());
