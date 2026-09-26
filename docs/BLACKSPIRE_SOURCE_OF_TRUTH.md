@@ -2,7 +2,7 @@
 
 ## 2026-09-26 — Typed follow-up context repair
 
-Authenticated cloud-browser test completed task_b081171e190e59c9 with correct greeting and arithmetic. Follow-up task_c340f97329c78a72 completed but could not recall the prior calculation: typed follow-ups omitted the bounded history already used by voice. Route typed follow-ups through the same history envelope, preserve overlong original input for existing server validation, unwrap recent-conversation labels and rename the remaining composer accessibility label to Zola. Bump UI asset version. Deployment and repeated browser context verification pending.
+Authenticated cloud-browser test completed task_b081171e190e59c9 with correct greeting and arithmetic. Follow-up task_c340f97329c78a72 completed but could not recall the prior calculation: typed follow-ups omitted the bounded history already used by voice. Route typed follow-ups through the same history envelope, preserve overlong original input for existing server validation, unwrap recent-conversation labels and rename the remaining composer accessibility label to Zola. Bump UI asset version. Deployed UI revision 0f0434128f2fb0fa1e96c181630692e63358c815. Fresh authenticated follow-up task_b8d84e53e8a0d7d2 returned The result was 42, proving prior-turn context through the browser and worker. UI/context tests pass 52/52; lint, typecheck, build, living-memory and secret checks pass. Signed-in task, evidence, system and empty approvals screens render. Events screen currently reports no events; event population, approval execution, cancellation and physical iPhone interactions remain UNVERIFIED.
 
 
 ## 2026-09-26 — Non-voice operational verification
