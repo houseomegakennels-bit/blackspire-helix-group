@@ -1,0 +1,12 @@
+import fs from 'node:fs';import {execFileSync} from 'node:child_process';
+const entry='/usr/local/bin/codex';
+const expected='../lib/node_modules/@openai/codex/bin/codex.js';
+const native='/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex';
+if(process.getuid()!==0||process.argv[2]!=='--apply')throw Error('Root and --apply required');
+if(fs.readlinkSync(entry)!==expected)throw Error('Unexpected existing launcher');
+const stat=fs.statSync(native);if(stat.uid!==0||(stat.mode&0o022))throw Error('Unsafe native executable');
+if(execFileSync(native,['--version'],{encoding:'utf8'}).trim()!=='codex-cli 0.154.0')throw Error('Unexpected native version');
+const record='/var/lib/blackspire-operator/zola-codex-native-20260926';fs.mkdirSync(record,{mode:0o700});
+fs.writeFileSync(record+'/launcher-before.json',JSON.stringify({entry,target:expected,native})+'\n',{mode:0o600,flag:'wx'});
+fs.symlinkSync(native,entry+'.zola-next');fs.renameSync(entry+'.zola-next',entry);
+console.log('Native Codex launcher installed; workspace descriptor preserved');
