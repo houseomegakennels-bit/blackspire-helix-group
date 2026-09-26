@@ -1,5 +1,10 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Non-voice operational verification
+
+Operator requested verification of all other Zola functions while deferring paid voice. Public readiness returns HTTP 200 with all nine checks true; API, worker, Buyer store and gateway are active. Fresh read-only Codex execution under the running worker identity, environment and mount namespace with pinned workspace descriptor returned status 0, containment proven, artifacts empty, and a natural greeting with correct arithmetic (17 + 25 = 42). Eight public UI, manifest, service-worker and PNG icon assets return 200 and match committed source. Unauthenticated tasks and workspaces return 401. Targeted UI, voice-context, password, workspace-authorization and Codex-worker tests pass 78/78. No runtime changes or restart were needed. Cloud browser is signed out: fresh authenticated browser submission, approvals, cancellation and physical iPhone interaction remain UNVERIFIED in this check. Paid voice upgrade remains deferred.
+
+
 ## 2026-09-26 — Voice delivery refinement
 
 Operator requested substantially more natural speech. Confirmed no ElevenLabs, OpenAI or Cartesia API credential in the worker environment. No neural speech provider is connected; browser synthesis remains the actual audio engine. Updated voice-conversation wording instructions for short, relaxed replies, contractions, natural punctuation and no repeated introductions or task narration. This changes wording only, not voice fidelity. Natural speech provider integration remains blocked on a configured provider and usage budget.
