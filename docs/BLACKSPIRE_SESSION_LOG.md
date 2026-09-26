@@ -2748,3 +2748,9 @@ All four services are active/running. Loopback health and readiness return 200/o
 All six postmerge live reads passed with six cross-owner denials; authoritative command usage verifies zero paid provider calls. Dual-source before/after evidence verifies zero row and tuple-version changes across seventeen tables. Production smoke and rollback verification passed, and the bounded acceptance permit is consumed. Historical uncertain requests and retired evidence remain preserved and were not replayed. Recovery remains the explicitly verified stopped-HELD containment mode; no broader business-compatible recovery claim is made.
 
 Release work is complete. Do not rerun admission, writer acceptance or old collector requests. Use the retained final records and journal for subsequent operational review.
+
+## 2026-09-26 — Command login recovery verified; rotation pending
+
+The root-only retained administrator password was compared privately with the verifier loaded by the running production API and matches. All four services remain active/running; loopback readiness returns 200 with all nine checks true at deployed main 6cdd47e9222501980d2dce0e0e42e05e91db05b0. The operator can display the retained password locally in their authenticated terminal and sign in at the existing /jarvis page. No password or verifier is recorded here. Interactive login remains operator verification pending.
+
+A separately staged replacement verifier is valid but has not been installed. No production environment change, session revocation or service restart occurred. The password runbook restart procedure does not account for the current generation-bound OPEN admission, writer binding and store manifest; rotation requires a supported maintenance transition and fresh applicable verification. Do not blindly restart or rewrite historical release evidence. Existing production remains healthy.

@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Command login recovery verified; rotation pending
+
+The root-only retained administrator password was compared privately with the verifier loaded by the running production API and matches. All four services remain active/running; loopback readiness returns 200 with all nine checks true at deployed main 6cdd47e9222501980d2dce0e0e42e05e91db05b0. The operator can display the retained password locally in their authenticated terminal and sign in at the existing /jarvis page. No password or verifier is recorded here. Interactive login remains operator verification pending.
+
+A separately staged replacement verifier is valid but has not been installed. No production environment change, session revocation or service restart occurred. The password runbook restart procedure does not account for the current generation-bound OPEN admission, writer binding and store manifest; rotation requires a supported maintenance transition and fresh applicable verification. Do not blindly restart or rewrite historical release evidence. Existing production remains healthy.
+
 ## 2026-09-24 — Zola production OPEN and release complete
 
 The fixed release CLI from clean 9a1278e4e1db48a92c84eb9027ec6324d42efb7e returned COMPLETE / PASS. Candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e merged through PR125 as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Main CI 36035924867 succeeded. Vercel production dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x is READY at that exact SHA, and the VPS pointer matches.
