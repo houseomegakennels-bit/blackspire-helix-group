@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#080705">
-  <title>Unified Jarvis — iPhone Test</title>
+  <title>Unified Zola — iPhone Test</title>
   <style>
     :root{color-scheme:dark;--ink:#080705;--panel:#12100c;--line:#4d3b1c;--gold:#d7b65a;--muted:#a99b78;--ok:#73d39a;--bad:#ff8e82}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 90% -10%,#34250d 0,transparent 32rem),var(--ink);color:#f7efd7;font:15px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}main{width:min(100%,720px);margin:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));display:grid;gap:14px}.hero,.panel{border:1px solid var(--line);border-radius:20px;background:linear-gradient(145deg,#17130d,#0c0b08);box-shadow:0 18px 55px #0008;padding:18px}.banner{display:flex;justify-content:space-between;gap:12px;align-items:center;background:#d7b65a;color:#100d07;border-radius:13px;padding:10px 12px;font-weight:900;letter-spacing:.12em}.eyebrow,.label{color:var(--gold);font-size:11px;text-transform:uppercase;letter-spacing:.15em;font-weight:800}h1{font-size:clamp(28px,8vw,48px);line-height:1.02;margin:20px 0 8px}h2{font-size:18px;margin:0 0 14px}.muted{color:var(--muted)}.stack{display:grid;gap:10px}.row{display:flex;gap:9px;flex-wrap:wrap}.row>*{flex:1 1 150px}button,textarea,input{font:inherit;border-radius:14px;border:1px solid #705929;min-height:50px}button{padding:12px 14px;background:var(--gold);color:#0c0a06;font-weight:850;cursor:pointer}button.secondary{background:#17140f;color:#f7efd7}button.deny{background:#321513;color:#ffd2cc;border-color:#71332d}button:disabled{opacity:.45;cursor:not-allowed}textarea,input{width:100%;padding:14px;background:#090806;color:#fff}textarea{min-height:110px;resize:vertical}.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.fact{border:1px solid #302817;border-radius:14px;padding:12px;background:#0a0907;min-width:0}.value{display:block;margin-top:5px;font:700 12px/1.4 ui-monospace,SFMono-Regular,monospace;overflow-wrap:anywhere}.copy{min-height:34px;margin-top:8px;padding:6px 9px;font-size:12px}.badge{display:inline-flex;border:1px solid #5e4a24;border-radius:999px;padding:5px 9px;color:var(--gold);font-size:12px}.ok{color:var(--ok)}.bad{color:var(--bad)}.timeline{list-style:none;margin:0;padding:0;display:grid;gap:10px}.event{border-left:2px solid var(--gold);padding:2px 0 2px 13px}.event time{display:block;color:var(--muted);font-size:11px}.empty{color:var(--muted);border:1px dashed #40351f;border-radius:12px;padding:14px}.notice{min-height:22px;color:var(--gold)}@media(min-width:620px){.facts{grid-template-columns:repeat(4,minmax(0,1fr))}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}}@media(max-width:380px){main{padding-left:10px;padding-right:10px}.hero,.panel{padding:15px}.facts{grid-template-columns:1fr}}
   </style>
@@ -13,7 +13,7 @@
 <main>
   <header class="hero">
     <div class="banner"><span>TEST MODE</span><span id="expiry">Expires —</span></div>
-    <p class="eyebrow">BLACKSPIRE · UNIFIED JARVIS</p>
+    <p class="eyebrow">BLACKSPIRE · UNIFIED ZOLA</p>
     <h1>Command without production risk.</h1>
     <p class="muted">Private iPhone validation using disposable SQLite, mock Hermes, and mock Telegram delivery.</p>
     <div class="row"><span class="badge" id="workspaceBadge">Workspace —</span><span class="badge">Privileged actions disabled</span></div>
@@ -29,7 +29,7 @@
 
   <section class="panel stack" id="console" hidden>
     <div><span class="label">Mobile command input</span><h2>Unified Input API</h2></div>
-    <textarea id="command" aria-label="Jarvis command">Report the current task status without changing files.</textarea>
+    <textarea id="command" aria-label="Zola command">Report the current task status without changing files.</textarea>
     <div class="row"><button id="sendButton">Submit harmless task</button><button class="secondary" id="followButton" disabled>Submit follow-up</button></div>
     <div class="row"><button class="secondary" id="replayButton" disabled>Replay last input</button><button class="deny" id="denyButton">Prove Telegram denial</button></div>
     <p class="notice" id="actionNotice" role="status" aria-live="polite"></p>

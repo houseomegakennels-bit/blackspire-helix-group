@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Zola visual identity
+
+Prepared the Zola interface in the requested red, black and white palette: glossy orb, sign-in, command core, controls, conversation labels, PWA name and icon. The new canonical presentation route is /zola; legacy paths remain compatible. Persisted channel keys, historical records and installed PWA identity remain stable. A separate versioned static UI deployment at the existing TLS edge preserves the sealed API artifact and authentication, using exact asset locations and the existing security headers. Deployment is pending verification. UI tests pass 49/49; lint, typecheck and build pass.
+
 ## 2026-09-26 — Same-release password maintenance
 
 Implemented a fixed operator maintenance path for the completed September 24 deployment. It requires the protected completed release journal and OPEN record, unchanged artifact and service configuration, idle healthy runtime and a valid root-only staged verifier. It records separate maintenance evidence, holds intake, stops services, installs only the API verifier, runs the existing offline session fence, restarts, republishes the generation-bound store manifest and writer attestation, and verifies HELD then public OPEN readiness. Original release evidence remains unchanged. An interrupted apply refuses automatic replay and contains services stopped HELD.

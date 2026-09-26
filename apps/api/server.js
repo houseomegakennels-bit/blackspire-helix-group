@@ -64,6 +64,9 @@ const TEST_MODE = requireSafeTestMode();
 // pathname key only: no path segment from the request ever reaches the filesystem, so
 // traversal is not possible. Add an entry here to expose a new asset; nothing else.
 const PUBLIC_ASSETS = {
+  '/zola.css': { file: 'apps/jarvis-pwa/public/jarvis.css', type: 'text/css; charset=utf-8', immutable: false },
+  '/zola.js': { file: 'apps/jarvis-pwa/public/jarvis.js', type: 'text/javascript; charset=utf-8', immutable: false },
+  '/zola-icon.svg': { file: 'apps/jarvis-pwa/public/zola-icon.svg', type: 'image/svg+xml', immutable: false },
   '/manifest.webmanifest': { file: 'apps/jarvis-pwa/public/manifest.webmanifest', type: 'application/manifest+json; charset=utf-8', immutable: false },
   '/sw.js': { file: 'apps/jarvis-pwa/public/sw.js', type: 'text/javascript; charset=utf-8', immutable: false },
   // The three assets below are the externalized Jarvis shell: index.html carries no inline
@@ -81,7 +84,7 @@ const PUBLIC_ASSETS = {
 // (/jarvis.css?v=2) resolve before login. Every other public route keeps its existing
 // whole-URL comparison, so this widens nothing beyond the asset allowlist itself.
 function isPublicAsset(url = '', pathname = '') {
-  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || url === '/hermes-runtime' || Object.hasOwn(PUBLIC_ASSETS, pathname) || url === '/api/auth/login' || url === '/api/auth/session';
+  return url === '/health' || url === '/ready' || url === '/' || url === '/jarvis' || url === '/zola' || url === '/hermes-runtime' || Object.hasOwn(PUBLIC_ASSETS, pathname) || url === '/api/auth/login' || url === '/api/auth/session';
 }
 
 function authContext(req) {
@@ -310,7 +313,7 @@ async function routeAdmitted(req, res) {
       return json(res, 200, { ok: true, emergencyStop: false });
     }
 
-    if (u.pathname === '/' || u.pathname === '/jarvis') return serve(res, TEST_MODE.enabled ? 'apps/jarvis-pwa/public/test-mode.html' : 'apps/jarvis-pwa/public/index.html', 'text/html');
+    if (u.pathname === '/' || u.pathname === '/jarvis' || u.pathname === '/zola') return serve(res, TEST_MODE.enabled ? 'apps/jarvis-pwa/public/test-mode.html' : 'apps/jarvis-pwa/public/index.html', 'text/html');
     if (u.pathname === '/hermes-runtime') return serve(res, 'apps/jarvis-pwa/public/hermes-runtime.html', 'text/html');
     if (Object.hasOwn(PUBLIC_ASSETS, u.pathname)) {
       const asset = PUBLIC_ASSETS[u.pathname];

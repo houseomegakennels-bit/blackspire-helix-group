@@ -143,8 +143,8 @@ test('index.html carries no inline style block or style attribute', () => {
 });
 
 test('both extracted assets are referenced by same-origin path', () => {
-  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/jarvis\.css">/, '/jarvis.css is referenced');
-  assert.match(html, /<script\s+src="\/jarvis\.js"><\/script>/, '/jarvis.js is referenced');
+  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260926">/, '/jarvis.css is referenced');
+  assert.match(html, /<script\s+src="\/zola\.js\?v=20260926"><\/script>/, '/jarvis.js is referenced');
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.css'));
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.js'));
 });
@@ -313,7 +313,7 @@ test('cosmetic state language and mobile rail remain durable without markup chan
 test('Helix Core enhancement is a separate optional lazy chunk with a permanent fallback', () => {
   assert.ok(fs.existsSync(helixModulePath), 'lazy Helix module exists');
   const module = fs.readFileSync(helixModulePath, 'utf8');
-  assert.match(source, /import\('\/helix-core\.js'\)/, 'module is dynamically imported');
+  assert.match(source, /import\('\/helix-core\.js\?v=zola4'\)/, 'module is dynamically imported');
   assert.match(source, /helix-enhancement/, 'enhancement has a separate non-blocking mount point');
   assert.match(html, /data-helix-fallback="svg"/, 'the inert SVG survives in markup when the module never loads');
   assert.match(appScript, /dataset\.helixFallback = 'svg'/, 'a failed import falls back to the SVG');
@@ -385,7 +385,7 @@ test('service worker never caches API, auth, or privileged responses', () => {
   assert.match(sw, /SKIP_WAITING/, 'explicit update flow');
   assert.match(sw, /caches\.delete/, 'old cache versions are purged');
   const puts = [...sw.matchAll(/cache\.put\(([^,]+),/g)].map((match) => match[1].trim());
-  assert.deepEqual(puts, ["'/jarvis'", 'event.request'], 'only the static shell is ever written to cache');
+  assert.deepEqual(puts, ["'/zola'", 'event.request'], 'only the static shell is ever written to cache');
   const shell = sw.match(/const SHELL = \[([^\]]*)\]/)[1];
   assert.doesNotMatch(shell, /api|unified/, 'precache list holds no API routes');
   assert.match(source, /if \(applyingUpdate\) location\.reload\(\)/, 'controllerchange never reloads on first install, only on operator-chosen update');
@@ -403,22 +403,22 @@ test('service worker cannot replace the Jarvis shell with another navigation', (
 });
 
 test('service worker awaits only successful shell cache writes', () => {
-  assert.match(sw, /if \(response\.ok\) await cache\.put\('\/jarvis', response\.clone\(\)\)/);
+  assert.match(sw, /if \(response\.ok\) await cache\.put\('\/zola', response\.clone\(\)\)/);
   assert.match(sw, /if \(response\.ok\) await cache\.put\(event\.request, response\.clone\(\)\)/);
 });
 
 /* ---------- manifest ---------- */
 
 test('web manifest is a valid installable Blackspire identity', () => {
-  assert.equal(manifest.name, 'Blackspire Jarvis');
-  assert.equal(manifest.short_name, 'Jarvis');
+  assert.equal(manifest.name, 'Zola — Blackspire');
+  assert.equal(manifest.short_name, 'Zola');
   assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.start_url, '/jarvis');
-  assert.equal(manifest.theme_color, '#04070C');
-  assert.equal(manifest.background_color, '#04070C');
-  assert.ok(manifest.icons.length >= 2);
-  assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable'));
-  for (const icon of manifest.icons) assert.match(icon.src, /^data:image\/svg\+xml,/, 'icons are self-contained originals');
+  assert.equal(manifest.start_url, '/zola');
+  assert.equal(manifest.theme_color, '#000000');
+  assert.equal(manifest.background_color, '#000000');
+  assert.ok(manifest.icons.length >= 1);
+  assert.ok(manifest.icons.some((icon) => icon.purpose.includes('maskable')));
+  for (const icon of manifest.icons) assert.match(icon.src, /^\/zola-icon\.svg$/, 'icons are self-contained originals');
 });
 
 /* ---------- live vertical slice against the control plane ---------- */

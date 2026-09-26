@@ -1,11 +1,11 @@
-/* Blackspire Jarvis service worker.
+/* Blackspire Zola service worker.
    Caches only the non-sensitive static shell. API, health, and auth
    responses are NEVER cached — canonical state always comes from the
    control plane, and no privileged action can be replayed from cache. */
 'use strict';
 
-const CACHE_NAME = 'jarvis-shell-v3';
-const SHELL = ['/jarvis', '/manifest.webmanifest'];
+const CACHE_NAME = 'zola-shell-v4';
+const SHELL = ['/zola', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));
@@ -34,16 +34,16 @@ self.addEventListener('fetch', (event) => {
   if (isSensitive(url)) return;                               // network only, never cached
 
   if (event.request.mode === 'navigate') {
-    if (url.pathname !== '/jarvis' && url.pathname !== '/') return;
+    if (url.pathname !== '/zola' && url.pathname !== '/jarvis' && url.pathname !== '/') return;
     // Network-first shell: fresh UI when online, cached shell offline.
     event.respondWith((async () => {
       try {
         const response = await fetch(event.request);
         const cache = await caches.open(CACHE_NAME);
-        if (response.ok) await cache.put('/jarvis', response.clone());
+        if (response.ok) await cache.put('/zola', response.clone());
         return response;
       } catch {
-        return (await caches.match('/jarvis')) || Response.error();
+        return (await caches.match('/zola')) || Response.error();
       }
     })());
     return;

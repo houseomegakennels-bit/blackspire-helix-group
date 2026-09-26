@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#04070C">
-<meta name="description" content="Blackspire Jarvis — mobile command interface for the Blackspire Command control plane.">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-title" content="Zola">
+<meta name="description" content="Blackspire Zola — mobile command interface for the Blackspire Command control plane.">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%2304070C'/%3E%3Cg fill='none' stroke='%234FD8FF' stroke-width='5'%3E%3Cellipse cx='90' cy='90' rx='62' ry='24' transform='rotate(-18 90 90)'/%3E%3Cellipse cx='90' cy='90' rx='40' ry='52' transform='rotate(14 90 90)' opacity='.7'/%3E%3C/g%3E%3Ccircle cx='90' cy='90' r='13' fill='%234FD8FF'/%3E%3C/svg%3E">
-<title>Blackspire Jarvis</title>
-<link rel="stylesheet" href="/jarvis.css">
+<link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/zola-icon.svg">
+<title>Blackspire Zola</title>
+<link rel="stylesheet" href="/zola.css?v=20260926">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -16,14 +18,14 @@
   <header class="top">
     <div>
       <p class="eyebrow">Blackspire Command</p>
-      <h1>Jarvis</h1>
+      <h1>ZOLA</h1>
     </div>
     <div class="rail" id="statusBar" role="status" aria-live="polite"></div>
   </header>
 
   <div id="offlineBar" role="status">Offline — showing last synced canonical state. Reconnecting…</div>
   <div id="deploymentBar" role="status" aria-live="polite">Environment and build identity are not reported by the control plane. Treat this client as unverified.</div>
-  <div id="updateBar" role="status"><span>A new Jarvis version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
+  <div id="updateBar" role="status"><span>A new Zola version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
 
   <nav class="views" aria-label="Screens" id="viewNav">
     <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Command</a>
@@ -40,15 +42,16 @@
     <!-- Sign in -->
     <section data-view="signin" hidden>
       <div class="panel wide">
-        <h2>Sign in</h2>
+        <div class="zola-orb" aria-hidden="true"></div>
+        <h2>Welcome to Zola</h2>
         <div class="stack">
-          <p class="muted">Operator authentication for the Blackspire control plane. The password is sent only to sign in and is never persisted in this browser.</p>
+          <p class="muted">Your Blackspire command center. Sign in to continue.</p>
           <p class="notice" id="sessionNotice" role="alert"></p>
           <p class="stamp mono" id="sessionIdentity">Canonical principal: not authenticated</p>
           <label class="sr-only" for="password">Password</label>
           <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password">
           <div class="row">
-            <button class="primary" id="loginBtn" type="button">Unlock Jarvis</button>
+            <button class="primary" id="loginBtn" type="button">Unlock Zola</button>
             <button class="ghost" id="logoutBtn" type="button">Sign out</button>
           </div>
         </div>
@@ -61,7 +64,7 @@
         <div class="helix-wrap" id="helixMount">
           <svg class="helix" data-helix-fallback="svg" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
             <defs>
-              <radialGradient id="halo"><stop offset="0%" stop-color="#4FD8FF" stop-opacity=".5"/><stop offset="70%" stop-color="#4FD8FF" stop-opacity=".08"/><stop offset="100%" stop-color="#4FD8FF" stop-opacity="0"/></radialGradient>
+              <radialGradient id="halo"><stop offset="0%" stop-color="#F33449" stop-opacity=".5"/><stop offset="70%" stop-color="#F33449" stop-opacity=".08"/><stop offset="100%" stop-color="#F33449" stop-opacity="0"/></radialGradient>
             </defs>
             <circle class="listen-ring" cx="120" cy="120" r="104"/>
             <g class="ga"><path class="arcv" d="M120 22 A98 98 0 0 1 218 120"/><path class="arcv" d="M120 218 A98 98 0 0 1 22 120"/></g>
@@ -77,11 +80,11 @@
               <ellipse class="ring" cx="120" cy="120" rx="42" ry="72" transform="rotate(-6 120 120)" opacity=".5"/>
               <circle class="node" r="2.6" cx="161.5" cy="115.6"/>
             </g>
-            <g class="core-pulse"><circle class="nucleus-halo" cx="120" cy="120" r="34"/><circle class="nucleus" cx="120" cy="120" r="11"/><circle cx="120" cy="120" r="5" fill="#04070C"/></g>
+            <g class="core-pulse"><circle class="nucleus-halo" cx="120" cy="120" r="34"/><circle class="nucleus" cx="120" cy="120" r="11"/><circle cx="120" cy="120" r="5" fill="#000000"/></g>
           </svg>
         </div>
         <div class="stack gap-6">
-          <p class="eyebrow ion">Helix Core</p>
+          <p class="eyebrow ion">Zola Core</p>
           <p class="state" id="coreState" data-tone="ion"><span class="dot"></span><span id="coreStateLabel">Dormant</span></p>
           <p class="muted fs-13" id="coreDetail">Awaiting your command.</p>
           <p class="sr-only" id="coreSr" aria-live="polite"></p>
@@ -98,7 +101,7 @@
             <option value="read_only">Read-only inspection</option>
             <option value="workspace_mutation">Propose a workspace change</option>
           </select>
-          <p class="muted fs-12" id="executionIntentHint">Jarvis enforces this choice: read-only tasks cannot apply files, and change tasks cannot succeed without an artifact.</p>
+          <p class="muted fs-12" id="executionIntentHint">Zola enforces this choice: read-only tasks cannot apply files, and change tasks cannot succeed without an artifact.</p>
           <label class="sr-only" for="cmd">Command for Hermes</label>
           <textarea id="cmd" placeholder="Ask Hermes to do safe workspace work" enterkeyhint="send"></textarea>
           <div class="row row-center">
@@ -141,7 +144,7 @@
       <div class="panel wide">
         <h2>Timeline</h2>
         <ol class="msgs" id="messageList"></ol>
-        <p class="empty" id="messagesEmpty">No messages yet. Canonical Jarvis, web, and Telegram messages share this timeline.</p>
+        <p class="empty" id="messagesEmpty">No messages yet. Canonical Zola, web, and Telegram messages share this timeline.</p>
       </div>
       <div class="panel wide">
         <h2>Follow-up</h2>
@@ -180,7 +183,7 @@
           <div class="fact"><span class="label">Duration</span><span class="value mono" id="taskDuration">—</span></div>
           <div class="fact"><span class="label">Idempotency key</span><span class="value mono" id="taskIdem">—</span></div>
           <div class="fact span2"><span class="label">Request</span><span class="value" id="taskRequest">—</span></div>
-          <div class="fact span2"><span class="label">JARVIS RESPONSE</span><span class="value" id="taskOutcome">—</span></div>
+          <div class="fact span2"><span class="label">ZOLA RESPONSE</span><span class="value" id="taskOutcome">—</span></div>
         </div>
       </div>
       <div class="panel">
@@ -219,7 +222,7 @@
     <section data-view="approvals" hidden>
       <div class="panel wide">
         <h2>Approval center</h2>
-        <p class="muted fs-13 mb-12">Approvals are decided by the control plane. Jarvis only submits your decision; it cannot create or widen approvals.</p>
+        <p class="muted fs-13 mb-12">Approvals are decided by the control plane. Zola only submits your decision; it cannot create or widen approvals.</p>
         <p class="notice" id="approvalNotice" role="status" aria-live="polite"></p>
         <div class="stack" id="approvalList"><p class="empty">No approvals pending.</p></div>
       </div>
@@ -273,6 +276,6 @@
   <div id="toast" role="status"></div>
 </div>
 
-<script src="/jarvis.js"></script>
+<script src="/zola.js?v=20260926"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
-   Blackspire Jarvis — no-build command interface.
+   Blackspire Zola — no-build command interface.
    Canonical backend state always wins; this file renders it.
    Security: dynamic data only ever becomes textContent.
    ============================================================ */
@@ -427,8 +427,8 @@ function renderConversation() {
     list.append(li);
     for (const task of tasksByInput.get(m.id) || []) {
       const reply = el('li'); reply.style.setProperty('--i', String(Math.min(i + 1, 8))); reply.dataset.taskId = task.id;
-      const jarvis = el('span', 'chip', 'JARVIS'); jarvis.dataset.ch = 'jarvis';
-      reply.append(jarvis, el('p', null, taskConversationResponse(task)), el('span', 'stamp mono', `task ${task.id} · ${fmtTime(task.updated_at)}`));
+      const zola = el('span', 'chip', 'ZOLA'); zola.dataset.ch = 'jarvis';
+      reply.append(zola, el('p', null, taskConversationResponse(task)), el('span', 'stamp mono', `task ${task.id} · ${fmtTime(task.updated_at)}`));
       list.append(reply);
     }
   });
@@ -438,9 +438,9 @@ function taskConversationResponse(task) {
   const status = canonicalTaskStatus(task);
   if (status === 'completed') return task.canonicalResult || 'Task completed; no textual response was recorded.';
   if (status === 'outcome_unknown') return 'AUTOMATIC RETRY BLOCKED · OPERATOR REVIEW REQUIRED';
-  if (status === 'failed') return task.error ? `Task failed: ${task.error}` : 'Task failed; no successful Jarvis response was recorded.';
-  if (status === 'cancelled') return 'Task cancelled; no successful Jarvis response was recorded.';
-  return `${statusInfo(task).label}; Jarvis has not recorded a final response.`;
+  if (status === 'failed') return task.error ? `Task failed: ${task.error}` : 'Task failed; no successful Zola response was recorded.';
+  if (status === 'cancelled') return 'Task cancelled; no successful Zola response was recorded.';
+  return `${statusInfo(task).label}; Zola has not recorded a final response.`;
 }
 
 function renderTaskDetail() {
@@ -907,7 +907,7 @@ byId('applyUpdate').addEventListener('click', () => { if (store.swWaiting) { app
 function loadHelixEnhancement() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const start = () => {
-    import('/helix-core.js').then(({ mountHelixCore }) => {
+    import('/helix-core.js?v=zola4').then(({ mountHelixCore }) => {
       store.helix = mountHelixCore({ container: byId('helixMount'), initialState: coreStateFor()[0] });
       store.helix.setPaused(document.hidden);
     }).catch(() => {

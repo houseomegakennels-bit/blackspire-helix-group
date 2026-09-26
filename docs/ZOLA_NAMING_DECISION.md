@@ -37,3 +37,7 @@ Preferred examples:
 Preferred platform name: **ZOLA OS**.
 
 Future UI concepts, roadmap documents, prompts, and user-facing branding should use ZOLA by default.
+
+## September 26 visual identity
+
+The user explicitly requested red, black and white with the orb. Current product presentation uses Zola and the canonical /zola entry point. Legacy channel keys and PWA identity are compatibility identifiers, not product branding.
