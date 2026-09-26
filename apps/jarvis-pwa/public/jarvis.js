@@ -98,11 +98,62 @@ const EVENT_LABELS = {
 /* Unknown event types must render safely and never crash. */
 const eventLabel = (type) => EVENT_LABELS[type] || ['System event', 'muted'];
 
-/* ---------- voice boundary (stub only — see JARVIS_VOICE_UI_CONTRACT.md) ----------
-   States reserved for a future, separately authorized voice service:
-   idle · listening · transcribing · processing · speaking · interrupted · denied · error.
-   No speech API, provider, or microphone permission is used today. */
-const voice = { state: 'idle' };
+/* Zola voice: browser speech, only after an explicit tap. */
+const voice = { state: 'idle', recognition: null };
+function stopVoice() {
+  voice.recognition?.abort();
+  window.speechSynthesis?.cancel();
+  voice.state = 'idle';
+}
+function dictate(targetId, hintId, button) {
+  const hint = byId(hintId);
+  if (voice.state === 'listening') { stopVoice(); hint.textContent = 'Listening stopped. Review your text before sending.'; return; }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) { hint.textContent = 'Use the microphone on your iPhone keyboard to dictate into the text box.'; byId(targetId).focus(); return; }
+  stopVoice();
+  const recognition = new Recognition();
+  voice.recognition = recognition;
+  recognition.lang = navigator.language || 'en-US';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  const target = byId(targetId), original = target.value.trim();
+  recognition.onstart = () => { voice.state = 'listening'; button.setAttribute('aria-pressed', 'true'); hint.textContent = 'Listening… Tap the microphone again to stop.'; };
+  recognition.onresult = (event) => {
+    const text = Array.from(event.results).map((result) => result[0].transcript).join(' ');
+    target.value = (original ? original + ' ' : '') + text;
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+    hint.textContent = 'Review the words, then tap Send.';
+  };
+  recognition.onerror = (event) => {
+    hint.textContent = event.error === 'not-allowed' || event.error === 'service-not-allowed'
+      ? 'Microphone access was denied. Allow it in Safari settings, or use keyboard dictation.'
+      : event.error === 'no-speech' ? 'No speech heard. Tap the microphone to try again.'
+      : event.error === 'aborted' ? 'Listening stopped.' : 'Voice input is unavailable. Use your keyboard microphone or type.';
+  };
+  recognition.onend = () => { voice.state = 'idle'; voice.recognition = null; button.setAttribute('aria-pressed', 'false'); };
+  try { recognition.start(); } catch { hint.textContent = 'Unable to start listening. Try keyboard dictation.'; voice.state = 'idle'; }
+}
+function addVoiceReply(reply, text) {
+  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+  const button = el('button', 'ghost', 'Listen');
+  button.type = 'button'; button.setAttribute('aria-label', 'Listen to Zola’s reply');
+  button.addEventListener('click', () => {
+    stopVoice();
+    const utterance = new SpeechSynthesisUtterance(String(text));
+    const voices = speechSynthesis.getVoices();
+    utterance.voice = voices.find((item) => /Samantha|Siri/i.test(item.name) && /^en/.test(item.lang))
+      || voices.find((item) => item.lang === navigator.language) || null;
+    utterance.lang = utterance.voice?.lang || navigator.language || 'en-US';
+    utterance.rate = 1; voice.state = 'speaking';
+    utterance.onend = utterance.onerror = () => { voice.state = 'idle'; button.textContent = 'Listen'; };
+    button.textContent = 'Playing…'; speechSynthesis.speak(utterance);
+  });
+  const stop = el('button', 'ghost', 'Stop audio'); stop.type = 'button';
+  stop.addEventListener('click', () => { stopVoice(); button.textContent = 'Listen'; });
+  reply.append(button, stop);
+}
+
+
 
 /* ---------- deployment identity (server-authoritative, display only) ---------- */
 const DEPLOYMENT_VALUE = /^[a-zA-Z0-9._:/-]{1,80}$/;
@@ -429,6 +480,7 @@ function renderConversation() {
       const reply = el('li'); reply.style.setProperty('--i', String(Math.min(i + 1, 8))); reply.dataset.taskId = task.id;
       const zola = el('span', 'chip', 'ZOLA'); zola.dataset.ch = 'jarvis';
       reply.append(zola, el('p', null, taskConversationResponse(task)), el('span', 'stamp mono', `task ${task.id} · ${fmtTime(task.updated_at)}`));
+      if (canonicalTaskStatus(task) === 'completed') addVoiceReply(reply, taskConversationResponse(task));
       list.append(reply);
     }
   });
@@ -944,7 +996,8 @@ byId('workspace').addEventListener('change', () => {
   }
   render();
 });
-byId('micBtn').addEventListener('click', () => { /* disabled: voice state stays '${voice.state}' until a voice service is authorized */ });
+byId('micBtn').addEventListener('click', () => dictate('cmd', 'micHint', byId('micBtn')));
+byId('followMicBtn').addEventListener('click', () => dictate('followCmd', 'followMicHint', byId('followMicBtn')));
 
 /* ---------- boot ---------- */
 (async function boot() {
@@ -957,3 +1010,6 @@ byId('micBtn').addEventListener('click', () => { /* disabled: voice state stays 
   initServiceWorker();
   loadHelixEnhancement();
 })();
+
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopVoice(); });
+window.addEventListener('pagehide', stopVoice);

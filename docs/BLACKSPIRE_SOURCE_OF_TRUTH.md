@@ -1,5 +1,10 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Zola browser voice
+
+Replaced the disabled voice placeholder with explicitly tapped browser speech recognition for command and follow-up composers. Transcripts require review and normal Send; no automatic submission. Added Listen and Stop audio to completed canonical replies, browser speech synthesis with device voice fallback, permission/error notices, and hidden-page cleanup. No paid voice provider. iPhone microphone and speaker behavior requires device verification.
+
+
 ## 2026-09-26 — Natural Zola replies
 
 User screenshot confirms a completed browser task after launcher repair, but its summary narrated internal packet metadata. Installed developer_instructions in the dedicated worker CODEX_HOME config, retained as scripts/zola-codex-config.toml, directing the provider to fulfill the request field and place a natural user-facing answer in summary while retaining the artifact contract and all existing authorization boundaries. No service restart or sealed release edit. Native strict-config accepted the setting. A fresh read-only greeting packet tested with descriptor pinning under worker identity and service mount namespace returned ok=true, containment proven, empty artifacts, and: Hello! I’m Zola, your Blackspire assistant. What do you need help with? Historical replies remain unchanged.

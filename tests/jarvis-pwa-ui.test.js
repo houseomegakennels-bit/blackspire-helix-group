@@ -51,11 +51,12 @@ test('no external network dependencies in the shipped page', () => {
   assert.doesNotMatch(source, /gtag|analytics|sentry|hotjar|posthog/i);
 });
 
-test('voice remains a staged, inert boundary', () => {
-  assert.doesNotMatch(source, /SpeechRecognition|speechSynthesis|getUserMedia|mediaDevices/);
-  assert.match(html, /Voice input is staged but not connected/);
-  assert.match(source, /idle · listening · transcribing · processing · speaking · interrupted · denied · error/);
-  assert.match(html, /id="micBtn"[^>]*disabled|disabled[^>]*id="micBtn"|<button class="mic ghost" id="micBtn" type="button" disabled/);
+test('voice is explicit and reviewable', () => {
+ assert.match(source, /recognition\.start\(\)/);
+ assert.match(source, /document\.hidden\) stopVoice/);
+ assert.doesNotMatch(html, /id="micBtn"[^>]*disabled/);
+ assert.match(html, /id="followMicBtn"/);
+ assert.match(source, /Review the words, then tap Send/);
 });
 
 test('no secrets, provider keys, or internal paths in markup', () => {
@@ -144,7 +145,7 @@ test('index.html carries no inline style block or style attribute', () => {
 
 test('both extracted assets are referenced by same-origin path', () => {
   assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260926">/, '/jarvis.css is referenced');
-  assert.match(html, /<script\s+src="\/zola\.js\?v=20260926"><\/script>/, '/jarvis.js is referenced');
+  assert.match(html, /<script\s+src="\/zola\.js\?v=20260926-voice1"><\/script>/, '/jarvis.js is referenced');
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.css'));
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.js'));
 });
