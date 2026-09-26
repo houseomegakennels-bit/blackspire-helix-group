@@ -8,3 +8,25 @@ test('voice automatically sends finalized turn, speaks canonical reply and liste
 test('context is bounded to this conversation and current message survives',()=>{const h=harness();h.context.store.conversation.messages=Array.from({length:12},(_,i)=>({id:String(i),text:'x'.repeat(1500)}));const request=h.context.conversationRequest('What did I ask?');assert.ok(request.length<4000);assert.equal(h.context.conversationText(request),'What did I ask?');});
 
 test('typed follow-ups include previous completed answer and preserve long input',()=>{const h=harness();h.context.store.conversation.messages=[{id:'m1',text:'17 plus 25?'}];h.context.store.conversation.tasks=[{input_id:'m1',status:'completed',canonicalResult:'42'}];const packet=JSON.parse(h.context.conversationRequest('What was the result?').split('\n').slice(1).join('\n'));assert.equal(packet.history[1].text,'42');assert.equal(packet.currentMessage,'What was the result?');const long='x'.repeat(3900);assert.equal(h.context.conversationRequest(long),long);const full=fs.readFileSync('apps/jarvis-pwa/public/jarvis.js','utf8');assert.ok(full.includes("submitCommand(conversationRequest(byId('followCmd').value), store.conversationId"));});
+
+test('short conversation retains twelve turns and trims complete pairs under pressure',()=>{
+ const h=harness();
+ assert.equal(h.context.conversationRequest('   '),'   ');
+ h.context.store.conversation.messages=Array.from({length:15},(_,i)=>({id:String(i),text:'Question '+i}));
+ h.context.store.conversation.tasks=Array.from({length:15},(_,i)=>({input_id:String(i),status:'completed',canonicalResult:'Answer '+i}));
+ const read=text=>JSON.parse(h.context.conversationRequest(text).split('\n').slice(1).join('\n'));
+ let packet=read('Remember our earlier conversation');
+ assert.equal(packet.history.length,24);
+ assert.equal(packet.history[0].text,'Question 3');
+ h.context.store.conversation.messages.forEach(m=>m.text+=' x'.repeat(200));
+ h.context.store.conversation.tasks.forEach(t=>t.canonicalResult+=' y'.repeat(300));
+ packet=read('Continue');
+ assert.ok(packet.history.length<24);
+ for(let i=0;i<packet.history.length;i+=2){
+  assert.equal(packet.history[i].role,'user');
+  assert.equal(packet.history[i+1].role,'assistant');
+ }
+ assert.ok(h.context.conversationRequest('Continue').length<=3900);
+ h.context.store.conversation={messages:[],tasks:[]};
+ assert.equal(read('New conversation').history.length,0);
+});

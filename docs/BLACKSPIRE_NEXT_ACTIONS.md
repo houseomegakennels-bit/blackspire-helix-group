@@ -1,5 +1,13 @@
 # Blackspire Next Actions
 
+## 2026-09-26 — Operational upgrade verification and longer conversation context
+
+Live browser task task_cc0084ece47f83d8 was held for administrator approval, approved through the two-step UI, resumed, and completed with the requested harmless explanation. Approval history records administrator approval. Earlier live task task_746a5ce5f514fa4c was cancelled; canonical events and evidence recorded cancellation cleanup and ignored late response. OS process termination is UNVERIFIED. Isolated approval-resume tests pass 5/5, including rejection and expiry.
+
+Conversation context now admits up to twelve short turns from the selected canonical conversation and discards whole oldest user/assistant pairs when the 3900-character budget is exceeded. Existing conversations sent from the Command screen now receive the same context as typed follow-ups and voice. This is bounded conversation context, not durable cross-conversation memory. UI/context and mocked Telegram attachment tests pass 66/66. Production UI deployment pending verification.
+
+Registry audit confirms six read capabilities: Seller opportunities, Buyer profiles and matches, Deal records and analysis, and Nexus enrichment. This does not establish full roadmap completion. Harvester, Recon, Sentinel, Social OS and Book Studio are not registered in this capability registry. The running API has neither a Telegram bot token nor a user allowlist configured; Telegram remains dry-run. Paid voice remains deferred. Physical iPhone speech, installation refresh and long-term memory remain UNVERIFIED.
+
 ## 2026-09-24 — Zola production OPEN and release complete
 
 The fixed release CLI from clean 9a1278e4e1db48a92c84eb9027ec6324d42efb7e returned COMPLETE / PASS. Candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e merged through PR125 as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Main CI 36035924867 succeeded. Vercel production dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x is READY at that exact SHA, and the VPS pointer matches.
