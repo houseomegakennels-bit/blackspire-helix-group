@@ -2,7 +2,7 @@
 
 ## 2026-09-26 — Zola visual identity
 
-Prepared the Zola interface in the requested red, black and white palette: glossy orb, sign-in, command core, controls, conversation labels, PWA name and icon. The new canonical presentation route is /zola; legacy paths remain compatible. Persisted channel keys, historical records and installed PWA identity remain stable. A separate versioned static UI deployment at the existing TLS edge preserves the sealed API artifact and authentication, using exact asset locations and the existing security headers. Deployment is pending verification. UI tests pass 49/49; lint, typecheck and build pass.
+Prepared the Zola interface in the requested red, black and white palette: glossy orb, sign-in, command core, controls, conversation labels, PWA name and icon. The new canonical presentation route is /zola; legacy paths remain compatible. Persisted channel keys, historical records and installed PWA identity remain stable. A separate versioned static UI deployment at the existing TLS edge preserves the sealed API artifact and authentication, using exact asset locations and the existing security headers. Deployed and verified at https://command.blackspirehelix.com/zola from UI revision 9919581cd9d148ed9434f69deda56de1aff076a8. Cloud-browser inspection confirms Zola branding and the red, black and white orb; all six checked public assets match the committed files, and public readiness returns HTTP 200. UI tests pass 49/49; lint, typecheck and build pass.
 
 ## 2026-09-26 — Same-release password maintenance
 
