@@ -10,7 +10,7 @@
 <link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="/zola-icon-180.png">
 <title>Blackspire Zola</title>
-<link rel="stylesheet" href="/zola.css?v=20260926">
+<link rel="stylesheet" href="/zola.css?v=20260926-talk1">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -92,7 +92,7 @@
       </div>
 
       <div class="panel wide">
-        <h2 id="composerHeading">Command</h2>
+        <h2 id="composerHeading">Command</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
         <div class="stack">
           <label class="sr-only" for="workspace">Workspace</label>
           <select id="workspace" aria-label="Workspace"></select>
@@ -150,7 +150,7 @@
         <h2>Follow-up</h2>
         <div class="stack">
           <label class="sr-only" for="followCmd">Follow-up command</label>
-          <textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
+          <button class="primary" id="talkStartFollow" type="button">Talk to Zola</button><textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
           <label for="followExecutionIntent">Execution intent</label>
           <select id="followExecutionIntent">
             <option value="read_only">Read-only inspection</option>
@@ -278,6 +278,13 @@
   <div id="toast" role="status"></div>
 </div>
 
-<script src="/zola.js?v=20260926-voice1"></script>
+<dialog id="talkDialog" aria-labelledby="talkTitle">
+<h2 id="talkTitle">Talk to Zola</h2><div class="zola-orb" aria-hidden="true"></div>
+<p id="talkStatus" role="status" aria-live="polite">Ready</p>
+<p class="muted">Speak, pause, and Zola will reply aloud. Your turns send automatically while this screen is open. Voice mode uses read-only tasks.</p>
+<p id="talkTranscript"></p><p id="talkReply"></p>
+<div class="row"><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
+</dialog>
+<script src="/zola.js?v=20260926-talk1"></script>
 </body>
 </html>

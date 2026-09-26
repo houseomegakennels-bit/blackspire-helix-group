@@ -1,5 +1,10 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Voice conversation workspace
+
+Added explicit Talk to Zola mode with modal orb workspace, automatic recognized-turn submission, canonical completion polling, spoken answer, automatic listening resumption, tap interruption, end controls, denial/error pause and hidden-page shutdown. Dictation controls remain review-before-send. Voice conversation submissions use read_only and the existing server policy and idempotency path. Recent messages and completed replies from the selected conversation are sent in a bounded context envelope under the 4000-character input limit; this is contextual text, not elevated authority. The transcript displays the current user turn. Voice loop and bounded context tests pass alongside the 49 UI checks (51 total). This is turn-based browser speech over the existing Codex task runner, not a low-latency streaming audio provider. Physical iPhone speech and autoplay verification remains pending.
+
+
 ## 2026-09-26 — Zola browser voice
 
 Replaced the disabled voice placeholder with explicitly tapped browser speech recognition for command and follow-up composers. Transcripts require review and normal Send; no automatic submission. Added Listen and Stop audio to completed canonical replies, browser speech synthesis with device voice fallback, permission/error notices, and hidden-page cleanup. No paid voice provider. iPhone microphone and speaker behavior requires device verification.

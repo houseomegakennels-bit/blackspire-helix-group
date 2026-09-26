@@ -63,3 +63,5 @@ section[data-view="signin"] h2{font-size:24px}
 header.top>div:first-child::before{background:#f33449;box-shadow:0 0 14px #f3344977}
 @keyframes zola-breathe{50%{filter:brightness(1.12);transform:scale(1.025)}}
 @media(prefers-reduced-motion:reduce){.zola-orb,.helix-wrap::before{animation:none}}
+
+#talkDialog{background:#080808;color:#fff;border:1px solid #e32b47;border-radius:24px;padding:24px;width:min(560px,calc(100vw - 32px));max-height:90dvh;overflow:auto}#talkDialog::backdrop{background:rgba(0,0,0,.92)}#talkDialog .zola-orb{margin:24px auto}#talkDialog[data-phase="listening"] .zola-orb{box-shadow:0 0 55px #df173e}#talkReply{white-space:pre-wrap}#talkStatus{font-size:1.2rem}#talkStart,#talkStartFollow{margin-bottom:16px}
