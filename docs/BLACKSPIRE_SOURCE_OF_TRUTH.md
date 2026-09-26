@@ -1,5 +1,10 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Natural Zola replies
+
+User screenshot confirms a completed browser task after launcher repair, but its summary narrated internal packet metadata. Installed developer_instructions in the dedicated worker CODEX_HOME config, retained as scripts/zola-codex-config.toml, directing the provider to fulfill the request field and place a natural user-facing answer in summary while retaining the artifact contract and all existing authorization boundaries. No service restart or sealed release edit. Native strict-config accepted the setting. A fresh read-only greeting packet tested with descriptor pinning under worker identity and service mount namespace returned ok=true, containment proven, empty artifacts, and: Hello! I’m Zola, your Blackspire assistant. What do you need help with? Historical replies remain unchanged.
+
+
 ## 2026-09-26 — Codex launcher descriptor repair
 
 The next user task passed workspace inspection but failed with no JSONL events. Reproduced the installed npm launcher dropping inherited descriptor 3 before starting the native executable; Codex rejected /proc/self/fd/3 as untrusted. A direct-path control succeeded. Installed a guarded, reversible launcher symlink to the same root-owned Codex 0.154.0 native binary, preserving descriptor inheritance without disabling repository checks or sandboxing. Retained the previous target under /var/lib/blackspire-operator/zola-codex-native-20260926. No API artifact, service environment or admission generation changed. Verified the actual runCliChild and parseCodexCliResult functions under the worker identity, configured sanitized environment and service mount namespace: status 0, containment proven, ok true, no artifacts, summary Hello from Zola. Browser conversation completion still requires a fresh user submission; the failed task was not replayed.
