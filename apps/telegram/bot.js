@@ -29,7 +29,7 @@ async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
   const chatId = msg?.chat?.id;
   const send = (message, extra = {}) => ({ chatId, text: chunk(escapeMarkdown(message)), ...extra });
 
-  if (text.startsWith('/start') || text.startsWith('/help')) return send('Blackspire Command online. Use /task read <request> or /task write <request>, /conversation <id>, /tasks, /workspaces, /status, or /cancel <task-id>. Privileged actions require authenticated Jarvis.');
+  if (text.startsWith('/start') || text.startsWith('/help')) return send('Blackspire Command online. Use /task read <request> or /task write <request>, /conversation <id>, /tasks, /workspaces, /status, or /cancel <task-id>. Privileged actions require authenticated Zola.');
   if (text.startsWith('/status') || text.startsWith('/health')) return send(JSON.stringify(await get('/health', apiBase)));
   if (text.startsWith('/workspaces')) return send((await get('/api/workspaces', apiBase)).workspaces.map((w) => `${w.id}: ${w.name}`).join('\n'));
   if (text.startsWith('/use ')) {
@@ -63,7 +63,7 @@ async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
   const one = text.match(/^\/(task_status|logs|approve|reject|pause|resume|cancel)\s+(\S+)/);
   if (one) {
     const [, cmd, taskId] = one;
-    if (['approve', 'reject', 'pause', 'resume'].includes(cmd)) return send('Privileged task actions require an authenticated Jarvis session.');
+    if (['approve', 'reject', 'pause', 'resume'].includes(cmd)) return send('Privileged task actions require an authenticated Zola session.');
     if (!channelCanAccessTask('telegram', String(chatId), taskId)) return send('Task not found for this Telegram conversation.');
     if (cmd === 'cancel') return send(JSON.stringify(cancelFromChannel('telegram', String(chatId), taskId)));
     if (cmd === 'logs') {
@@ -74,7 +74,7 @@ async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
     const result = await get(route, apiBase);
     return send(JSON.stringify(result).slice(0, 3500));
   }
-  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading|create[_-]?repo(?:sitory)?)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Jarvis.');
+  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading|create[_-]?repo(?:sitory)?)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Zola.');
   if (update.message?.document || update.message?.voice) return handleTelegramAttachment(update, apiBase, send);
   return send('Unknown command. Use /help.');
 }

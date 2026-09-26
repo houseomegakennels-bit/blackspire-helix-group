@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Telegram staging and canonical context successor
+
+User authorized remaining non-voice repairs and Telegram setup. No Telegram credential or allowlist is present in the running API or known service environment files. Added a root-only hidden-entry Telegram staging helper: verifies bot identity, refuses active webhooks, pairs one fresh private-chat owner, and never activates transport. Four Python pairing tests pass.
+
+Prepared a feature-gated backend repair that discards client-supplied history/instructions, classifies only the current request, and supplies separate server-owned historical context to read-only provider packets. Canonical recall is bounded to the same actor, channel, authority and workspace, can retrieve relevant completed older conversations, and survives database reopen. No memory-candidate promotion or migration. UI mutation requests now retain explicit plain input. Eighty-three targeted Node tests pass; backend changes are NOT DEPLOYED or enabled.
+
+Activation requires a new reviewed release with current artifact/configuration and generation bindings. Do not replay the completed release or stretch verifier-only maintenance. Telegram credential pairing is pending. Further business adapters remain unfinished. See docs/ZOLA_TELEGRAM_CONTEXT_SUCCESSOR.md. Voice stays deferred.
+
 ## 2026-09-26 — Operational upgrade verification and longer conversation context
 
 Live browser task task_cc0084ece47f83d8 was held for administrator approval, approved through the two-step UI, resumed, and completed with the requested harmless explanation. Approval history records administrator approval. Earlier live task task_746a5ce5f514fa4c was cancelled; canonical events and evidence recorded cancellation cleanup and ignored late response. OS process termination is UNVERIFIED. Isolated approval-resume tests pass 5/5, including rejection and expiry.

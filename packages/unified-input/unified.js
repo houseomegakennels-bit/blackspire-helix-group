@@ -1,3 +1,4 @@
+import { CONVERSATION_PREFIX, currentConversationMessage } from './conversation-context.js';
 import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
 import {createHash} from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
@@ -12,7 +13,13 @@ const cancellationTokens = new Map();
 
 function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
-  const request = String(text || '').trim();
+  let request = String(text || '').trim();
+  if (request.length > 4000) return { error: 'request must be under 4000 characters', status: 422 };
+  if (process.env.ZOLA_CANONICAL_CONTEXT === 'true' && request.startsWith(CONVERSATION_PREFIX)) {
+    if (executionIntent !== 'read_only') return { error: 'Conversation context requires read-only intent; submit changes as an explicit command', status: 422 };
+    try { request = currentConversationMessage(request); }
+    catch { return { error: 'Invalid conversation input', status: 422 }; }
+  }
   if (!request || request.length > 4000) return { error: 'request is required and must be under 4000 characters', status: 422 };
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return { error: 'executionIntent must be read_only or workspace_mutation', status: 422 };
   const workspace = getWorkspace(workspaceId);

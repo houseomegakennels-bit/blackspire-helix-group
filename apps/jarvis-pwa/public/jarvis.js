@@ -460,7 +460,8 @@ function conversationText(text) {
   if (!String(text || '').startsWith(TALK_PREFIX)) return text || '';
   try { return JSON.parse(text.slice(TALK_PREFIX.length)).currentMessage || text; } catch { return text; }
 }
-function conversationRequest(text) {
+function conversationRequest(text, executionIntent = 'read_only') {
+  if (executionIntent !== 'read_only') return text;
   if (!String(text || '').trim()) return text;
   const turns = [];
   for (const message of (store.conversation?.messages || []).slice(-12)) {
@@ -1078,8 +1079,8 @@ function loadHelixEnhancement() {
 byId('loginBtn').addEventListener('click', login);
 byId('logoutBtn').addEventListener('click', logout);
 byId('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
-byId('sendBtn').addEventListener('click', () => submitCommand(store.conversationId ? conversationRequest(byId('cmd').value) : byId('cmd').value, store.conversationId, 'composerNotice', byId('executionIntent').value));
-byId('followBtn').addEventListener('click', () => submitCommand(conversationRequest(byId('followCmd').value), store.conversationId, 'followNotice', byId('followExecutionIntent').value));
+byId('sendBtn').addEventListener('click', () => submitCommand(store.conversationId ? conversationRequest(byId('cmd').value, byId('executionIntent').value) : byId('cmd').value, store.conversationId, 'composerNotice', byId('executionIntent').value));
+byId('followBtn').addEventListener('click', () => submitCommand(conversationRequest(byId('followCmd').value, byId('followExecutionIntent').value), store.conversationId, 'followNotice', byId('followExecutionIntent').value));
 byId('cmd').addEventListener('input', () => { store.idemKey = ''; });
 byId('followCmd').addEventListener('input', () => { store.idemKey = ''; });
 byId('cmd').addEventListener('focus', renderCore);
