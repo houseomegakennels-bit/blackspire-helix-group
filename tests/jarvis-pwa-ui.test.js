@@ -144,8 +144,8 @@ test('index.html carries no inline style block or style attribute', () => {
 });
 
 test('both extracted assets are referenced by same-origin path', () => {
-  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260926-talk1">/, '/jarvis.css is referenced');
-  assert.match(html, /<script\s+src="\/zola\.js\?v=20260926-talk1"><\/script>/, '/jarvis.js is referenced');
+  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260926-context2">/, '/jarvis.css is referenced');
+  assert.match(html, /<script\s+src="\/zola\.js\?v=20260926-context2"><\/script>/, '/jarvis.js is referenced');
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.css'));
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.js'));
 });
