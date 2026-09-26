@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {validatePasswordReadinessRecovery,validatePasswordMaintenanceReadiness} from './password-maintenance.js';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
@@ -15,7 +16,7 @@ import {parseAdminPasswordHash} from '../shared/password-auth.js';
 const NODE='/opt/nodejs/node-v22.23.1-linux-x64/bin/node';
 const ROOT='/etc/blackspire/release-admission',STATE=ROOT+'/state.json';
 const ENV='/etc/blackspire/command-api.env',STAGED='/run/blackspire-password-reset.hash';
-const RECORD='/var/lib/blackspire-operator/password-maintenance-20260926';
+const ORIGINAL='/var/lib/blackspire-operator/password-maintenance-20260926';
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service';
 const STORE='blackspire-buyer-store.service',GATEWAY='blackspire-buyer-writer-gateway.service';
 const units=[API,WORKER,STORE,GATEWAY];
@@ -42,12 +43,11 @@ const stableEnv=env=>Object.fromEntries(Object.entries(env).filter(([k])=>!['INV
 const active=unit=>run('/usr/bin/systemctl',['show',unit,'-p','ActiveState','--value']).trim();
 async function ready(open,sha){
  const r=await fetch('http://127.0.0.1:8789/ready',{signal:AbortSignal.timeout(4000),redirect:'error'}),j=await r.json();
- const keys=['releaseAdmission','lifecycle','database','productionConfig','worker','scheduler','deploymentIdentity','buyerStore','buyerWriter'];
- if(r.status!==(open?200:503)||j.ok!==open||!same(Object.keys(j.checks??{}).sort(),[...keys].sort())
- ||keys.some(k=>j.checks[k]!==((k==='releaseAdmission')?open:true))||j.deploymentIdentity?.build?.value!==sha||j.dependencies?.worker?.activeTask!==false)fail();
+ validatePasswordMaintenanceReadiness(r.status,j,{open,releaseSha:sha});
 }
 async function bounded(fn){let last;for(let i=0;i<30;i++){try{return await fn();}catch(e){last=e;await new Promise(r=>setTimeout(r,1000));}}throw last;}
-export function createPasswordMaintenanceHost(){
+export function createPasswordMaintenanceHost({recovery=false}={}){
+ const RECORD=ORIGINAL+(recovery?'-readiness-recovery':'');
  let globalJournal,journal,plan,privateState,held,newState,touched=false;
  const state=()=>validateReleaseAdmissionState(readRootOwnedJson(STATE,{groupId:fs.lstatSync(STATE).gid,maxBytes:2048}));
  const current=()=>fs.realpathSync('/opt/blackspire-command/current');
@@ -71,8 +71,8 @@ export function createPasswordMaintenanceHost(){
   await unchanged();const p=await observeHeldLifecycle({releaseSha:plan.releaseSha,runId:plan.runId});
   if(p.artifactDigest!==plan.artifactDigest||p.api.generation===plan.oldState.apiGeneration||p.worker.generation===plan.oldState.workerGeneration)fail();
   const a=envOf(p.api.pid),w=envOf(p.worker.pid);
-  if(a.COMMAND_ADMIN_PASSWORD_HASH!==privateState.verifier||!same(stableEnv(a),privateState.apiEnvironment)
-   ||!same(stableEnv(w),privateState.workerEnvironment)||w.COMMAND_ADMIN_PASSWORD_HASH!==undefined)fail();
+  if(a.COMMAND_ADMIN_PASSWORD_HASH!==privateState.verifier||(privateState.apiEnvironment!==null&&!same(stableEnv(a),privateState.apiEnvironment))
+   ||(privateState.workerEnvironment!==null&&!same(stableEnv(w),privateState.workerEnvironment))||w.COMMAND_ADMIN_PASSWORD_HASH!==undefined)fail();
   if(newState&&(p.api.generation!==newState.apiGeneration||p.worker.generation!==newState.workerGeneration))fail();
   return p;
  }
@@ -82,30 +82,41 @@ export function createPasswordMaintenanceHost(){
    globalJournal=openReleaseJournal();
    const events=globalJournal.stream('release').events(),end=events.at(-1);
    if(end?.type!=='sequence_completed'||fs.existsSync(ROOT+'/pending.json'))fail();
-   const oldState=state();if(oldState.mode!=='open')fail();
+   let recovered;
+   if(recovery){
+    const j=openReleaseJournal({root:ORIGINAL});try{
+     const p=readRootOwnedJson(ORIGINAL+'/plan.json',{groupId:0,maxBytes:16384});
+     validatePasswordReadinessRecovery(j.stream('release').events(),p.operationId);
+     recovered={plan:p,writer:readRootOwnedJson(ORIGINAL+'/writer-result.json',{groupId:0,maxBytes:4096}),journalDigest:hash(j.stream('release').events())};
+    }finally{j.close();}
+    if(units.some(u=>active(u)!=='inactive')||!same(state(),{...recovered.plan.oldState,mode:'held',apiGeneration:null,workerGeneration:null}))fail();
+   }
+   const oldState=recovery?recovered.plan.oldState:state();if(oldState.mode!=='open')fail();
    const sha=oldState.releaseSha,artifactRoot='/opt/blackspire-command/releases/'+sha;
-   if(current()!==artifactRoot||units.some(u=>active(u)!=='active'))fail();
+   if(current()!==artifactRoot||(!recovery&&units.some(u=>active(u)!=='active')))fail();
    const final=inspectFinalReleaseRecord({releaseSha:'f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e'});
    if(final.phase!=='OPEN'||final.open.newMainSha!==sha||!events.some(e=>e.type==='release_open_result'&&e.newMainSha===sha&&e.epochRunId===oldState.runId&&e.openStateDigest===hash(oldState))
     ||final.accepted.epochRunId!==oldState.runId||final.accepted.apiGeneration!==oldState.apiGeneration||final.accepted.workerGeneration!==oldState.workerGeneration)fail();
-   await ready(true,sha);
-   const life=await observeHeldLifecycle({releaseSha:sha,runId:oldState.runId});
-   if(life.api.generation!==oldState.apiGeneration||life.worker.generation!==oldState.workerGeneration)fail();
-   const profile=await collectInstalledHeldWriterProfile(sha);
+   if(!recovery)await ready(true,sha);
+   const life=recovery?{artifactDigest:recovered.plan.artifactDigest}:await observeHeldLifecycle({releaseSha:sha,runId:oldState.runId});
+   if(!recovery&&(life.api.generation!==oldState.apiGeneration||life.worker.generation!==oldState.workerGeneration))fail();
+   const profile=recovery?{configurationDigest:recovered.plan.writerConfigurationDigest,context:{filename:'/etc/blackspire/buyer-writer-binding.json',credentialGroupId:fs.lstatSync('/etc/blackspire/buyer-writer-binding.json').gid}}:await collectInstalledHeldWriterProfile(sha);
    const gid=fs.lstatSync(ENV).gid,envBytes=read(ENV,0o640,gid),staged=read(STAGED,0o600,0),verifier=staged.toString().trim();
    if(!parseAdminPasswordHash(verifier)||!envBytes.toString().endsWith('\n'))fail();
    const lines=envBytes.toString().split('\n'),matches=lines.filter(l=>/^COMMAND_ADMIN_PASSWORD_HASH=/.test(l));
    if(matches.length!==1)fail();
    const next=Buffer.from(lines.map(l=>/^COMMAND_ADMIN_PASSWORD_HASH=/.test(l)?"COMMAND_ADMIN_PASSWORD_HASH='"+verifier+"'":l).join('\n'));
-   const api=envOf(life.api.pid),worker=envOf(life.worker.pid);
+   const api=recovery?null:envOf(life.api.pid),worker=recovery?null:envOf(life.worker.pid);
    const configured=matches[0].slice('COMMAND_ADMIN_PASSWORD_HASH='.length).replace(/^'|'$/g,'');
-   if(api.COMMAND_ADMIN_PASSWORD_HASH!==configured||api.COMMAND_ADMIN_PASSWORD_HASH===verifier||worker.COMMAND_ADMIN_PASSWORD_HASH!==undefined)fail();
+   if(!recovery&&(api.COMMAND_ADMIN_PASSWORD_HASH!==configured||api.COMMAND_ADMIN_PASSWORD_HASH===verifier||worker.COMMAND_ADMIN_PASSWORD_HASH!==undefined))fail();
+   if(recovery&&(configured!==verifier||hash(envBytes.toString())!==recovered.plan.newEnvironmentDigest||config()!==recovered.plan.configurationDigest))fail();
    const binding=readRootOwnedJsonDigestSnapshot(profile.context.filename,{groupId:profile.context.credentialGroupId,maxBytes:4096});
    const commit=readRootOwnedJsonDigestSnapshot(profile.context.filename+'.commit.json',{groupId:profile.context.credentialGroupId,maxBytes:4096});
-   plan={version:1,operationId:randomUUID(),releaseSha:sha,artifactRoot,runId:oldState.runId,gid:fs.lstatSync(STATE).gid,
+   if(recovery&&(binding.digest!==recovered.writer.bindingDigest||commit.digest!==recovered.writer.commitDigest))fail();
+   plan={version:1,...(recovery?{recoveryOf:hash(recovered)}:{}),operationId:randomUUID(),releaseSha:sha,artifactRoot,runId:oldState.runId,gid:fs.lstatSync(STATE).gid,
     oldState,artifactDigest:life.artifactDigest,configurationDigest:config(),writerConfigurationDigest:profile.configurationDigest,
     priorBindingDigest:binding.digest,priorCommitDigest:commit.digest,releaseRecordDigest:hash(final),oldEnvironmentDigest:hash(envBytes.toString()),newEnvironmentDigest:hash(next.toString())};
-   privateState={gid,envBytes,next,verifier,staged,apiEnvironment:stableEnv(api),workerEnvironment:stableEnv(worker)};
+   privateState={gid,envBytes,next,verifier,staged,apiEnvironment:recovery?null:stableEnv(api),workerEnvironment:recovery?null:stableEnv(worker)};
    await unchanged();return structuredClone(plan);
   },
   async record(step,phase){
@@ -116,7 +127,7 @@ export function createPasswordMaintenanceHost(){
    journal.stream('release').append({schema:1,type:'password_maintenance',operationId:plan.operationId,step,phase});
    console.log(step+': '+phase);
   },
-  async hold(){await unchanged();held={...plan.oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(plan.oldState,held);},
+  async hold(){await unchanged();held={...plan.oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(recovery?held:plan.oldState,held);},
   async stop(){run('/usr/bin/systemctl',['stop','blackspire-command.target',...units]);if(units.some(u=>active(u)!=='inactive'))fail();},
   async install(){await unchanged();if(units.some(u=>active(u)!=='inactive')||!read(ENV,0o640,privateState.gid).equals(privateState.envBytes)||!read(STAGED,0o600,0).equals(privateState.staged))fail();
    atomic(ENV,privateState.next,0o640,privateState.gid);if(!read(ENV,0o640,privateState.gid).equals(privateState.next))fail();},
