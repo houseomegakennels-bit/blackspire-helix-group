@@ -418,7 +418,7 @@ test('web manifest is a valid installable Blackspire identity', () => {
   assert.equal(manifest.background_color, '#000000');
   assert.ok(manifest.icons.length >= 1);
   assert.ok(manifest.icons.some((icon) => icon.purpose.includes('maskable')));
-  for (const icon of manifest.icons) assert.match(icon.src, /^\/zola-icon\.svg$/, 'icons are self-contained originals');
+  for (const icon of manifest.icons) assert.match(icon.src, /^\/zola-icon-(192|512)\.png$/, 'icons are self-contained originals');
 });
 
 /* ---------- live vertical slice against the control plane ---------- */
