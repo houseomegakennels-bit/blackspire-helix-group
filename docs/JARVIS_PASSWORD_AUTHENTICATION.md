@@ -2,7 +2,11 @@
 
 Jarvis browser login and machine bearer authentication use independent credentials.
 
-On the trusted production host, from the reviewed release checkout, run:
+The generation-bound Zola OPEN deployment must use the separately verified same-release maintenance command. The generic stop/start instructions below predate that deployment and must not be applied directly there. The fixed operator script supports the retained September 24 release only and refuses an existing maintenance record; interrupted work requires evidence-based reconciliation, not a repeated apply. It preserves release history and revalidates the unchanged artifact, service configuration, environment separation, new process identities, store manifest, writer attestation and readiness before reopening.
+
+From the clean operator checkout under Node 22.23.1, use `node scripts/zola-password-maintenance.mjs --check` before `--apply`. The replacement verifier must already be staged in the root-only fixed reset file. No plaintext password is passed to this command. All prior browser sessions are revoked while the API is stopped. A failure after entering maintenance retains protected evidence and stops services HELD. Production execution is not implied by a passing preflight.
+
+For older deployments without generation-bound release admission, on the trusted production host, from the reviewed release checkout, run:
 
 ```bash
 cd /opt/blackspire-command/current

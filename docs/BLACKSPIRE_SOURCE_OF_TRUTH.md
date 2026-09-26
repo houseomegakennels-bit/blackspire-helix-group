@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-26 — Same-release password maintenance
+
+Implemented a fixed operator maintenance path for the completed September 24 deployment. It requires the protected completed release journal and OPEN record, unchanged artifact and service configuration, idle healthy runtime and a valid root-only staged verifier. It records separate maintenance evidence, holds intake, stops services, installs only the API verifier, runs the existing offline session fence, restarts, republishes the generation-bound store manifest and writer attestation, and verifies HELD then public OPEN readiness. Original release evidence remains unchanged. An interrupted apply refuses automatic replay and contains services stopped HELD.
+
+34 focused maintenance, password, offline session-fence, protected manifest and writer-binding tests pass. Lint, typecheck and build pass. Native read-only preflight passed before production execution. Password activation is not yet claimed.
+
 ## 2026-09-26 — Command login recovery verified; rotation pending
 
 The root-only retained administrator password was compared privately with the verifier loaded by the running production API and matches. All four services remain active/running; loopback readiness returns 200 with all nine checks true at deployed main 6cdd47e9222501980d2dce0e0e42e05e91db05b0. The operator can display the retained password locally in their authenticated terminal and sign in at the existing /jarvis page. No password or verifier is recorded here. Interactive login remains operator verification pending.
