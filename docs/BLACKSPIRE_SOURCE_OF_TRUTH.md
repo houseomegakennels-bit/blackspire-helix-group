@@ -2,7 +2,10 @@
 
 ## 2026-09-27 — Isolated Telegram release candidate
 
-Full CI found four stale assertions in acceptance, hardening and PWA suites: legacy greeting, discarded duplicate replies, disabled browser speech, and unversioned Jarvis script URL. Updated them to the already-authorized Zola behavior while retaining authentication and dangerous-action checks. All 34 tests in those suites pass locally. Full CI rerun remains pending; no production deployment or Telegram activation. Public readiness was verified HTTP 200 with all nine checks true on the unchanged deployed SHA.
+CI run 36288836062 passed in full for 462afc7683b0e74366b903262894451f795ddf27. The candidate was sealed with artifact digest 59be6a9df026a4139b44fa06ce4f0b23333cdbcdc4346203cfdc9d2be8c2cd78. Vercel's successful status hid an ignored/canceled frontend build; exact-release receiver identity requires a matching build. Added the Telegram release branch to the explicit build-required branches. Four build-selection tests pass. New CI and frontend build remain pending; production unchanged and Telegram inactive.
+
+
+Full CI found four stale assertions in acceptance, hardening and PWA suites: legacy greeting, discarded duplicate replies, disabled browser speech, and unversioned Jarvis script URL. Updated them to the already-authorized Zola behavior while retaining authentication and dangerous-action checks. All 34 tests in those suites pass locally. That rerun passed; the subsequent frontend build-selection change requires fresh CI. No production deployment or Telegram activation. Public readiness was verified HTTP 200 with all nine checks true on the unchanged deployed SHA.
 
 
 Created feat/zola-telegram-release-20260927 directly from deployed SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Imported only the Zola UI, private Telegram transport, canonical context modules and related tests/setup helper; historical release operator changes from the broader branding branch are excluded. The prepared bot accepts ordinary messages as read_only, retains explicit /task write for changes, sends plain text to avoid MarkdownV2 rejection of task punctuation, and renders canonical completion text. No paid voice change.

@@ -2837,3 +2837,8 @@ One hundred targeted tests pass on the isolated candidate. A real Hermes dispatc
 ## 2026-09-27 — Telegram release CI regression repair
 
 Reconnected Commander. PR156 full CI had four stale contract assertions after the Zola branding/browser speech and Telegram retry changes. Reconciled those assertions; 34 affected-suite tests pass. Authentication and mutation confirmation checks remain intact. Full CI rerun pending. Public production readiness is healthy with all nine checks true at unchanged 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Telegram remains STAGED_NOT_ACTIVE; no cutover or credential change.
+
+
+## 2026-09-27 — Exact Telegram frontend build selection
+
+Confirmed full CI success for PR156 at 462afc7 and sealed its artifact. Direct Vercel inspection showed CANCELED despite its successful GitHub context. Added the exact Telegram release branch to the required-build list, preserving unrelated branch skipping. Four tests pass. Backend production remains 6cdd47e; Telegram inactive. Native feature predecessor attestation and authority publication/restore tests are being developed separately on the operator branch.

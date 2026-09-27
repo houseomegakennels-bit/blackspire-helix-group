@@ -52,6 +52,8 @@ test('the frontend ignored-build decision skips only frontend-identical descenda
   assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'release/zola-production-live'}), false,
     'canonical release previews must carry the exact candidate SHA even for backend-only changes');
   assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'release/zola-production-live-other'}), true);
+  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'feat/zola-telegram-release-20260927'}), false, 'Telegram release must build a matching frontend even for backend-only changes');
+  assert.equal(shouldIgnoreFrontendBuild({cwd: frontendRoot, previousSha: base, branch:'feat/zola-telegram-release-20260927-other'}), true);
 
   await writeFile(path.join(frontendRoot, 'app.js'), 'export const version = 2;\n');
   execFileSync('git', ['add', '.'], {cwd: temporaryRoot});
