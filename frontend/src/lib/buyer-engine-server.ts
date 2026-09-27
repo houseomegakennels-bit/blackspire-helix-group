@@ -16,6 +16,7 @@ import {
   type AuthAdminUserRecord,
 } from "@/lib/buyer-engine-auth";
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
+import { inferCountyFromCity, inferNcCountyFromCity, normalizeUsStateCode } from "@/lib/real-estate-jurisdiction";
 import {
   buildCountyCapabilities,
   fallbackCountyCapabilities,
@@ -1201,54 +1202,21 @@ function normalizeCountyName(county?: string | null): string {
     .toLowerCase();
 }
 
-function normalizeStateCode(state?: string | null): string {
-  const normalized = (state ?? "").trim().toUpperCase();
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : "";
-}
-
-// NC city -> county for the common cities (so a property with a city but no
-// county — e.g. "Durham" or "Greensboro" — still matches buyers).
-const NC_CITY_TO_COUNTY: Record<string, string> = {
-  charlotte: "mecklenburg", greensboro: "guilford", winstonsalem: "forsyth",
-  raleigh: "wake", durham: "durham", fayetteville: "cumberland", cary: "wake",
-  wilmington: "newhanover", highpoint: "guilford", concord: "cabarrus",
-  gastonia: "gaston", asheville: "buncombe", greenville: "pitt",
-  jacksonville: "onslow", chapelhill: "orange", burlington: "alamance",
-  huntersville: "mecklenburg", rockymount: "nash", kannapolis: "cabarrus",
-  statesville: "iredell", monroe: "union", apex: "wake", wakeforest: "wake",
-  hickory: "catawba", goldsboro: "wayne", mooresville: "iredell",
-  newbern: "craven", salisbury: "rowan", sanford: "lee", garner: "wake",
-  thomasville: "davidson", lexington: "davidson", kernersville: "forsyth",
-};
+const normalizeStateCode = normalizeUsStateCode;
 
 const UNKNOWN_COUNTY = new Set(["", "unknown", "unresolved", "n/a", "na", "none"]);
 
-/** Infer an NC county from a city name (Title Case), or null if unknown. */
-export function inferNcCountyFromCity(city?: string | null): string | null {
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (!cityKey) return null;
-  const mapped = NC_CITY_TO_COUNTY[cityKey];
-  if (mapped) return mapped.replace(/\b\w/g, (m) => m.toUpperCase());
-  return null;
-}
+export { inferNcCountyFromCity };
 
-/** Resolve a usable county for buyer matching, inferring from city when needed. */
+/** Resolve a usable county for buyer matching using state-scoped inference only. */
 function resolveBuyerCounty(state: string, county?: string | null, city?: string | null): { core: string; display: string | null } {
   const core = normalizeCountyName(county);
   if (core && !UNKNOWN_COUNTY.has(core)) {
     return { core, display: county ?? null };
   }
-
-  // City inference is currently verified only for North Carolina. Other states
-  // stay unresolved until their own reviewed city/county registry is added.
-  if (state !== "NC") return { core: "", display: null };
-
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (NC_CITY_TO_COUNTY[cityKey]) {
-    const mapped = NC_CITY_TO_COUNTY[cityKey];
-    return { core: mapped, display: mapped.replace(/\b\w/g, (m) => m.toUpperCase()) };
-  }
-  return { core: "", display: null };
+  const inferred = inferCountyFromCity(state, city);
+  if (!inferred) return { core: "", display: null };
+  return { core: normalizeCountyName(inferred), display: inferred };
 }
 
 function resolvePropertyTypeBucket(input: BuyerForPropertyInput): "land" | "residential" {
