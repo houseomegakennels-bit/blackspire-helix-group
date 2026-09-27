@@ -2852,3 +2852,8 @@ Diagnosed the failed feature startup and successful automatic rollback. Added ex
 ## 2026-09-27 — Align API and supervisor Telegram startup gates
 
 Extended the explicit paired-webhook production profile to both JavaScript startup validators after inspection found duplicate unconditional restrictions. Added API/supervisor acceptance and rejection tests; all 20 production-validation tests pass. Updated the shipped profile with a disabled-by-default opt-in. Production remains on the rolled-back prior release; voice deferred.
+
+
+## 2026-09-27 — Record verified startup and store-publication rollback
+
+The real production worker preflight and full CI passed. Native feature activation started the corrected API/worker, then failed at nested store manifest publication. Rollback restored the old release and verified public readiness. A fresh documentation-only successor preserves the already-tested runtime content while the operator composition is corrected. Four inactive old Zola test trees were byte-verified and relocated to the build volume, preserving content and restoring root-disk headroom.

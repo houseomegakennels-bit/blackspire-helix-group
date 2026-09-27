@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Production startup verified; store publication correction
+
+Full CI run 36299261170 passed for a8727fc. The corrected candidate started both production services successfully. The release transaction then stopped at store publication because its artifact-inspector selection was not forwarded to the nested manifest publisher. Automatic rollback completed and restored the prior healthy public backend. This is an operator composition defect, not another Telegram startup failure. Correcting that composition on the operator branch; this documentation successor provides a fresh immutable release identity while preserving the verified runtime tree. Telegram remains inactive pending successful activation.
+
 ## 2026-09-27 — Private Telegram production startup correction
 
 The c9d6b01 feature transaction reached startup and failed because production preflight still prohibited all Telegram credentials and webhook mode. Automatic rollback restored the prior 6cdd47e backend, fresh generation bindings and verified public readiness. Telegram was not activated. Added an independent BLACKSPIRE_TELEGRAM_ENABLED=enabled opt-in requiring webhook mode, a token, a 32–128 character webhook secret and one positive private-chat ID equal to the allowlist. Default credential denial remains unchanged. Follow-up inspection found the same default-only restriction in both API and supervisor JavaScript startup checks. Those now validate the same explicit paired-webhook profile while still rejecting unrelated provider credentials. All 20 application production-validation tests pass. Deployment of the completed correction and real Telegram delivery remain pending. Voice remains deferred.
