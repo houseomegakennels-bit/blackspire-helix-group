@@ -178,6 +178,7 @@ export function sanitizeEventMessage(type, taskId, payload) {
     const result=resolveCanonicalTaskResult({status:'completed',summary:typeof safe.summary==='string'?safe.summary:JSON.stringify(safe.summary)});
     return result;
   }
+  if (type === 'policy.denied') return 'I can’t carry out that request. Open Zola to review the restriction.';
   if (type === 'task.failed') {
     if (/capability principal|capability permission|workspace access/.test(safe.error || ''))
       return 'I couldn’t access that workspace. Your Telegram account needs a valid workspace connection in Zola.';

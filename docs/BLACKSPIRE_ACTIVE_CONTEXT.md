@@ -8,7 +8,7 @@ Prepared an explicit BLACKSPIRE_TELEGRAM_PRINCIPAL_ID server-owned delegation fo
 
 Internal events remain in canonical history but only terminal outcomes and approval decisions enter Telegram delivery. Completion remains the canonical response; failures are readable and operational details stay in Zola. Reworked the phone interface with Home/Chat/Work/Review/More navigation, readable white/gray typography, restrained red controls, orb identity, expandable conversation/delivery metadata and a quieter chat timeline. Asset version os1 and shell v5 prevent stale new installs.
 
-Targeted Telegram, principal binding, capability, context and PWA tests pass, including cross-owner/workspace rejection, idempotency, revocation and privileged-policy denial. Lint, typecheck and build pass. A 390-pixel browser preview loads without errors and verifies Home/Chat navigation; request options collapse to keep the composer visible. Exact-commit CI/release acceptance are still pending. These changes are NOT DEPLOYED. Voice remains deferred.
+Targeted Telegram, principal binding, capability, context and PWA tests pass, including cross-owner/workspace rejection, idempotency, revocation and privileged-policy denial. Lint, typecheck and build pass. A 390-pixel browser preview loads without errors and verifies Home/Chat navigation; request options collapse to keep the composer visible. Full CI caught suppression of policy-denial notifications; restored those actionable notices without restoring routine telemetry. Exact-commit CI/release acceptance are still pending. These changes are NOT DEPLOYED. Voice remains deferred.
 
 
 ## 2026-09-27 — Isolated Telegram release candidate
