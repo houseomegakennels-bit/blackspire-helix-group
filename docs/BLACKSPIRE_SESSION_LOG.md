@@ -2853,3 +2853,8 @@ Preserved first-attempt evidence and added exact rollback-lineage validation ins
 ## 2026-09-27 — Correct store runtime composition and retain both rollback histories
 
 Reused the existing runtime store factory in the feature host so both manifest-publication layers inspect the deployed artifact. Added exact chained rollback predecessor checks and rejection tests; preserved both prior attempt directories and created a distinct final-attempt path. Final target 170f209 is a documentation-only successor of the verified a8727fc runtime. Backend activation and real Telegram delivery remain pending.
+
+
+## 2026-09-27 — Zola backend, orb UI and private Telegram activated
+
+Completed the final native feature transaction on 170f209 after full CI success. All nine public readiness checks pass. Activated the verified private Telegram webhook without dropping pending updates; two pending owner commands received successful responses, the pending queue is empty and Telegram reports no delivery error. Unauthorized webhook requests return 401. Activated and byte-verified the corresponding context4 UI and orb asset. Retained protected success evidence and both rollback histories. Fresh owner text is still needed to verify a complete natural-language Telegram/Codex round trip. Voice remains deferred.

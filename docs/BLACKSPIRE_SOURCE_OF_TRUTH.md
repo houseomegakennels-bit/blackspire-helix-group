@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Zola and private Telegram live
+
+Native final feature activation completed FEATURE_RELEASE_ACTIVE at 170f209c53b8950466694988d2274ace6fef1a54, artifact digest 00d389e3c5e0b0c96452b2958397ecd434744c52127bad18994fe6b05b996f2a. Exact-commit CI run 36300094886 passed. API, worker, store and writer bindings activated successfully; HELD checks passed, admission opened and all nine public readiness checks passed. The operator uses the existing runtime store factory to propagate deployed-artifact inspection through both protected publication layers. Twenty-three targeted operator tests pass.
+
+Telegram @BlackspireZolaBot is ACTIVE at https://command.blackspirehelix.com/telegram/webhook. Bot identity and paired private owner were verified without exposing credentials; pending updates were preserved. An unauthenticated webhook probe returned 401. Both previously pending owner updates received HTTP 200 after checked Telegram reply delivery; Telegram now reports zero pending updates and no delivery error. These were bot commands, not a natural-language Codex conversation: a fresh owner message remains the final conversational acceptance check.
+
+The Zola UI now serves the same 170f209 release through 15 static aliases. Public HTML, context4 JavaScript and the red/black/white orb PNG match the sealed source bytes. UI URL: https://command.blackspirehelix.com/zola. Voice work remains deferred.
+
+Protected operational evidence is retained at /var/lib/blackspire-operator/telegram-feature-release-final-20260927, including successful feature, UI, webhook and delivery results. Both earlier rollback histories remain intact. Four inactive old Zola test trees and the idle Vercel CLI cache were byte-verified and relocated to the larger build volume with original paths preserved; approximately 1.7 GB root-disk space is available. Active caches and unrelated project sources were not removed.
+
+
 ## 2026-09-27 — Reuse verified runtime store publication for final Telegram attempt
 
 The a8727fc attempt started the corrected API and worker, then rolled back at store publication because the feature host used the sealed-store factory for nested runtime manifest publication. Switched the host to the existing createOwnedRuntimeStoreTransition factory, which forwards deployed-artifact inspection at both protected layers while preserving sealed preparation. Its actual protected-file integration fixtures cover publication, replay, identity/generation drift and lost rename acknowledgement.
