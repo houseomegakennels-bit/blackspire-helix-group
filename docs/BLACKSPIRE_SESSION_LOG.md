@@ -2831,3 +2831,7 @@ Native recovery completed OUTAGE_RECOVERED at /var/lib/blackspire-operator/stora
 ## 2026-09-27 — Current feature release authority groundwork
 
 Implemented exact recovered-predecessor attestation and distinct feature configuration publication/restore primitive. Native read-only check passed for 6cdd47e to sealed 462afc7; 11 tests passed, including partial publication rollback. No activation host or production change yet. Product branch c9d6b01 separately corrects Vercel ignored builds so an exact frontend receiver can be built. Telegram remains STAGED_NOT_ACTIVE, voice deferred.
+
+## 2026-09-27 — Exact release preparation and storage headroom
+
+Verified full CI at c9d6b01, sealed its backend artifact, and passed native predecessor verification. Fast-forwarded the configured preview release branch and verified the matching frontend deployment READY. Restored Vercel browser access, but native deployment API credential remains HTTP 403. Reclaimed unused build caches, yielding approximately 1.3 GB free. Live readiness passes all nine checks on unchanged backend. Feature activation host and native receiver authentication remain unresolved; Telegram not activated, voice deferred.

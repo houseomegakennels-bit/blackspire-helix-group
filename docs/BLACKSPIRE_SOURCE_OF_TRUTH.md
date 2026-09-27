@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Exact Telegram candidate and frontend receiver preparation
+
+Full GitHub CI run 36290807764 passed for c9d6b01099b69ff1c6a1a5693650f363540c8090. Built the sealed backend artifact with digest 1206a3676d1c51dec79403d2d61cc5d09afb598f635ea3a6efb09a24575bc5c6. Native read-only feature preflight returned FEATURE_PREDECESSOR_VERIFIED against the current outage recovery and installed authority; no production switch occurred.
+
+Vercel browser sign-in via GitHub succeeded. The dashboard confirms required preview variables are scoped to release/zola-production-live. Fast-forwarded that release branch from f1f004f to the tested candidate (no force push), triggering deployment dpl_6PBTnPPuGpfoKHatWWvkWo377QNR at frontend-jqjl2vj2d-houseomegakennels-4825s-projects.vercel.app. The Vercel connector verified READY at that exact SHA and release branch. The separate feature-branch deployment is READY but lacks the release-branch-scoped configuration; do not use it as the receiver.
+
+Native server Vercel deployment API authentication still returns HTTP 403; browser and connector access do not repair that credential. The existing native receiver verifier therefore remains blocked. The feature activation host/orchestrator also remains unfinished. Telegram is STAGED_NOT_ACTIVE and voice deferred.
+
+Public readiness passed all nine checks on unchanged 6cdd47e. Root free space fell below 800 MB. Cleared npm download cache and twelve older-than-seven-day Next build caches after checking process command lines, maps, cwd, executable and file descriptors for references to their workspaces. Preserved source, evidence, dependencies and production data. Available space increased to approximately 1.3 GB; capacity remains limited.
+
 ## 2026-09-27 — Feature release predecessor and configuration rebind
 
 PR156 product CI passed at 462afc7; its sealed candidate was inspected. Added a distinct read-only feature predecessor check against the latest storage-outage recovery, exact OPEN admission state, current service/environment digests, writer bindings and the actual postmerge authority receipt. Native check returned FEATURE_PREDECESSOR_VERIFIED for the deployed 6cdd47e predecessor and candidate 462afc7. This avoids stale premerge provisioning inputs. No production files were changed.
