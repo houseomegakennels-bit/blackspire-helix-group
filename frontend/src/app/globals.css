@@ -4402,3 +4402,17 @@ body::after {
 .public-product-actions>a:last-child:not(:first-child){color:#e7cfa0;min-height:44px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:4px}
 @media(min-width:701px) and (max-width:1100px){.public-products .public-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.public-directory-intro{padding:24px 0}.public-directory-intro h1{font-size:clamp(2.5rem,10vw,3.25rem)}}
+
+/* Books are a viewing destination: player first on phones, chapters alongside on desktop. */
+.public-book-back{display:inline-flex;align-items:center;min-height:44px;color:#e7cfa0;text-decoration:underline;text-underline-offset:5px}
+.public-book-heading{display:flex;gap:20px;align-items:center;margin:16px 0 24px}
+.public-book-heading h1{font-family:var(--font-display),Georgia,serif;font-size:clamp(2rem,4vw,3.5rem);line-height:1.1;color:#f5f1e9}
+.public-book-heading p{margin-top:10px;color:#dedbd5;font-size:1rem}
+.public-book-cover{width:64px;height:88px;object-fit:cover;border-radius:6px;flex-shrink:0}
+.book-player-layout{display:grid;gap:24px;grid-template-areas:"viewer" "chapters";min-width:0}
+.book-viewer{grid-area:viewer;min-width:0}
+.book-chapter-list{grid-area:chapters;min-width:0}
+.book-viewer video{aspect-ratio:16/9;object-fit:contain}
+.public-book-about{margin-top:28px;border-top:1px solid var(--line);padding-top:20px;font-size:1rem;line-height:1.8;color:#dedbd5}
+.public-book-about summary{cursor:pointer;color:#e7cfa0;min-height:44px}
+@media(min-width:1024px){.book-player-layout{grid-template-columns:minmax(260px,.32fr) minmax(0,.68fr);grid-template-areas:"chapters viewer";align-items:start}.book-chapter-list{max-height:760px;overflow-y:auto}}

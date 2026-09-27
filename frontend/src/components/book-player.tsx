@@ -24,6 +24,7 @@ function formatTime(seconds: number) {
 export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapters: PlayerChapter[] }) {
   const playable = chapters.filter((chapter) => chapter.videoUrl || chapter.audioUrl);
   const [activeId, setActiveId] = useState(playable[0]?.id ?? chapters[0]?.id ?? "");
+  const [playbackError, setPlaybackError] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [shouldAutoplay, setShouldAutoplay] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -40,6 +41,8 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   const [prevActiveId, setPrevActiveId] = useState(activeId);
   if (prevActiveId !== activeId) {
     setPrevActiveId(activeId);
+    setIsPlaying(false);
+    setPlaybackError("");
     setCurrentTime(0);
     setDuration(0);
     setSceneIndex(0);
@@ -66,7 +69,10 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   function togglePlay() {
     const media = mediaRef.current;
     if (!media) return;
-    if (media.paused) void media.play();
+    if (media.paused) {
+      setPlaybackError("");
+      void media.play().catch(() => setPlaybackError("Playback could not start. Try the video controls or reload this page."));
+    }
     else media.pause();
   }
 
@@ -91,13 +97,14 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   }
 
   const mediaEvents = {
-    onPlay: () => setIsPlaying(true),
+    onError: () => { setIsPlaying(false); setPlaybackError("This chapter could not load. Reload the page to retry."); },
+    onPlay: () => { setPlaybackError(""); setIsPlaying(true); },
     onPause: () => setIsPlaying(false),
     onEnded: handleEnded,
     onTimeUpdate: () => setCurrentTime(mediaRef.current?.currentTime ?? 0),
     onLoadedMetadata: () => {
       setDuration(mediaRef.current?.duration ?? 0);
-      if (shouldAutoplay) void mediaRef.current?.play();
+      if (shouldAutoplay) void mediaRef.current?.play().catch(() => setPlaybackError("Tap Play to start this chapter."));
     },
   };
 
@@ -105,43 +112,8 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
   const hasMedia = Boolean(activeChapter.videoUrl || activeChapter.audioUrl);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[0.36fr_0.64fr]">
-      <aside className="brand-panel h-fit p-5 lg:p-6">
-        <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Chapters</p>
-        <div className="mt-4 grid gap-2">
-          {chapters.map((chapter) => {
-            const isActive = chapter.id === activeChapter.id;
-            const chapterPlayable = Boolean(chapter.videoUrl || chapter.audioUrl);
-            return (
-              <button
-                key={chapter.id}
-                type="button"
-                onClick={() => chapterPlayable && selectChapter(chapter.id, true)}
-                disabled={!chapterPlayable}
-                className={`rounded-[16px] border px-4 py-3 text-left transition ${
-                  isActive
-                    ? "border-[var(--line-strong)] bg-[rgba(255,176,78,0.12)]"
-                    : chapterPlayable
-                      ? "border-[var(--line)] hover:border-[var(--line-strong)]"
-                      : "border-[var(--line)] opacity-50"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Chapter {chapter.order}</p>
-                    <p className="mt-1 text-sm font-semibold text-white">{chapter.title}</p>
-                  </div>
-                  <span className="text-xs text-[var(--copy-muted)]">
-                    {isActive && isPlaying ? "Playing" : chapterPlayable ? "▶" : "Soon"}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </aside>
-
-      <section className="brand-panel overflow-hidden p-5 lg:p-6">
+    <div className="book-player-layout">
+      <section className="book-viewer brand-panel overflow-hidden p-5 lg:p-6">
         <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">
           Now playing — {bookTitle}
         </p>
@@ -157,6 +129,9 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
                 mediaRef.current = node;
               }}
               src={activeChapter.videoUrl}
+              controls
+              preload="metadata"
+              aria-label={`${bookTitle}, chapter ${activeChapter.order}: ${activeChapter.title}`}
               playsInline
               className="w-full rounded-[22px] bg-black"
               {...mediaEvents}
@@ -191,6 +166,8 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
             </div>
           )}
         </div>
+
+        {playbackError ? <p role="status" className="mt-4 text-sm text-[var(--gold-soft)]">{playbackError}</p> : null}
 
         {hasMedia ? (
           <div className="mt-5 rounded-[18px] border border-[var(--line)] bg-black/30 p-4">
@@ -239,6 +216,42 @@ export function BookPlayer({ bookTitle, chapters }: { bookTitle: string; chapter
 
         <p className="mt-5 text-sm leading-7 text-[var(--copy-soft)]">{activeChapter.summary}</p>
       </section>
+      <aside className="book-chapter-list brand-panel h-fit p-5 lg:p-6">
+        <p className="text-xs uppercase tracking-[0.32em] text-[var(--gold-soft)]">Chapters</p>
+        <div className="mt-4 grid gap-2">
+          {chapters.map((chapter) => {
+            const isActive = chapter.id === activeChapter.id;
+            const chapterPlayable = Boolean(chapter.videoUrl || chapter.audioUrl);
+            return (
+              <button
+                key={chapter.id}
+                type="button"
+                onClick={() => chapterPlayable && selectChapter(chapter.id, true)}
+                aria-current={isActive ? "true" : undefined}
+                disabled={!chapterPlayable}
+                className={`rounded-[16px] border px-4 py-3 text-left transition ${
+                  isActive
+                    ? "border-[var(--line-strong)] bg-[rgba(255,176,78,0.12)]"
+                    : chapterPlayable
+                      ? "border-[var(--line)] hover:border-[var(--line-strong)]"
+                      : "border-[var(--line)] opacity-50"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Chapter {chapter.order}</p>
+                    <p className="mt-1 text-sm font-semibold text-white">{chapter.title}</p>
+                  </div>
+                  <span className="text-xs text-[var(--copy-muted)]">
+                    {isActive && isPlaying ? "Playing" : chapterPlayable ? "▶" : "Soon"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
     </div>
   );
 }
