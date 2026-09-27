@@ -1,5 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Telegram identity repair and Zola OS redesign prepared
+
+Verified actual owner Telegram greeting task_27005ef57347920a completed with a natural Codex answer. The subsequent deal request task_014298e16d72d1a2 failed before capability dispatch because the numeric transport actor has no canonical workspace principal. Production is still 170f209c53b8950466694988d2274ace6fef1a54; Telegram is ACTIVE.
+
+Prepared an explicit BLACKSPIRE_TELEGRAM_PRINCIPAL_ID server-owned delegation for paired private read-only input. It requires exact actor/chat/allowlist equality and current workspace read/create/execute permissions, retains numeric input attribution and Telegram policy class, and leaves write requests unbound. Existing capability permission, receiver authority, revocation and disclosure checks remain in place. No production configuration changed; the binding must be installed during the next reviewed successor release. Missing or invalid configured bindings fail closed.
+
+Internal events remain in canonical history but only terminal outcomes and approval decisions enter Telegram delivery. Completion remains the canonical response; failures are readable and operational details stay in Zola. Reworked the phone interface with Home/Chat/Work/Review/More navigation, readable white/gray typography, restrained red controls, orb identity, expandable conversation/delivery metadata and a quieter chat timeline. Asset version os1 and shell v5 prevent stale new installs.
+
+Targeted Telegram, principal binding, capability, context and PWA tests pass, including cross-owner/workspace rejection, idempotency, revocation and privileged-policy denial. Lint, typecheck and build pass. Visual review and exact-commit CI/release acceptance are still pending. These changes are NOT DEPLOYED. Voice remains deferred.
+
+
 ## 2026-09-27 — Zola and private Telegram live
 
 Native final feature activation completed FEATURE_RELEASE_ACTIVE at 170f209c53b8950466694988d2274ace6fef1a54, artifact digest 00d389e3c5e0b0c96452b2958397ecd434744c52127bad18994fe6b05b996f2a. Exact-commit CI run 36300094886 passed. API, worker, store and writer bindings activated successfully; HELD checks passed, admission opened and all nine public readiness checks passed. The operator uses the existing runtime store factory to propagate deployed-artifact inspection through both protected publication layers. Twenty-three targeted operator tests pass.

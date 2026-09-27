@@ -2862,3 +2862,13 @@ The real production worker preflight and full CI passed. Native feature activati
 ## 2026-09-27 — Zola backend, orb UI and private Telegram activated
 
 Completed the final native feature transaction on 170f209 after full CI success. All nine public readiness checks pass. Activated the verified private Telegram webhook without dropping pending updates; two pending owner commands received successful responses, the pending queue is empty and Telegram reports no delivery error. Unauthorized webhook requests return 401. Activated and byte-verified the corresponding context4 UI and orb asset. Retained protected success evidence and both rollback histories. Fresh owner text is still needed to verify a complete natural-language Telegram/Codex round trip. Voice remains deferred.
+
+## 2026-09-27 — Telegram identity repair and Zola OS redesign prepared
+
+Verified actual owner Telegram greeting task_27005ef57347920a completed with a natural Codex answer. The subsequent deal request task_014298e16d72d1a2 failed before capability dispatch because the numeric transport actor has no canonical workspace principal. Production is still 170f209c53b8950466694988d2274ace6fef1a54; Telegram is ACTIVE.
+
+Prepared an explicit BLACKSPIRE_TELEGRAM_PRINCIPAL_ID server-owned delegation for paired private read-only input. It requires exact actor/chat/allowlist equality and current workspace read/create/execute permissions, retains numeric input attribution and Telegram policy class, and leaves write requests unbound. Existing capability permission, receiver authority, revocation and disclosure checks remain in place. No production configuration changed; the binding must be installed during the next reviewed successor release. Missing or invalid configured bindings fail closed.
+
+Internal events remain in canonical history but only terminal outcomes and approval decisions enter Telegram delivery. Completion remains the canonical response; failures are readable and operational details stay in Zola. Reworked the phone interface with Home/Chat/Work/Review/More navigation, readable white/gray typography, restrained red controls, orb identity, expandable conversation/delivery metadata and a quieter chat timeline. Asset version os1 and shell v5 prevent stale new installs.
+
+Targeted Telegram, principal binding, capability, context and PWA tests pass, including cross-owner/workspace rejection, idempotency, revocation and privileged-policy denial. Lint, typecheck and build pass. Visual review and exact-commit CI/release acceptance are still pending. These changes are NOT DEPLOYED. Voice remains deferred.

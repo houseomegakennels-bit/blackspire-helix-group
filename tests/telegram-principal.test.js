@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'zola-channel-principal-'));
+process.env.BLACKSPIRE_DB_PATH=path.join(root,'test.sqlite');
+const {prepareDisposableDatabase}=await import('./helpers/prepare-disposable-database.js');
+prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
+const {provisionRouteAuthorization}=await import('./helpers/provision-route-authorization.js');
+provisionRouteAuthorization(['blackspire-command']);
+const {telegramReadPrincipal}=await import('../packages/shared/telegram-principal.js');
+const {createUnifiedInput,getConversation}=await import('../packages/unified-input/unified.js');
+const {getTask,recordTaskEvent,deliveryRecords}=await import('../packages/task-engine/tasks.js');
+const {run}=await import('../packages/task-engine/db.js');
+const env={BLACKSPIRE_TELEGRAM_PRINCIPAL_ID:'test-route-operator',TELEGRAM_PRIVATE_CHAT_ID:'1001',TELEGRAM_ALLOWED_USERS:'1001'};
+const request={actorId:'1001',channelKey:'1001',workspaceId:'blackspire-command',authority:'telegram',executionIntent:'read_only'};
+test('explicit paired read delegation resolves only the configured workspace principal',()=>{
+ assert.equal(telegramReadPrincipal(request,env),'test-route-operator');
+ for(const patch of [{actorId:'1002'},{channelKey:'1002'},{authority:'admin'},{workspaceId:'outside'}])
+  assert.throws(()=>telegramReadPrincipal({...request,...patch},env));
+ for(const patch of [{TELEGRAM_ALLOWED_USERS:'1001,1002'},{TELEGRAM_PRIVATE_CHAT_ID:'-1001'},{BLACKSPIRE_TELEGRAM_PRINCIPAL_ID:'missing'}])
+  assert.throws(()=>telegramReadPrincipal(request,{...env,...patch}));
+ assert.equal(telegramReadPrincipal({...request,executionIntent:'workspace_mutation'},env),null);
+ assert.equal(telegramReadPrincipal(request,{}),null);
+});
+test('canonical task binding preserves Telegram actor, policy, private channel and idempotency',()=>{
+ Object.assign(process.env,env);
+ const input={...request,channel:'telegram',text:'show all deals',idempotencyKey:'bound-read'};
+ const first=createUnifiedInput(input);
+ const task=getTask(first.taskId);
+ assert.equal(task.actor_id,'test-route-operator');
+ assert.equal(task.authority_class,'telegram');
+ assert.equal(task.source_channel,'telegram');
+ assert.equal(getConversation(first.conversationId).messages[0].actor_id,'1001');
+ assert.equal(createUnifiedInput(input).taskId,first.taskId);
+ assert.equal(createUnifiedInput({...input,actorId:'1002'}).status,403);
+ assert.equal(createUnifiedInput({...input,metadata:{principalId:'someone-else'}}).taskId,first.taskId);
+ const denied=createUnifiedInput({...input,text:'deploy to production',idempotencyKey:'deny-privileged'});
+ assert.equal(denied.denied,true);
+ assert.equal(getTask(denied.taskId).status,'failed');
+ const change=createUnifiedInput({...input,text:'edit a workspace file',executionIntent:'workspace_mutation',idempotencyKey:'unbound-write'});
+ assert.equal(getTask(change.taskId).actor_id,'1001');
+ recordTaskEvent(first.taskId,'task.waiting_for_approval',{status:'waiting_for_approval'});
+ assert.ok(deliveryRecords(first.conversationId).length > 0);
+ recordTaskEvent(first.taskId,'task.running',{status:'running'});
+ recordTaskEvent(first.taskId,'provider.selected',{provider:'mock'});
+ assert.equal(deliveryRecords(first.conversationId).filter(d=>d.event_id===getConversation(first.conversationId).events.find(e=>e.task_id===first.taskId&&e.type==='provider.selected').id).length,0);
+ run("UPDATE auth_principals SET status='revoked',revoked_at=? WHERE id=?", [Date.now(),'test-route-operator']);
+ assert.equal(createUnifiedInput({...input,idempotencyKey:'after-revoke'}).status,403);
+ for(const key of Object.keys(env))delete process.env[key];
+});

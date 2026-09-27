@@ -1,5 +1,10 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Release conversation repair from the active Telegram deployment
+
+Use feat/zola-os-conversation-20260927, not the completed activation transaction. Finish visual review and full CI, seal a fresh artifact, attest the successful 170f209 feature result/current generations and authority receipt as predecessor, install the explicit paired read-only principal binding, preserve the active webhook and pending messages, and use the store/writer/receiver transition with rollback. Verify the owner's fresh deal read and a single human-readable reply. No automatic replay of historical failed requests. Voice remains deferred. Older pending-activation entries below are historical and superseded by the successful 170f209 release.
+
+
 ## 2026-09-27 — Deploy isolated candidate
 
 Use feat/zola-telegram-release-20260927, based directly on the deployed commit, for the feature artifact. One hundred targeted tests and mock provider-packet verification pass. Finish the distinct reviewed successor transition from the latest storage recovery, preserving store/writer permissions, frontend receiver compatibility and rollback/HELD containment. Install the private paired credentials only inside that transition and verify actual Telegram delivery. Production has not been updated.

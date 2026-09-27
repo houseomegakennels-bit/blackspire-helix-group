@@ -1,3 +1,4 @@
+import { telegramReadPrincipal } from '../shared/telegram-principal.js';
 import { CONVERSATION_PREFIX, currentConversationMessage } from './conversation-context.js';
 import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
 import {createHash} from 'node:crypto';
@@ -26,20 +27,25 @@ function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversation
   if (!workspace) return { error: 'workspace not found', status: 403 };
   if (getFlag('emergency_stop') === 'active') return { error: 'emergency stop active', status: 423 };
 
+  let taskActorId = String(actorId || '');
+  if (channel === 'telegram') {
+    try { taskActorId = telegramReadPrincipal({actorId, channelKey, workspaceId, authority, executionIntent}) || taskActorId; }
+    catch (error) { return {error: error.message, status: 403}; }
+  }
   const key = String(idempotencyKey || id('idem'));
   const taskKey = `unified:${channel}:${key}`;
   return transaction(() => {
     const duplicate = query(`SELECT i.*,t.id task_id,t.status task_status,t.workspace_id task_workspace_id,t.execution_intent task_execution_intent,t.actor_id task_actor_id,t.authority_class task_authority_class,c.workspace_id FROM unified_inputs i LEFT JOIN tasks t ON t.input_id=i.id JOIN conversations c ON c.id=i.conversation_id WHERE i.channel=${esc(channel)} AND i.idempotency_key=${esc(key)};`)[0];
     if (duplicate) {
       if (duplicate.actor_id !== String(actorId || '') || (duplicate.task_id &&
-          (duplicate.task_actor_id !== String(actorId || '') || duplicate.task_authority_class !== authority))) return { error: 'input not found', status: 404 };
+          (duplicate.task_actor_id !== taskActorId || duplicate.task_authority_class !== authority))) return { error: 'input not found', status: 404 };
       if (duplicate.workspace_id !== workspaceId || (duplicate.task_id && duplicate.task_workspace_id !== workspaceId)) return { error: 'input not found', status: 404 };
       if (duplicate.task_id && duplicate.task_execution_intent !== executionIntent) return { error: 'idempotency key conflicts with executionIntent', status: 409 };
       return responseFor(duplicate.conversation_id, duplicate.id, duplicate.task_id, duplicate.task_status, true, duplicate.policy_status === 'denied' ? denialReason(channel) : null);
     }
 
     const existingTask = query(`SELECT id,workspace_id,actor_id,source_channel,authority_class FROM tasks WHERE idempotency_key=${esc(taskKey)};`)[0];
-    if (existingTask) return existingTask.workspace_id === workspaceId && existingTask.actor_id === String(actorId || '') &&
+    if (existingTask) return existingTask.workspace_id === workspaceId && existingTask.actor_id === taskActorId &&
         existingTask.source_channel === channel && existingTask.authority_class === authority
       ? { error: 'idempotency key conflict', status: 409 }
       : { error: 'input not found', status: 404 };
@@ -50,7 +56,7 @@ function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversation
     const decision = evaluateRequestPolicy({ request, channel, authority });
     const denial = decision.allowed ? null : decision.reason;
     execSql(`INSERT INTO unified_inputs VALUES (${esc(inputId)},${esc(conversation.id)},${esc(channel)},${esc(actorId || '')},${esc(redact(request))},${esc(key)},${esc(denial ? 'denied' : 'allowed')},${esc(now())});`);
-    const task = createTask({ workspaceId, request: redact(request), idempotencyKey: taskKey, budgetCents: Number(workspace.budget_cents || 0), conversationId: conversation.id, inputId, sourceChannel: channel, actorId: String(actorId || ''), actionClass: decision.actionClass, authorityClass: authority, policyDecision: denial ? 'denied' : (decision.requiresApproval ? 'approval_required' : 'allowed'), executionIntent, initialStatus: denial ? 'failed' : 'queued', initialError: denial, initialSummary: denial ? 'Denied by Blackspire policy' : null, initialEventType: denial ? 'policy.denied' : 'task.queued', initialEventPayload: denial ? { reason: denial } : {} });
+    const task = createTask({ workspaceId, request: redact(request), idempotencyKey: taskKey, budgetCents: Number(workspace.budget_cents || 0), conversationId: conversation.id, inputId, sourceChannel: channel, actorId: taskActorId, actionClass: decision.actionClass, authorityClass: authority, policyDecision: denial ? 'denied' : (decision.requiresApproval ? 'approval_required' : 'allowed'), executionIntent, initialStatus: denial ? 'failed' : 'queued', initialError: denial, initialSummary: denial ? 'Denied by Blackspire policy' : null, initialEventType: denial ? 'policy.denied' : 'task.queued', initialEventPayload: denial ? { reason: denial } : {} });
     if (task.workspace_id !== workspaceId || task.input_id !== inputId || task.conversation_id !== conversation.id) throw new Error('unified task binding conflict');
     audit(task.id, channel, denial ? 'unified_input.denied' : 'unified_input.accepted', { conversationId: conversation.id, inputId, channel, policy: denial ? 'denied' : 'allowed', actionClass: decision.actionClass });
     recordEvidence(task.id, 'unified_input', { conversationId: conversation.id, inputId, sourceChannel: channel, actorId: redact(String(actorId || '')), policy: denial ? 'denied' : 'allowed' });
@@ -172,6 +178,14 @@ export function sanitizeEventMessage(type, taskId, payload) {
     const result=resolveCanonicalTaskResult({status:'completed',summary:typeof safe.summary==='string'?safe.summary:JSON.stringify(safe.summary)});
     return result;
   }
+  if (type === 'task.failed') {
+    if (/capability principal|capability permission|workspace access/.test(safe.error || ''))
+      return 'I couldn’t access that workspace. Your Telegram account needs a valid workspace connection in Zola.';
+    return 'I couldn’t finish that request. Open Zola for the details, or try again.';
+  }
+  if (type === 'task.cancelled') return 'Cancelled. I’ve stopped this request.';
+  if (type === 'task.waiting_for_approval' || type === 'task.waiting_approval') return 'This needs your approval. Open Zola to review it.';
+  if (type === 'task.outcome_unknown') return 'I couldn’t confirm the outcome. Please review this task in Zola before retrying.';
   return redact(`[${type}] ${taskId} ${safe.status || ''}${safe.summary ? `: ${typeof safe.summary === 'string' ? safe.summary : JSON.stringify(safe.summary)}` : ''}${safe.error ? `: ${safe.error}` : ''}`.trim());
 }
 

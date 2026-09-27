@@ -45,7 +45,7 @@ const { provisionRouteAuthorization } = await import('./helpers/provision-route-
 provisionRouteAuthorization(['e2e', 'zero-e2e']);
 const { start } = await import('../apps/api/server.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
-const { createUnifiedInput, getConversation, drainTelegramOutbox, registerCancellationToken } = await import('../packages/unified-input/unified.js');
+const { createUnifiedInput, getConversation, drainTelegramOutbox, registerCancellationToken, cancelFromChannel } = await import('../packages/unified-input/unified.js');
 const { getTask, taskRecords, deliveryRecords, setFlag } = await import('../packages/task-engine/tasks.js');
 const { query, closeDb } = await import('../packages/task-engine/db.js');
 const { upsertWorkspace, getWorkspace } = await import('../packages/workspace-registry/workspaces.js');
@@ -98,13 +98,14 @@ test('credential-free loopback Unified Jarvis and mock Telegram flow', async () 
 
   const delivered = [];
   await drainTelegramOutbox(async (reply) => { delivered.push(...reply.text); });
-  assert.ok(delivered.some((message) => message.includes('task.cancelled') && !message.includes('local-validation-token')));
+  assert.ok(delivered.some((message) => message.includes('Cancelled.') && !message.includes('local-validation-token')));
 
   const failureTask = createUnifiedInput({ channel: 'telegram', actorId: '9001', channelKey: '9100', conversationId: evidence.conversationId, workspaceId: 'e2e', text: 'delivery retry task', idempotencyKey: 'delivery-e2e' });
+  cancelFromChannel('telegram','9100',failureTask.taskId);
   await drainTelegramOutbox(async () => { throw new Error('mock failure token=external-secret-value'); });
   await drainTelegramOutbox(async () => { throw new Error('mock failure token=external-secret-value'); });
   assert.ok(deliveryRecords(evidence.conversationId).some((row) => row.status === 'failed' && row.attempts === 2 && !row.last_error.includes('external-secret-value')));
-  assert.equal(getTask(failureTask.taskId).status, 'queued');
+  assert.equal(getTask(failureTask.taskId).status, 'cancelled');
   assert.ok(getConversation(evidence.conversationId).deliveries.some((row) => row.status === 'failed'));
 
   const denied = createUnifiedInput({ channel: 'telegram', actorId: '9001', channelKey: '9200', workspaceId: 'e2e', text: 'create a repository and expose token=external-secret-value', idempotencyKey: 'policy-e2e' });

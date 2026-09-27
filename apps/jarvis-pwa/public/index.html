@@ -10,15 +10,15 @@
 <link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="/zola-icon-180.png">
 <title>Blackspire Zola</title>
-<link rel="stylesheet" href="/zola.css?v=20260926-context4">
+<link rel="stylesheet" href="/zola.css?v=20260927-os1">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <div id="app">
   <header class="top">
     <div>
-      <p class="eyebrow">Blackspire Command</p>
-      <h1>ZOLA</h1>
+      <p class="eyebrow">Blackspire</p>
+      <h1>Zola</h1>
     </div>
     <div class="rail" id="statusBar" role="status" aria-live="polite"></div>
   </header>
@@ -28,13 +28,15 @@
   <div id="updateBar" role="status"><span>A new Zola version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
 
   <nav class="views" aria-label="Screens" id="viewNav">
-    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Command</a>
-    <a href="#/conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Conversation</a>
-    <a href="#/task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Task</a>
+    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Home</a>
+    <a href="#/conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
+    <a href="#/task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Work</a>
+    <a href="#/approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>Review</a>
+    <details class="nav-more"><summary aria-label="More screens"><span aria-hidden="true">•••</span>More</summary><div class="nav-more-menu">
     <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
-    <a href="#/approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>Approvals</a>
     <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
     <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
+    </div></details>
   </nav>
 
   <main id="main">
@@ -92,20 +94,20 @@
       </div>
 
       <div class="panel wide">
-        <h2 id="composerHeading">Command</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
+        <h2 id="composerHeading">What’s next?</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
         <div class="stack">
           <label class="sr-only" for="workspace">Workspace</label>
           <select id="workspace" aria-label="Workspace"></select>
-          <label for="executionIntent">Execution intent</label>
+          <label for="executionIntent">How should Zola help?</label>
           <select id="executionIntent" aria-describedby="executionIntentHint">
-            <option value="read_only">Read-only inspection</option>
+            <option value="read_only">Answer and research</option>
             <option value="workspace_mutation">Propose a workspace change</option>
           </select>
-          <p class="muted fs-12" id="executionIntentHint">Zola enforces this choice: read-only tasks cannot apply files, and change tasks cannot succeed without an artifact.</p>
+          <p class="muted fs-12" id="executionIntentHint">Answer and research leaves files unchanged. Choose a workspace change when you want edits.</p>
           <label class="sr-only" for="cmd">Command for Zola</label>
-          <textarea id="cmd" placeholder="Ask Hermes to do safe workspace work" enterkeyhint="send"></textarea>
+          <textarea id="cmd" placeholder="What are we working on?" enterkeyhint="send"></textarea>
           <div class="row row-center">
-            <button class="primary" id="sendBtn" type="button">Send command</button>
+            <button class="primary" id="sendBtn" type="button">Send</button>
             <button class="mic ghost" id="micBtn" type="button" aria-describedby="micHint" aria-label="Dictate command" aria-pressed="false">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
             </button>
@@ -117,13 +119,13 @@
 
       <div class="panel">
         <h2>Current task</h2>
-        <div class="stack" id="currentTaskCard"><p class="empty">No task yet. Submit a command to create one.</p></div>
+        <div class="stack" id="currentTaskCard"><p class="empty">Your next request will appear here.</p></div>
       </div>
 
-      <div class="panel">
-        <h2>Delivery &amp; attribution</h2>
-        <div class="stack" id="attributionCard"><p class="empty">Hermes, provider, and Telegram delivery attribution appear after dispatch.</p></div>
-      </div>
+      <details class="panel">
+        <summary>Delivery details</summary>
+        <div class="stack" id="attributionCard"><p class="empty">Delivery details appear after your first request.</p></div>
+      </details>
 
       <div class="panel wide">
         <h2>Recent conversations</h2>
@@ -135,30 +137,30 @@
     <section data-view="conversation" hidden>
       <div class="panel wide">
         <h2 id="convTitle">Conversation</h2>
-        <div class="facts">
-          <div class="fact span2"><span class="label">Canonical conversation ID</span><span class="value mono" id="convId">—</span><div class="row mt-8"><button class="copy ghost" data-copy="convId" type="button">Copy ID</button></div></div>
+        <details class="conversation-details"><summary>Conversation details</summary><div class="facts">
+          <div class="fact span2"><span class="label">Conversation ID</span><span class="value mono" id="convId">—</span><div class="row mt-8"><button class="copy ghost" data-copy="convId" type="button">Copy ID</button></div></div>
           <div class="fact"><span class="label">Workspace</span><span class="value mono" id="convWorkspace">—</span></div>
           <div class="fact"><span class="label">Sync</span><span class="value mono" id="convSync">—</span></div>
-        </div>
+        </div></details>
       </div>
       <div class="panel wide">
-        <h2>Timeline</h2>
+        <h2>Conversation</h2>
         <ol class="msgs" id="messageList"></ol>
-        <p class="empty" id="messagesEmpty">No messages yet. Canonical Zola, web, and Telegram messages share this timeline.</p>
+        <p class="empty" id="messagesEmpty">No messages yet. Your messages and Zola’s replies appear here.</p>
       </div>
       <div class="panel wide">
-        <h2>Follow-up</h2>
+        <h2>Reply</h2>
         <div class="stack">
           <label class="sr-only" for="followCmd">Follow-up command</label>
           <button class="primary" id="talkStartFollow" type="button">Talk to Zola</button><textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
-          <label for="followExecutionIntent">Execution intent</label>
+          <label for="followExecutionIntent">How should Zola help?</label>
           <select id="followExecutionIntent">
-            <option value="read_only">Read-only inspection</option>
+            <option value="read_only">Answer and research</option>
             <option value="workspace_mutation">Propose a workspace change</option>
           </select>
           <button class="mic ghost" id="followMicBtn" type="button" aria-pressed="false" aria-describedby="followMicHint">Dictate</button>
 <p id="followMicHint" class="muted fs-12" role="status">Tap Dictate, then review your words before sending.</p>
-<button class="primary" id="followBtn" type="button">Send follow-up</button>
+<button class="primary" id="followBtn" type="button">Send</button>
           <p class="notice" id="followNotice" role="status" aria-live="polite"></p>
         </div>
       </div>
@@ -285,6 +287,6 @@
 <p id="talkTranscript"></p><p id="talkReply"></p>
 <div class="row"><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
 </dialog>
-<script src="/zola.js?v=20260926-context4"></script>
+<script src="/zola.js?v=20260927-os1"></script>
 </body>
 </html>
