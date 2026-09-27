@@ -1,5 +1,14 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Live Telegram acceptance and stale workspace context repaired
+
+The real owner request task_e923b58f5367bf5c completed deal.records.search at 08:30 UTC and its final Telegram response was delivered. Two later owner conversation tasks also completed and were delivered. All nine runtime readiness checks still pass at deployed SHA 128ea3f775c0de725cbbcbe60b4c2603627b94bd.
+
+The two follow-up answers incorrectly claimed production was inactive because the actual provider workspace /opt/blackspire-command/shared/workspace still held July canonical notes at implementation 85753ff. Added a dated current-state reconciliation to its source of truth, active context, next actions and session log, preserving historical notes and all authority controls. Runtime documentation commit: 28b4e8c38796399cd9dd7249c2851efaa636e35b. No application release, service, data or permissions changed. Fresh-answer effectiveness remains UNVERIFIED.
+
+The seeded runtime checkout uses a local origin, so its living-memory checker reports UNTRUSTED_ORIGIN_URL; that limitation is documented rather than bypassed. Its secret and whitespace checks pass. This source branch retains the same verified milestone durably on GitHub. Deal report formatting still omits available status, nextAction and missingInputs. Suspected test/incomplete records need careful labeling; no rows were deleted. Latest activity is absent from the existing bounded result and must not be fabricated. Voice remains deferred.
+
+
 ## 2026-09-27 — Current next action
 
 Zola OS and the Telegram identity repair are live at 128ea3f775c0de725cbbcbe60b4c2603627b94bd; backend/UI release receipts and all nine readiness checks pass. Ask the paired owner to resend the deal-status request in @BlackspireZolaBot, then verify canonical capability execution and final delivery. Do not replay the historical failed task or completed release operators. Voice remains deferred. Preserve /var/lib/blackspire-operator/zola-os-release-retry-20260927 as the latest predecessor evidence.

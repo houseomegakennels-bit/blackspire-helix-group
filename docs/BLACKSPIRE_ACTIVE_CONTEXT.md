@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-27 — Live Telegram acceptance and stale workspace context repaired
+
+The real owner request task_e923b58f5367bf5c completed deal.records.search at 08:30 UTC and its final Telegram response was delivered. Two later owner conversation tasks also completed and were delivered. All nine runtime readiness checks still pass at deployed SHA 128ea3f775c0de725cbbcbe60b4c2603627b94bd.
+
+The two follow-up answers incorrectly claimed production was inactive because the actual provider workspace /opt/blackspire-command/shared/workspace still held July canonical notes at implementation 85753ff. Added a dated current-state reconciliation to its source of truth, active context, next actions and session log, preserving historical notes and all authority controls. Runtime documentation commit: 28b4e8c38796399cd9dd7249c2851efaa636e35b. No application release, service, data or permissions changed. Fresh-answer effectiveness remains UNVERIFIED.
+
+The seeded runtime checkout uses a local origin, so its living-memory checker reports UNTRUSTED_ORIGIN_URL; that limitation is documented rather than bypassed. Its secret and whitespace checks pass. This source branch retains the same verified milestone durably on GitHub. Deal report formatting still omits available status, nextAction and missingInputs. Suspected test/incomplete records need careful labeling; no rows were deleted. Latest activity is absent from the existing bounded result and must not be fabricated. Voice remains deferred.
+
+
 ## 2026-09-27 — Zola OS and Telegram identity repair live
 
 Production backend and UI are active at 128ea3f775c0de725cbbcbe60b4c2603627b94bd. Full exact-commit CI run 36302634902 passed. The native successor completed FEATURE_RELEASE_ACTIVE, and UI publication completed ZOLA_OS_UI_ACTIVE with 14 source files and 15 nginx aliases. Public HTML/CSS/JS/orb bytes match the sealed release. Local and public readiness pass all nine checks; API, worker, store and writer services are active.
