@@ -1,12 +1,18 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Telegram pairing verified and transport repairs prepared
+
+Verified the root-only paired record for BlackspireZolaBot: token present, exactly one private owner bound, webhook secret present, status STAGED_NOT_ACTIVE. No credential values were exposed. Prepared private-chat enforcement with TELEGRAM_PRIVATE_CHAT_ID (production rejects missing pairing), checked Telegram delivery responses, webhook 503 on processing/delivery failure, and bounded retry reply caching with conflicting-update rejection. Failed document sends retain their file. Forty-four targeted Telegram, unified-input, policy and canonical-context tests pass, including private owner/group/bot rejection and failed-send retry with one canonical task. These repairs are NOT DEPLOYED.
+
+The existing successor activation and configuration operators encode historical predecessor/retirement authority; verifier maintenance is restricted to password changes. Neither is a valid feature-release activation path from the current completed deployment. A new reviewed transition with current predecessor/configuration evidence, fresh artifact and generation bindings, rollback/HELD containment and live delivery verification is still required. No production restart, webhook registration, credential installation or transport activation occurred.
+
 ## 2026-09-26 — Telegram staging and canonical context successor
 
 User authorized remaining non-voice repairs and Telegram setup. No Telegram credential or allowlist is present in the running API or known service environment files. Added a root-only hidden-entry Telegram staging helper: verifies bot identity, refuses active webhooks, pairs one fresh private-chat owner, and never activates transport. Four Python pairing tests pass.
 
 Prepared a feature-gated backend repair that discards client-supplied history/instructions, classifies only the current request, and supplies separate server-owned historical context to read-only provider packets. Canonical recall is bounded to the same actor, channel, authority and workspace, can retrieve relevant completed older conversations, and survives database reopen. No memory-candidate promotion or migration. UI mutation requests now retain explicit plain input. Eighty-three targeted Node tests pass; backend changes are NOT DEPLOYED or enabled.
 
-Activation requires a new reviewed release with current artifact/configuration and generation bindings. Do not replay the completed release or stretch verifier-only maintenance. Telegram credential pairing is pending. Further business adapters remain unfinished. See docs/ZOLA_TELEGRAM_CONTEXT_SUCCESSOR.md. Voice stays deferred.
+Activation requires a new reviewed release with current artifact/configuration and generation bindings. Do not replay the completed release or stretch verifier-only maintenance. Telegram credential pairing was completed and verified on September 27; transport remains STAGED_NOT_ACTIVE. Further business adapters remain unfinished. See docs/ZOLA_TELEGRAM_CONTEXT_SUCCESSOR.md. Voice stays deferred.
 
 ## 2026-09-26 — Operational upgrade verification and longer conversation context
 

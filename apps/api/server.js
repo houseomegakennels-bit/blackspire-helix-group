@@ -654,12 +654,15 @@ function exportTask(res, auth, taskId, format) {
 async function telegramWebhook(req, res) {
   if (req.headers['x-telegram-bot-api-secret-token'] !== process.env.TELEGRAM_WEBHOOK_SECRET) return json(res, 401, { error: 'invalid telegram secret' });
   const body = await readJson(req);
-  res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ ok: true }));
-  setTimeout(async () => {
+  try {
     const reply = await handleTelegramUpdate(body);
-    await dispatchReply(process.env.TELEGRAM_BOT_TOKEN, reply);
-  }, 0).unref();
+    const delivery = await dispatchReply(process.env.TELEGRAM_BOT_TOKEN, reply);
+    if (!reply.ignored && !delivery.sent) return json(res, 503, { error: 'telegram delivery unavailable' });
+    return json(res, 200, { ok: true });
+  } catch {
+    // Let Telegram retry; cached replies and canonical task idempotency avoid creating a second task.
+    return json(res, 503, { error: 'telegram update unavailable' });
+  }
 }
 
 function checkLimit(req, bucket, limit, windowMs) { const result = rateLimit(`${bucket}:${clientIp(req)}`, { limit, windowMs }); if (!result.allowed) audit(null, 'rate-limit', 'rate_limit.exceeded', { bucket, ip: clientIp(req) }); return result; }

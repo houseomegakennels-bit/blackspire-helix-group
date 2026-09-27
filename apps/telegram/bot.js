@@ -15,14 +15,14 @@ const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'application/jso
 
 const sessions = new Map();
 const conversations = new Map();
-const seen = new Set();
+const replies = new Map();
+const pendingUpdates = new Map();
 
 async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
-  if (seen.has(update.update_id)) return { ignored: true, reason: 'duplicate' };
-  seen.add(update.update_id);
   const msg = update.message || update.callback_query?.message;
   const from = update.message?.from || update.callback_query?.from || {};
   if (!TELEGRAM_ALLOWED_USERS.includes(Number(from.id))) return { ignored: true };
+  if (!privateChatAllowed(msg, from)) return { ignored: true };
   const limit = rateLimit(`telegram:${from.id}`, { limit: Number(process.env.TELEGRAM_RATE_LIMIT || 30), windowMs: 60000 });
   if (!limit.allowed) return { chatId: msg?.chat?.id, text: chunk(escapeMarkdown(`Rate limit exceeded. Retry after ${limit.retryAfter}s`)) };
   const text = update.message?.text || update.callback_query?.data || '';
@@ -191,7 +191,7 @@ async function sendTelegramDocumentAdmitted(token, chatId, filePath, caption = '
   body.append('caption', caption);
   body.append('document', new Blob([fs.readFileSync(filePath)]), path.basename(filePath));
   const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body });
-  return response.json();
+  return checkedTelegramResponse(response);
 }
 
 async function sendTelegramMessageAdmitted(token, chatId, text, extra = {}) {
@@ -203,7 +203,7 @@ async function sendTelegramMessageAdmitted(token, chatId, text, extra = {}) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: part, parse_mode: 'MarkdownV2', ...extra }),
     });
-    sent.push(await response.json());
+    sent.push(await checkedTelegramResponse(response));
   }
   return sent;
 }
@@ -215,6 +215,7 @@ async function dispatchReplyAdmitted(token, reply) {
   if (!reply || reply.ignored) return { sent: false, reason: 'ignored' };
   if (process.env.TELEGRAM_MODE === 'mock') return { sent: true, mode: 'mock', result: { fixture: true } };
   if (!token) return { sent: false, reason: 'no bot token configured (dry-run)' };
+  if (process.env.TELEGRAM_PRIVATE_CHAT_ID && String(reply.chatId) !== process.env.TELEGRAM_PRIVATE_CHAT_ID) return { sent: false, reason: 'unpaired destination' };
   if (reply.document) {
     const result = await sendTelegramDocument(token, reply.chatId, reply.document.path, reply.document.caption || '');
     cleanupTelegramFile(reply.document.path);
@@ -278,7 +279,40 @@ async function post(path, body, base) {
 
 if (import.meta.url === `file://${process.argv[1]}`) runPolling();
 
-export async function handleTelegramUpdate(...args) { return withReleaseAdmission(() => handleTelegramUpdateAdmitted(...args)); }
+function privateChatAllowed(message, from) {
+  const owner = process.env.TELEGRAM_PRIVATE_CHAT_ID;
+  if (!owner) return process.env.NODE_ENV !== 'production';
+  return /^[1-9][0-9]*$/.test(owner) && message?.chat?.type === 'private'
+    && String(message.chat.id) === owner && String(from.id) === owner && from.is_bot === false;
+}
+
+// Never include Telegram response descriptions or request URLs in errors: either may contain secrets.
+async function checkedTelegramResponse(response) {
+  let body;
+  try { body = await response.json(); } catch { throw new Error('Telegram delivery returned an invalid response'); }
+  if (!response.ok || body?.ok !== true) throw new Error('Telegram delivery was not accepted');
+  return body;
+}
+
+export async function handleTelegramUpdate(update, ...args) {
+  return withReleaseAdmission(async () => {
+    const msg = update?.message || update?.callback_query?.message;
+    const from = update?.message?.from || update?.callback_query?.from || {};
+    if (!Number.isSafeInteger(update?.update_id) || update.update_id < 0
+      || !TELEGRAM_ALLOWED_USERS.includes(Number(from.id)) || !privateChatAllowed(msg, from)) return { ignored: true };
+    const fingerprint = JSON.stringify(update);
+    const cached = replies.get(update.update_id) || pendingUpdates.get(update.update_id);
+    if (cached) return cached.fingerprint === fingerprint ? (cached.reply ?? cached.operation) : { ignored: true, reason: 'conflicting update' };
+    const operation = handleTelegramUpdateAdmitted(update, ...args);
+    pendingUpdates.set(update.update_id, { fingerprint, operation });
+    try {
+      const reply = await operation;
+      replies.set(update.update_id, { fingerprint, reply });
+      if (replies.size > 1000) replies.delete(replies.keys().next().value);
+      return reply;
+    } finally { pendingUpdates.delete(update.update_id); }
+  });
+}
 
 export async function handleTelegramAttachment(...args) { return withReleaseAdmission(() => handleTelegramAttachmentAdmitted(...args)); }
 

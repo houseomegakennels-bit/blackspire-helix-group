@@ -1,5 +1,9 @@
 # Blackspire Active Context
 
+## 2026-09-27 — Telegram activation
+
+Bot pairing for BlackspireZolaBot is verified; status STAGED_NOT_ACTIVE. Transport repairs pass 44 targeted tests but are not deployed. Next: a reviewed feature-release transition from the current completed OPEN deployment, including current password-maintenance generations, private owner/token configuration, fresh store/writer bindings, HELD/OPEN readiness and live inbound/outbound proof. Historical successor operators and password-only maintenance are not reusable authority for this release. Voice remains deferred.
+
 ## 2026-09-26 — Telegram staging and canonical context successor
 
 User authorized remaining non-voice repairs and Telegram setup. No Telegram credential or allowlist is present in the running API or known service environment files. Added a root-only hidden-entry Telegram staging helper: verifies bot identity, refuses active webhooks, pairs one fresh private-chat owner, and never activates transport. Four Python pairing tests pass.

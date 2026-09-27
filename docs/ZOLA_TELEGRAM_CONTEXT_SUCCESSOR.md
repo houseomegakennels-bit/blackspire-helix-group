@@ -24,3 +24,11 @@ Run the installed root-owned helper in Termius:
 Paste the BotFather token into the hidden prompt. Confirm the displayed bot identity. Send the displayed pairing message to that bot from your own private account, then return and press Enter. If interrupted after staging, run the same command with --pair. It refuses replacement of an existing paired identity.
 
 The helper reports STAGED_NOT_ACTIVE. Do not claim Telegram is connected until a later admitted activation and real delivery proof succeed.
+
+## September 27 verification
+
+Private pairing is verified for BlackspireZolaBot, with root-only credential storage and one private owner. The paired status remains STAGED_NOT_ACTIVE. Candidate transport repairs require TELEGRAM_PRIVATE_CHAT_ID to equal both the private chat and sender, with is_bot=false; production refuses unpaired updates. Delivery rejects HTTP/API failures; webhook failures return 503, identical updates reuse a bounded cached reply, and canonical task idempotency remains in force. In-memory reply caching is not a durable exactly-once delivery guarantee; Telegram may deliver a repeated reply after an uncertain network outcome. Failed document sends retain their file. Forty-four targeted tests pass.
+
+Activation configuration must privately install TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USERS, TELEGRAM_PRIVATE_CHAT_ID, TELEGRAM_WEBHOOK_SECRET and TELEGRAM_MODE=webhook for the API and worker, alongside ZOLA_CANONICAL_CONTEXT=true after provider-packet verification. Do not enable bearer administrator authentication for Telegram convenience. Existing /workspaces, /export, /logs and /task_status HTTP helpers require separate compatibility review with production session-only authentication before advertising them as operational.
+
+Release blocker: historical owned-successor activation/configuration encodes an older retired predecessor, while the present predecessor is a completed OPEN release with later password-maintenance generations. Implement a distinct reviewed successor transition that validates that actual lineage; do not edit historical authority constants to force the old operator through.

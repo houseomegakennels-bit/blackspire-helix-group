@@ -213,4 +213,60 @@ test('dispatchReply is a no-op in dry-run (no bot token) and reports ignored upd
   assert.equal((await dispatchReply('token', { ignored: true })).sent, false);
 });
 
+test('paired private owner only: reject groups, other chats, bots and malformed updates', async () => {
+  process.env.TELEGRAM_PRIVATE_CHAT_ID = '1001';
+  const valid = { update_id: 200, message: { from: { id: 1001, is_bot: false }, chat: { id: 1001, type: 'private' }, text: '/help' } };
+  try {
+    for (const changes of [
+      { chat: { id: -1001, type: 'group' } },
+      { chat: { id: 1002, type: 'private' } },
+      { from: { id: 1001, is_bot: true } },
+      { from: { id: 1002, is_bot: false } },
+    ]) {
+      assert.equal((await handleTelegramUpdate({ ...valid, message: { ...valid.message, ...changes } })).ignored, true);
+    }
+    assert.equal((await handleTelegramUpdate({ ...valid, update_id: null })).ignored, true);
+    assert.match((await handleTelegramUpdate(valid)).text[0], /Zola/);
+    assert.equal((await dispatchReply('mock-token', { chatId: 1002, text: ['private'] })).sent, false);
+  } finally { delete process.env.TELEGRAM_PRIVATE_CHAT_ID; }
+});
+
+test('Telegram rejection never reports successful delivery or deletes an undelivered document', async () => {
+  const file = path.join(root, 'retry.json');
+  fs.writeFileSync(file, '{}');
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: false, description: 'PRIVATE_TOKEN_DO_NOT_ECHO' }) });
+  try {
+    await assert.rejects(dispatchReply('mock-token', { chatId: 1001, text: ['hello'] }), { message: 'Telegram delivery was not accepted' });
+    await assert.rejects(dispatchReply('mock-token', { chatId: 1001, document: { path: file } }), { message: 'Telegram delivery was not accepted' });
+    assert.equal(fs.existsSync(file), true);
+  } finally { uninstallTelegramMock(); fs.rmSync(file, { force: true }); }
+});
+
+test('webhook retries failed delivery, authenticates requests and creates only one canonical task', async () => {
+  process.env.TELEGRAM_MODE = 'webhook';
+  process.env.TELEGRAM_BOT_TOKEN = 'mock-token';
+  process.env.TELEGRAM_WEBHOOK_SECRET = 'fixture-secret';
+  process.env.TELEGRAM_PRIVATE_CHAT_ID = '1001';
+  const update = { update_id: 300, message: { from: { id: 1001, is_bot: false }, chat: { id: 1001, type: 'private' }, text: '/task read Say hello for webhook retry proof' } };
+  const request = secret => realFetch('http://localhost:8896/telegram/webhook', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret }, body: JSON.stringify(update)
+  });
+  let accepted = false;
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ok: accepted }) });
+  try {
+    assert.equal((await request('wrong')).status, 401);
+    assert.equal((await request('fixture-secret')).status, 503);
+    accepted = true;
+    assert.equal((await request('fixture-secret')).status, 200);
+    const tasks = query("SELECT id FROM tasks WHERE request = 'Say hello for webhook retry proof'");
+    assert.equal(tasks.length, 1);
+    const reply = await handleTelegramUpdate(update);
+    assert.match(reply.text[0], /Queued/);
+    assert.equal((await handleTelegramUpdate({ ...update, message: { ...update.message, text: '/task read altered' } })).ignored, true);
+  } finally {
+    for (const key of ['TELEGRAM_MODE', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET', 'TELEGRAM_PRIVATE_CHAT_ID']) delete process.env[key];
+    uninstallTelegramMock();
+  }
+});
+
 test('close API for telegram file tests', () => server.close());
