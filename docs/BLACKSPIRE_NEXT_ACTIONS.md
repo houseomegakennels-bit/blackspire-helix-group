@@ -1,5 +1,10 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Current next action
+
+Zola OS and the Telegram identity repair are live at 128ea3f775c0de725cbbcbe60b4c2603627b94bd; backend/UI release receipts and all nine readiness checks pass. Ask the paired owner to resend the deal-status request in @BlackspireZolaBot, then verify canonical capability execution and final delivery. Do not replay the historical failed task or completed release operators. Voice remains deferred. Preserve /var/lib/blackspire-operator/zola-os-release-retry-20260927 as the latest predecessor evidence.
+
+
 ## 2026-09-27 — Release conversation repair from the active Telegram deployment
 
 Use feat/zola-os-conversation-20260927, not the completed activation transaction. Finish visual review and full CI, seal a fresh artifact, attest the successful 170f209 feature result/current generations and authority receipt as predecessor, install the explicit paired read-only principal binding, preserve the active webhook and pending messages, and use the store/writer/receiver transition with rollback. Verify the owner's fresh deal read and a single human-readable reply. No automatic replay of historical failed requests. Voice remains deferred. Older pending-activation entries below are historical and superseded by the successful 170f209 release.
