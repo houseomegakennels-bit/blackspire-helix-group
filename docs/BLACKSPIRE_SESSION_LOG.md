@@ -2847,3 +2847,8 @@ Confirmed full CI success for PR156 at 462afc7 and sealed its artifact. Direct V
 ## 2026-09-27 — Telegram startup profile repair
 
 Diagnosed the failed feature startup and successful automatic rollback. Added explicit private Telegram production opt-in with accepted manual/Codex profiles and rejection coverage for missing credentials, wrong mode, groups, mismatched owners and widened allowlists. Local fixture verification runs in a disposable exported tree because the root-owned build cache is intentionally inaccessible to the unprivileged fixture process. Production deployment and delivery proof remain pending.
+
+
+## 2026-09-27 — Align API and supervisor Telegram startup gates
+
+Extended the explicit paired-webhook production profile to both JavaScript startup validators after inspection found duplicate unconditional restrictions. Added API/supervisor acceptance and rejection tests; all 20 production-validation tests pass. Updated the shipped profile with a disabled-by-default opt-in. Production remains on the rolled-back prior release; voice deferred.

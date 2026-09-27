@@ -35,6 +35,24 @@ function validateProductionExecutionProfile(env, errors) {
   }
 }
 
+
+function validateProductionTelegramProfile(env, errors) {
+  const enabled = env.BLACKSPIRE_TELEGRAM_ENABLED || 'disabled';
+  if (enabled === 'enabled') {
+    if (env.TELEGRAM_MODE !== 'webhook') errors.push('Enabled Telegram requires webhook mode.');
+    if (!/^[0-9]+:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN || '')) errors.push('Enabled Telegram requires a valid TELEGRAM_BOT_TOKEN.');
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(env.TELEGRAM_WEBHOOK_SECRET || '')) errors.push('Enabled Telegram requires a valid TELEGRAM_WEBHOOK_SECRET.');
+    if (!/^[1-9][0-9]{0,15}$/.test(env.TELEGRAM_PRIVATE_CHAT_ID || '')) errors.push('Enabled Telegram requires one positive private chat ID.');
+    if (!env.TELEGRAM_PRIVATE_CHAT_ID || env.TELEGRAM_ALLOWED_USERS !== env.TELEGRAM_PRIVATE_CHAT_ID) errors.push('Enabled Telegram allowlist must equal the paired private chat ID.');
+  } else {
+    if (enabled !== 'disabled') errors.push("BLACKSPIRE_TELEGRAM_ENABLED must be exactly 'enabled' or 'disabled'.");
+    for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
+      if (env[key]) errors.push(key + ' is forbidden without explicit Telegram opt-in.');
+    }
+    if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('Telegram must remain disconnected without explicit opt-in.');
+  }
+}
+
 // Database authority belongs exclusively to the root/dedicated Buyer Writer
 // gateway. This check is intentionally based on key presence, not truthiness:
 // an empty or partially templated credential in an application service is still
@@ -64,8 +82,8 @@ export function requireProductionSafeConfig(env = process.env, { dbDir = path.di
       }
       validateProductionExecutionProfile(env, errors);
       if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('UNIFIED_IPHONE_TEST_MODE=true is not allowed in production.');
-      if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('TELEGRAM_MODE must remain dry-run or unset in the no-provider production profile.');
-      for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
+      validateProductionTelegramProfile(env, errors);
+      for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT']) {
         if (env[key]) errors.push(`${key} is forbidden in the no-provider production profile.`);
       }
     }
@@ -182,10 +200,10 @@ export function verifyVpsRuntime(env = process.env, {
   }
   if (env.UNIFIED_IPHONE_TEST_MODE === 'true') errors.push('Test mode is not allowed in the production runtime.');
   validateProductionExecutionProfile(env, errors);
-  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET']) {
+  for (const key of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CODEX_API_KEY', 'CODEX_API_ENDPOINT']) {
     if (env[key]) errors.push(`${key} is forbidden in the production runtime.`);
   }
-  if (!['', 'dry-run', undefined].includes(env.TELEGRAM_MODE)) errors.push('Telegram must remain disconnected (dry-run or unset).');
+  validateProductionTelegramProfile(env, errors);
   if (env.BLACKSPIRE_RUN_MIGRATIONS === 'true') errors.push('Migrations must not run implicitly at production start.');
 
   return { ok: errors.length === 0, errors };

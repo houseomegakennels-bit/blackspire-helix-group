@@ -2,7 +2,7 @@
 
 ## 2026-09-27 — Private Telegram production startup correction
 
-The c9d6b01 feature transaction reached startup and failed because production preflight still prohibited all Telegram credentials and webhook mode. Automatic rollback restored the prior 6cdd47e backend, fresh generation bindings and verified public readiness. Telegram was not activated. Added an independent BLACKSPIRE_TELEGRAM_ENABLED=enabled opt-in requiring webhook mode, a token, a 32–128 character webhook secret and one positive private-chat ID equal to the allowlist. Default credential denial remains unchanged. Deployment of this correction and real Telegram delivery remain pending. Voice remains deferred.
+The c9d6b01 feature transaction reached startup and failed because production preflight still prohibited all Telegram credentials and webhook mode. Automatic rollback restored the prior 6cdd47e backend, fresh generation bindings and verified public readiness. Telegram was not activated. Added an independent BLACKSPIRE_TELEGRAM_ENABLED=enabled opt-in requiring webhook mode, a token, a 32–128 character webhook secret and one positive private-chat ID equal to the allowlist. Default credential denial remains unchanged. Follow-up inspection found the same default-only restriction in both API and supervisor JavaScript startup checks. Those now validate the same explicit paired-webhook profile while still rejecting unrelated provider credentials. All 20 application production-validation tests pass. Deployment of the completed correction and real Telegram delivery remain pending. Voice remains deferred.
 
 ## 2026-09-27 — Isolated Telegram release candidate
 
