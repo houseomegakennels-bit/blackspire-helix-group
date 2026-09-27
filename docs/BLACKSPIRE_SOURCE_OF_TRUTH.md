@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Feature release predecessor and configuration rebind
+
+PR156 product CI passed at 462afc7; its sealed candidate was inspected. Added a distinct read-only feature predecessor check against the latest storage-outage recovery, exact OPEN admission state, current service/environment digests, writer bindings and the actual postmerge authority receipt. Native check returned FEATURE_PREDECESSOR_VERIFIED for the deployed 6cdd47e predecessor and candidate 462afc7. This avoids stale premerge provisioning inputs. No production files were changed.
+
+Added a separate feature authority publication/restore primitive. It verifies the protected installed receipt and recovery result, retains credentials and key identity, publishes only release-bound configuration and gateway unit changes while stopped, retains root-only backups and restores original mutable files after partial failure. Eleven tests pass, including each interrupted mutable publication and runtime rejection of mismatched release authority. The activation host, receiver coordination and Telegram webhook activation are still unfinished; these primitives have NOT been applied in production.
+
+
 ## 2026-09-27 — Storage outage recovered
 
 The final Telegram staging check found public HTTP 502 and failed API/worker services. Root storage was full; both service logs reported database or disk is full. Cleared package-manager caches and six abandoned, older-than-seven-days disposable test directories after checking process references. Approximately 1.1 GB became available. The production SQLite integrity check passed; no active/queued tasks were present.
