@@ -19,6 +19,7 @@ type DealLookupRow = {
   property_address: string | null;
   county: string | null;
   city: string | null;
+  state: string | null;
   property_type: string | null;
 };
 
@@ -55,7 +56,7 @@ async function handleRead(request: NextRequest) {
     if (!supabase) return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     const { data, error } = authority.buyerData ? {data:authority.buyerData.deal,error:null} : await supabase
       .from("deal_leads")
-      .select("property_address,county,city,property_type")
+      .select("property_address,county,city,state,property_type")
       .eq("id", opportunityId.toUpperCase())
       .limit(1)
       .maybeSingle();
@@ -64,7 +65,7 @@ async function handleRead(request: NextRequest) {
     let result;
     try {
       const deal = data as DealLookupRow;
-      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client, ...(authority.buyerData?{ownedProfiles:{rows:authority.buyerData.profiles as BuyerProfileRow[],count:authority.buyerData.count}}:{}) });
+      result = await matchBuyersForProperty({ state: deal.state, county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client, ...(authority.buyerData?{ownedProfiles:{rows:authority.buyerData.profiles as BuyerProfileRow[],count:authority.buyerData.count}}:{}) });
     } catch {
       return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     }
