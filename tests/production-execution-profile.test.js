@@ -284,3 +284,32 @@ test('the documented production profile carries the opt-in, disabled, with its r
 });
 
 test.after(() => { fs.rmSync(root, { recursive: true, force: true }); });
+
+test('private Telegram webhook requires coherent independent opt-in', () => {
+  const telegram = {
+    BLACKSPIRE_TELEGRAM_ENABLED: 'enabled',
+    TELEGRAM_MODE: 'webhook',
+    TELEGRAM_BOT_TOKEN: '123456:' + 't'.repeat(35),
+    TELEGRAM_WEBHOOK_SECRET: 's'.repeat(40),
+    TELEGRAM_PRIVATE_CHAT_ID: '123456789',
+    TELEGRAM_ALLOWED_USERS: '123456789',
+  };
+  for (const createEnv of [baseEnv, executionEnv]) {
+    const accepted = verify(createEnv(telegram));
+    assert.equal(accepted.status, 0, accepted.stderr);
+  }
+  for (const invalid of [
+    { BLACKSPIRE_TELEGRAM_ENABLED: undefined },
+    { BLACKSPIRE_TELEGRAM_ENABLED: 'true' },
+    { TELEGRAM_MODE: 'poll' },
+    { TELEGRAM_MODE: 'mock' },
+    { TELEGRAM_BOT_TOKEN: '' },
+    { TELEGRAM_WEBHOOK_SECRET: 'short' },
+    { TELEGRAM_PRIVATE_CHAT_ID: '-123456789' },
+    { TELEGRAM_ALLOWED_USERS: '123456789,987654321' },
+    { TELEGRAM_ALLOWED_USERS: '987654321' },
+  ]) {
+    assert.notEqual(verify(baseEnv({ ...telegram, ...invalid })).status, 0,
+      'incomplete or widened Telegram profile must fail');
+  }
+});

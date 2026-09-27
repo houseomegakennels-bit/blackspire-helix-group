@@ -3,14 +3,14 @@
    WebGL is unavailable, motion is reduced, or the context is lost. */
 
 const STATE_COLORS = {
-  dormant: [0.31, 0.85, 1],
-  listening: [0.66, 0.91, 1],
-  processing: [0.31, 0.85, 1],
-  approval: [0.96, 0.72, 0.29],
-  completed: [0.34, 0.73, 0.54],
+  dormant: [0.95, 0.2, 0.29],
+  listening: [1, 1, 1],
+  processing: [0.95, 0.2, 0.29],
+  approval: [1, 0.66, 0.66],
+  completed: [1, 1, 1],
   denied: [0.89, 0.36, 0.36],
-  cancelled: [0.49, 0.58, 0.67],
-  offline: [0.28, 0.34, 0.4],
+  cancelled: [0.6, 0.6, 0.6],
+  offline: [0.3, 0.3, 0.3],
   emergency: [0.89, 0.36, 0.36],
 };
 

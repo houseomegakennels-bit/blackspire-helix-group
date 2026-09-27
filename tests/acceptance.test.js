@@ -628,8 +628,8 @@ test('Telegram local bridge covers allowlist, duplicates, commands, chunking, es
   const unauthorized = await handleTelegramUpdate({ update_id: 10, message: { from: { id: 999 }, chat: { id: 1 }, text: '/status' } }, 'http://localhost:8892');
   assert.equal(unauthorized.ignored, true);
   const start = await handleTelegramUpdate({ update_id: 11, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/start' } }, 'http://localhost:8892');
-  assert.ok(start.text[0].includes('Blackspire'));
-  assert.equal((await handleTelegramUpdate({ update_id: 11, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/start' } }, 'http://localhost:8892')).ignored, true);
+  assert.ok(start.text[0].includes('Zola'));
+  assert.deepEqual(await handleTelegramUpdate({ update_id: 11, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/start' } }, 'http://localhost:8892'), start, 'identical retries reuse the reply');
   assert.ok((await handleTelegramUpdate({ update_id: 12, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/workspaces' } }, 'http://localhost:8892')).text[0]);
   assert.ok((await handleTelegramUpdate({ update_id: 13, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8892')).text[0]);
   const taskReply = await handleTelegramUpdate({ update_id: 14, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/task read local telegram task' } }, 'http://localhost:8892');
@@ -659,9 +659,9 @@ test('Jarvis PWA assets are valid and mobile workflows are not desktop-only', as
   assert.match(html, /Approval center/);
   assert.match(html, /aria-label="Workspace"/);
   assert.match(html, /Emergency stop/);
-  // Voice stays an inert, staged boundary: no browser speech service is authorized.
-  assert.doesNotMatch(html + appScript, /SpeechRecognition|speechSynthesis/);
-  assert.match(html, /Voice input is staged but not connected/);
+  // Existing browser speech remains explicitly user-controlled; paid voice is deferred.
+  assert.match(appScript, /SpeechRecognition/);
+  assert.match(html, /Talk to Zola/);
   assert.match(await (await fetch('http://localhost:8892/sw.js')).text(), /caches/);
   const manifest = await (await fetch('http://localhost:8892/manifest.webmanifest')).json();
   assert.equal(manifest.display, 'standalone');

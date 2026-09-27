@@ -2,7 +2,7 @@ import { withReleaseAdmission } from '../../packages/shared/release-admission.js
 import fs from 'node:fs';
 import path from 'node:path';
 import { TELEGRAM_ALLOWED_USERS, ADMIN_TOKEN, PUBLIC_BASE_URL, ATTACHMENTS_DIR, ALLOW_BEARER_AUTH } from '../../packages/shared/config.js';
-import { escapeMarkdown, redact, id } from '../../packages/shared/util.js';
+import { redact, id } from '../../packages/shared/util.js';
 import { rateLimit } from '../../packages/shared/security.js';
 import { transcribeVoice } from '../../packages/shared/transcription.js';
 import { recordAttachment } from '../../packages/task-engine/attachments.js';
@@ -15,21 +15,21 @@ const TEXT_MIME_TYPES = new Set(['text/plain', 'text/markdown', 'application/jso
 
 const sessions = new Map();
 const conversations = new Map();
-const seen = new Set();
+const replies = new Map();
+const pendingUpdates = new Map();
 
 async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
-  if (seen.has(update.update_id)) return { ignored: true, reason: 'duplicate' };
-  seen.add(update.update_id);
   const msg = update.message || update.callback_query?.message;
   const from = update.message?.from || update.callback_query?.from || {};
   if (!TELEGRAM_ALLOWED_USERS.includes(Number(from.id))) return { ignored: true };
+  if (!privateChatAllowed(msg, from)) return { ignored: true };
   const limit = rateLimit(`telegram:${from.id}`, { limit: Number(process.env.TELEGRAM_RATE_LIMIT || 30), windowMs: 60000 });
-  if (!limit.allowed) return { chatId: msg?.chat?.id, text: chunk(escapeMarkdown(`Rate limit exceeded. Retry after ${limit.retryAfter}s`)) };
+  if (!limit.allowed) return { chatId: msg?.chat?.id, text: chunk(`Rate limit exceeded. Retry after ${limit.retryAfter}s`) };
   const text = update.message?.text || update.callback_query?.data || '';
   const chatId = msg?.chat?.id;
-  const send = (message, extra = {}) => ({ chatId, text: chunk(escapeMarkdown(message)), ...extra });
+  const send = (message, extra = {}) => ({ chatId, text: chunk(message), ...extra });
 
-  if (text.startsWith('/start') || text.startsWith('/help')) return send('Blackspire Command online. Use /task read <request> or /task write <request>, /conversation <id>, /tasks, /workspaces, /status, or /cancel <task-id>. Privileged actions require authenticated Jarvis.');
+  if (text.startsWith('/start') || text.startsWith('/help')) return send('Hi, I’m Zola. Send a message to talk with me. Use /tasks for progress or /cancel <task-id>. Changes need an explicit /task write <request>. Privileged actions require authenticated Zola.');
   if (text.startsWith('/status') || text.startsWith('/health')) return send(JSON.stringify(await get('/health', apiBase)));
   if (text.startsWith('/workspaces')) return send((await get('/api/workspaces', apiBase)).workspaces.map((w) => `${w.id}: ${w.name}`).join('\n'));
   if (text.startsWith('/use ')) {
@@ -63,7 +63,7 @@ async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
   const one = text.match(/^\/(task_status|logs|approve|reject|pause|resume|cancel)\s+(\S+)/);
   if (one) {
     const [, cmd, taskId] = one;
-    if (['approve', 'reject', 'pause', 'resume'].includes(cmd)) return send('Privileged task actions require an authenticated Jarvis session.');
+    if (['approve', 'reject', 'pause', 'resume'].includes(cmd)) return send('Privileged task actions require an authenticated Zola session.');
     if (!channelCanAccessTask('telegram', String(chatId), taskId)) return send('Task not found for this Telegram conversation.');
     if (cmd === 'cancel') return send(JSON.stringify(cancelFromChannel('telegram', String(chatId), taskId)));
     if (cmd === 'logs') {
@@ -74,8 +74,15 @@ async function handleTelegramUpdateAdmitted(update, apiBase = PUBLIC_BASE_URL) {
     const result = await get(route, apiBase);
     return send(JSON.stringify(result).slice(0, 3500));
   }
-  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading|create[_-]?repo(?:sitory)?)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Jarvis.');
+  if (/^\/(stop|approve|reject|deploy|merge|reset|secrets?|credentials?|trade|trading|create[_-]?repo(?:sitory)?)(?:\s|$)/i.test(text)) return send('Telegram cannot perform privileged actions. Use authenticated Zola.');
   if (update.message?.document || update.message?.voice) return handleTelegramAttachment(update, apiBase, send);
+  if (text.trim() && !text.startsWith('/')) {
+    const result = createUnifiedInput({channel:'telegram',actorId:String(from.id),channelKey:String(chatId),
+      conversationId:conversations.get(from.id)||null,workspaceId:sessions.get(from.id)||'blackspire-command',
+      text,idempotencyKey:`telegram:${update.update_id}`,metadata:{chatId},authority:'telegram',executionIntent:'read_only'});
+    if(result.conversationId)conversations.set(from.id,result.conversationId);
+    return send(result.denied||!result.taskId ? `I couldn’t accept that request: ${result.error||'request unavailable'}` : 'I’m on it.');
+  }
   return send('Unknown command. Use /help.');
 }
 
@@ -115,7 +122,7 @@ function cleanupTelegramFile(filePath) {
   try { fs.rmSync(filePath, { force: true }); } catch { /* already gone */ }
 }
 
-async function handleTelegramAttachmentAdmitted(update, apiBase = PUBLIC_BASE_URL, send = (message) => ({ text: chunk(escapeMarkdown(message)) })) {
+async function handleTelegramAttachmentAdmitted(update, apiBase = PUBLIC_BASE_URL, send = (message) => ({ text: chunk(message) })) {
   const message = update.message || {};
   const file = message.document || message.voice;
   const kind = message.voice ? 'voice' : 'document';
@@ -191,7 +198,7 @@ async function sendTelegramDocumentAdmitted(token, chatId, filePath, caption = '
   body.append('caption', caption);
   body.append('document', new Blob([fs.readFileSync(filePath)]), path.basename(filePath));
   const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body });
-  return response.json();
+  return checkedTelegramResponse(response);
 }
 
 async function sendTelegramMessageAdmitted(token, chatId, text, extra = {}) {
@@ -201,9 +208,9 @@ async function sendTelegramMessageAdmitted(token, chatId, text, extra = {}) {
     const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: part, parse_mode: 'MarkdownV2', ...extra }),
+      body: JSON.stringify({ chat_id: chatId, text: part, ...extra }),
     });
-    sent.push(await response.json());
+    sent.push(await checkedTelegramResponse(response));
   }
   return sent;
 }
@@ -215,6 +222,7 @@ async function dispatchReplyAdmitted(token, reply) {
   if (!reply || reply.ignored) return { sent: false, reason: 'ignored' };
   if (process.env.TELEGRAM_MODE === 'mock') return { sent: true, mode: 'mock', result: { fixture: true } };
   if (!token) return { sent: false, reason: 'no bot token configured (dry-run)' };
+  if (process.env.TELEGRAM_PRIVATE_CHAT_ID && String(reply.chatId) !== process.env.TELEGRAM_PRIVATE_CHAT_ID) return { sent: false, reason: 'unpaired destination' };
   if (reply.document) {
     const result = await sendTelegramDocument(token, reply.chatId, reply.document.path, reply.document.caption || '');
     cleanupTelegramFile(reply.document.path);
@@ -278,7 +286,40 @@ async function post(path, body, base) {
 
 if (import.meta.url === `file://${process.argv[1]}`) runPolling();
 
-export async function handleTelegramUpdate(...args) { return withReleaseAdmission(() => handleTelegramUpdateAdmitted(...args)); }
+function privateChatAllowed(message, from) {
+  const owner = process.env.TELEGRAM_PRIVATE_CHAT_ID;
+  if (!owner) return process.env.NODE_ENV !== 'production';
+  return /^[1-9][0-9]*$/.test(owner) && message?.chat?.type === 'private'
+    && String(message.chat.id) === owner && String(from.id) === owner && from.is_bot === false;
+}
+
+// Never include Telegram response descriptions or request URLs in errors: either may contain secrets.
+async function checkedTelegramResponse(response) {
+  let body;
+  try { body = await response.json(); } catch { throw new Error('Telegram delivery returned an invalid response'); }
+  if (!response.ok || body?.ok !== true) throw new Error('Telegram delivery was not accepted');
+  return body;
+}
+
+export async function handleTelegramUpdate(update, ...args) {
+  return withReleaseAdmission(async () => {
+    const msg = update?.message || update?.callback_query?.message;
+    const from = update?.message?.from || update?.callback_query?.from || {};
+    if (!Number.isSafeInteger(update?.update_id) || update.update_id < 0
+      || !TELEGRAM_ALLOWED_USERS.includes(Number(from.id)) || !privateChatAllowed(msg, from)) return { ignored: true };
+    const fingerprint = JSON.stringify(update);
+    const cached = replies.get(update.update_id) || pendingUpdates.get(update.update_id);
+    if (cached) return cached.fingerprint === fingerprint ? (cached.reply ?? cached.operation) : { ignored: true, reason: 'conflicting update' };
+    const operation = handleTelegramUpdateAdmitted(update, ...args);
+    pendingUpdates.set(update.update_id, { fingerprint, operation });
+    try {
+      const reply = await operation;
+      replies.set(update.update_id, { fingerprint, reply });
+      if (replies.size > 1000) replies.delete(replies.keys().next().value);
+      return reply;
+    } finally { pendingUpdates.delete(update.update_id); }
+  });
+}
 
 export async function handleTelegramAttachment(...args) { return withReleaseAdmission(() => handleTelegramAttachmentAdmitted(...args)); }
 

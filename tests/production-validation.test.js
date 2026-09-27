@@ -10,7 +10,7 @@ const writableAttachmentsDir = path.join(root, 'attachments');
 fs.mkdirSync(writableDbDir, { recursive: true });
 fs.mkdirSync(writableAttachmentsDir, { recursive: true });
 
-const { requireProductionSafeConfig } = await import('../packages/shared/security.js');
+const { requireProductionSafeConfig, verifyVpsRuntime } = await import('../packages/shared/security.js');
 const { hashAdminPassword } = await import('../packages/shared/password-auth.js');
 const VALID_PASSWORD_HASH = hashAdminPassword('thirteen-char');
 
@@ -156,4 +156,32 @@ test('the database directory check also applies outside production (dev/test sti
   const blocked = unwritablePath('locked-nonprod');
   const result = requireProductionSafeConfig({ NODE_ENV: 'development' }, dirs({ dbDir: blocked }));
   assert.equal(result.ok, false);
+});
+
+test('API and supervisor accept only explicitly paired private Telegram', () => {
+  const env = validEnv({
+    BLACKSPIRE_RUNTIME_MODE: 'production', BLACKSPIRE_STATE_OWNER: 'vps-production',
+    BLACKSPIRE_RUNTIME_USER: 'blackspire', BLACKSPIRE_PROVIDER_MODE: 'manual',
+    BIND_HOST: '127.0.0.1', PORT: '8799',
+    BLACKSPIRE_STARTUP_TIMEOUT_SECONDS: '30', BLACKSPIRE_HEALTH_TIMEOUT_SECONDS: '5',
+    BLACKSPIRE_TELEGRAM_ENABLED: 'enabled', TELEGRAM_MODE: 'webhook',
+    TELEGRAM_BOT_TOKEN: '12345:' + 't'.repeat(35), TELEGRAM_WEBHOOK_SECRET: 's'.repeat(40),
+    TELEGRAM_PRIVATE_CHAT_ID: '123456789', TELEGRAM_ALLOWED_USERS: '123456789',
+  });
+  const opts = { uid: 1001, username: 'blackspire', nodeVersion: '22.23.1',
+    isWritable: () => true, dirOwnerUid: () => 1001, dirExists: () => true };
+  const validators = [
+    value => requireProductionSafeConfig(value, dirs()),
+    value => verifyVpsRuntime(value, opts),
+  ];
+  for (const validate of validators) {
+    assert.deepEqual(validate(env).errors, []);
+    for (const overrides of [
+      { BLACKSPIRE_TELEGRAM_ENABLED: undefined }, { BLACKSPIRE_TELEGRAM_ENABLED: 'true' },
+      { TELEGRAM_MODE: 'polling' }, { TELEGRAM_BOT_TOKEN: '' },
+      { TELEGRAM_WEBHOOK_SECRET: 'short' }, { TELEGRAM_PRIVATE_CHAT_ID: '-123456789' },
+      { TELEGRAM_ALLOWED_USERS: '123456789,987654321' }, { TELEGRAM_ALLOWED_USERS: '987654321' },
+      { OPENAI_API_KEY: 'provider-secret' },
+    ]) assert.equal(validate({ ...env, ...overrides }).ok, false);
+  }
 });

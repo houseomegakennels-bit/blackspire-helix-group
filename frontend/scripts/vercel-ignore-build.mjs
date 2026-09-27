@@ -17,7 +17,7 @@ export function shouldIgnoreFrontendBuild({
   branch = process.env.VERCEL_GIT_COMMIT_REF,
 } = {}) {
   // Release acceptance pairs frontend and VPS by exact commit, including backend-only changes.
-  if (branch === 'release/zola-production-live') return false;
+  if (['release/zola-production-live', 'feat/zola-telegram-release-20260927'].includes(branch)) return false;
 
   if (!COMMIT_SHA.test(previousSha ?? '')) {
     return false;
