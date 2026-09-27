@@ -70,10 +70,24 @@ case "$mode" in
       enabled|disabled) ;;
       *) fail "BLACKSPIRE_PRODUCTION_EXECUTION must be exactly 'enabled' or 'disabled'" ;;
     esac
-    # Telegram credentials are outside the provider-execution decision and stay forbidden either way.
-    for key in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET; do
-      has_value "$key" && fail "production profile forbids $key"
-    done
+    # Private Telegram transport has its own explicit opt-in, independent of provider execution.
+    telegram_enabled="${BLACKSPIRE_TELEGRAM_ENABLED:-disabled}"
+    case "$telegram_enabled" in
+      enabled)
+        [[ "${TELEGRAM_MODE:-}" == "webhook" ]] || fail "enabled Telegram requires webhook mode"
+        [[ "${TELEGRAM_BOT_TOKEN:-}" =~ ^[0-9]+:[A-Za-z0-9_-]{20,}$ ]] || fail "enabled Telegram requires a valid TELEGRAM_BOT_TOKEN"
+        [[ "${TELEGRAM_WEBHOOK_SECRET:-}" =~ ^[A-Za-z0-9_-]{32,128}$ ]] || fail "enabled Telegram requires a valid TELEGRAM_WEBHOOK_SECRET"
+        [[ "${TELEGRAM_PRIVATE_CHAT_ID:-}" =~ ^[1-9][0-9]{0,15}$ ]] || fail "enabled Telegram requires one positive private chat ID"
+        [[ "${TELEGRAM_ALLOWED_USERS:-}" == "${TELEGRAM_PRIVATE_CHAT_ID}" ]] || fail "enabled Telegram allowlist must equal the paired private chat ID"
+        ;;
+      disabled)
+        for key in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET; do
+          has_value "$key" && fail "production profile forbids $key"
+        done
+        [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected without explicit opt-in"
+        ;;
+      *) fail "BLACKSPIRE_TELEGRAM_ENABLED must be exactly 'enabled' or 'disabled'" ;;
+    esac
     if [[ "$execution" == "enabled" ]]; then
       [[ "$provider" != "manual" && "$provider" != "mock" ]] || fail "production execution requires a real provider mode, not $provider"
       [[ "${BLACKSPIRE_HERMES_MODE:-}" == "production" ]] || fail "production execution requires BLACKSPIRE_HERMES_MODE=production"
@@ -119,7 +133,6 @@ case "$mode" in
         has_value "$key" && fail "production profile forbids $key"
       done
     fi
-    [[ "${TELEGRAM_MODE:-dry-run}" == "dry-run" ]] || fail "real Telegram must remain disconnected"
     if [[ "$runtime_role" == "api" ]]; then
       [[ -n "${COMMAND_ADMIN_PASSWORD_HASH:-}" && -n "${SESSION_SECRET:-}" ]] || fail "production API password authentication is not configured"
       authority_consumer_token="${BLACKSPIRE_AUTHORITY_CONSUMER_TOKEN:-}"

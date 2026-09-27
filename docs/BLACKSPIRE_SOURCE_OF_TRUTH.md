@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Private Telegram production startup correction
+
+The c9d6b01 feature transaction reached startup and failed because production preflight still prohibited all Telegram credentials and webhook mode. Automatic rollback restored the prior 6cdd47e backend, fresh generation bindings and verified public readiness. Telegram was not activated. Added an independent BLACKSPIRE_TELEGRAM_ENABLED=enabled opt-in requiring webhook mode, a token, a 32–128 character webhook secret and one positive private-chat ID equal to the allowlist. Default credential denial remains unchanged. Deployment of this correction and real Telegram delivery remain pending. Voice remains deferred.
+
 ## 2026-09-27 — Isolated Telegram release candidate
 
 CI run 36288836062 passed in full for 462afc7683b0e74366b903262894451f795ddf27. The candidate was sealed with artifact digest 59be6a9df026a4139b44fa06ce4f0b23333cdbcdc4346203cfdc9d2be8c2cd78. Vercel's successful status hid an ignored/canceled frontend build; exact-release receiver identity requires a matching build. Added the Telegram release branch to the explicit build-required branches. Four build-selection tests pass. New CI and frontend build remain pending; production unchanged and Telegram inactive.

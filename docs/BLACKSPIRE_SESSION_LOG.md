@@ -2842,3 +2842,8 @@ Reconnected Commander. PR156 full CI had four stale contract assertions after th
 ## 2026-09-27 — Exact Telegram frontend build selection
 
 Confirmed full CI success for PR156 at 462afc7 and sealed its artifact. Direct Vercel inspection showed CANCELED despite its successful GitHub context. Added the exact Telegram release branch to the required-build list, preserving unrelated branch skipping. Four tests pass. Backend production remains 6cdd47e; Telegram inactive. Native feature predecessor attestation and authority publication/restore tests are being developed separately on the operator branch.
+
+
+## 2026-09-27 — Telegram startup profile repair
+
+Diagnosed the failed feature startup and successful automatic rollback. Added explicit private Telegram production opt-in with accepted manual/Codex profiles and rejection coverage for missing credentials, wrong mode, groups, mismatched owners and widened allowlists. Local fixture verification runs in a disposable exported tree because the root-owned build cache is intentionally inaccessible to the unprivileged fixture process. Production deployment and delivery proof remain pending.
