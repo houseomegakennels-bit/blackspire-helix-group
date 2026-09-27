@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
 import {FEATURE_STEPS} from '../packages/zola-release/feature-release.js';
-import {validateConversationPredecessor,CONVERSATION_PREDECESSOR_SHA} from '../packages/zola-release/conversation-release-preflight.js';
+import {validateConversationPredecessor,validateUnstartedConversationAttempt,CONVERSATION_PREDECESSOR_SHA} from '../packages/zola-release/conversation-release-preflight.js';
 function fixture() {
  const plan={version:1,operationId:'operation',candidateSha:CONVERSATION_PREDECESSOR_SHA,runId:'epoch',
  configurationDigest:'config',runtimeDigest:'runtime',apiEnvironmentDigest:'api'};
@@ -35,4 +35,15 @@ test('rejects altered receipts, generation, config, bindings and unfinished or r
  v=>{v.events[0].operationId='other';},
  ];
  for(const mutate of mutations){const v=fixture();mutate(v);assert.throws(()=>validateConversationPredecessor(v));}
+});
+
+test('unstarted retry accepts only one retained hold intent and unchanged protected state/config',()=>{
+ const state={mode:'open',releaseSha:CONVERSATION_PREDECESSOR_SHA,runId:'old'};
+ const plan={version:1,candidateSha:'a'.repeat(40),previousSha:CONVERSATION_PREDECESSOR_SHA,oldState:state,operationId:'intent',apiEnvironmentDigest:'api'};
+ const v={plan,state,candidateSha:plan.candidateSha,events:[{schema:1,type:'feature_release',operationId:'intent',step:'hold',phase:'intent'}],
+ configurationDigest:'config',backupConfigurationDigest:'config',runtimeDigest:'runtime',backupRuntimeDigest:'runtime',environmentDigest:'api'};
+ assert.equal(validateUnstartedConversationAttempt(v),true);
+ for(const mutate of [x=>x.events.push({...x.events[0],phase:'complete'}),x=>{x.state.mode='held';},x=>{x.configurationDigest='changed';},x=>{x.runtimeDigest='changed';},x=>{x.environmentDigest='changed';},x=>{x.candidateSha='b'.repeat(40);}]){
+  const copy=structuredClone(v);mutate(copy);assert.throws(()=>validateUnstartedConversationAttempt(copy));
+ }
 });

@@ -2,7 +2,7 @@
 import hashlib,json,os,pathlib,subprocess,sys,time,urllib.request,uuid
 SHA='128ea3f775c0de725cbbcbe60b4c2603627b94bd'
 PREVIOUS='170f209c53b8950466694988d2274ace6fef1a54'
-RECORD=pathlib.Path('/var/lib/blackspire-operator/zola-os-release-20260927')
+RECORD=pathlib.Path('/var/lib/blackspire-operator/zola-os-release-retry-20260927')
 CONFIG=pathlib.Path('/etc/nginx/sites-available/command.conf')
 SOURCE=pathlib.Path('/opt/blackspire-command/releases')/SHA/'apps/jarvis-pwa/public'
 DEST=pathlib.Path('/var/www/zola-ui')/SHA

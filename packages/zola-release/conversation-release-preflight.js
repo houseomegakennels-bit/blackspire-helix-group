@@ -88,3 +88,27 @@ export async function checkConversationRelease(candidateSha) {
  previousArtifactDigest:current.artifactDigest,recoveryResultDigest:hash(result),rollbackResultDigest:null,stateDigest:hash(state),
  authorityReceiptDigest:hash(authority),paired:true,productionChanged:false,telegramActivated:true};
 }
+
+export function validateUnstartedConversationAttempt({plan,events,state,candidateSha,configurationDigest,runtimeDigest,environmentDigest,backupConfigurationDigest,backupRuntimeDigest}) {
+ if(plan?.version!==1||plan.candidateSha!==candidateSha||plan.previousSha!==CONVERSATION_PREDECESSOR_SHA
+  ||state.mode!=='open'||hash(plan.oldState)!==hash(state)||environmentDigest!==plan.apiEnvironmentDigest
+  ||configurationDigest!==backupConfigurationDigest||runtimeDigest!==backupRuntimeDigest
+  ||hash(events)!==hash([{schema:1,type:'feature_release',operationId:plan.operationId,step:'hold',phase:'intent'}]))fail();
+ return true;
+}
+export function checkUnstartedConversationAttempt(candidateSha) {
+ const dir='/var/lib/blackspire-operator/zola-os-release-20260927';
+ const names=fs.readdirSync(dir).sort();
+ if(names.join(',')!=='n8n.jsonl,plan.json,private-backup.json,release.jsonl')fail();
+ const plan=rootJson(dir+'/plan.json'),backup=rootJson(dir+'/private-backup.json');
+ const content=bytes(dir+'/release.jsonl',{mode:0o600}).toString();
+ if(!content.endsWith('\n')||content.trimEnd().split('\n').length!==1)fail();
+ const row=JSON.parse(content),previous='0'.repeat(64);
+ if(Object.keys(row).sort().join(',')!=='digest,event,previous,sequence'||row.sequence!==0||row.previous!==previous
+   ||row.digest!==hash({sequence:0,previous,event:row.event})||bytes(dir+'/n8n.jsonl',{mode:0o600}).length!==0)fail();
+ const stateFile=ROOT+'/state.json',state=validateReleaseAdmissionState(readRootOwnedJson(stateFile,{groupId:fs.lstatSync(stateFile).gid,maxBytes:4096}));
+ return validateUnstartedConversationAttempt({plan,events:[row.event],state,candidateSha,
+ configurationDigest:hash(bytes('/etc/blackspire/command.env').toString()),runtimeDigest:hash(bytes(ROOT+'/runtime.env').toString()),
+ environmentDigest:hash(bytes('/etc/blackspire/command-api.env').toString()),
+ backupConfigurationDigest:hash(Buffer.from(backup.env.bytes,'base64').toString()),backupRuntimeDigest:hash(Buffer.from(backup.runtime.bytes,'base64').toString())});
+}

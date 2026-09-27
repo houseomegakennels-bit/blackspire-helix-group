@@ -3,7 +3,7 @@ import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {hash,openReleaseJournal} from './commander-journal.js';
-import {checkConversationRelease} from './conversation-release-preflight.js';
+import {checkConversationRelease,checkUnstartedConversationAttempt} from './conversation-release-preflight.js';
 import {createConversationAuthorityRebind} from './conversation-authority-rebind.js';
 import {createOwnedRuntimeStoreTransition} from './owned-runtime-store.js';
 import {createReceiverOriginTransition,observeReceiverDeployment} from './receiver-origin-transition.js';
@@ -17,7 +17,7 @@ import {validatePasswordMaintenanceReadiness} from './password-maintenance.js';
 const SHA='128ea3f775c0de725cbbcbe60b4c2603627b94bd';
 const RECEIVER={releaseSha:SHA,mode:'preview',origin:'https://frontend-awkv3i3kb-houseomegakennels-4825s-projects.vercel.app',deploymentId:'dpl_CySggp3xn1AGJM3dfP64Ld8n6EeA'};
 const ROOT='/etc/blackspire/release-admission',STATE=ROOT+'/state.json';
-const RECORD='/var/lib/blackspire-operator/zola-os-release-20260927';
+const RECORD='/var/lib/blackspire-operator/zola-os-release-retry-20260927';
 const ENV='/etc/blackspire/command.env',RUNTIME=ROOT+'/runtime.env';
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service',STORE='blackspire-buyer-store.service',GATEWAY='blackspire-buyer-writer-gateway.service',UNITS=[API,WORKER,STORE,GATEWAY];
 const fail=()=>{throw Error('Feature transaction rejected; retain protected evidence');};
@@ -45,8 +45,8 @@ async function bounded(fn){let error;for(let i=0;i<20;i++){try{return await fn()
 export function createZolaOsFeatureHost(){
  let globalJournal,journal,plan,oldState,held,newState,oldEnv,oldRuntime,pair,envNew,runtimeNew,authority,authorityProof,store,storeProof,receiver,receiverProof,touched=false;
  const state=()=>validateReleaseAdmissionState(readRootOwnedJson(STATE,{groupId:fs.lstatSync(STATE).gid,maxBytes:4096}));
- const exchange=(before,after)=>{
-  const lock=acquireReleaseAdmissionLock({root:ROOT,exclusive:true,owner:0,groupId:fs.lstatSync(STATE).gid});
+ const exchange=async (before,after)=>{
+  const lock=await bounded(()=>acquireReleaseAdmissionLock({root:ROOT,exclusive:true,owner:0,groupId:fs.lstatSync(STATE).gid}));
   try{lock.assertIdentity();if(!same(state(),before))fail();atomic(STATE,JSON.stringify(after)+'\n',{mode:0o640,gid:fs.lstatSync(STATE).gid});lock.assertIdentity();if(!same(state(),after))fail();}
   finally{lock.close();}
  };
@@ -86,6 +86,7 @@ export function createZolaOsFeatureHost(){
  const host={
   async preflight(){
    if(process.getuid()!==0||process.version!=='v22.23.1'||fs.existsSync(RECORD))fail();
+   checkUnstartedConversationAttempt(SHA);
    globalJournal=openReleaseJournal();
    if(globalJournal.stream('release').events().at(-1)?.type!=='sequence_completed')fail();
    const check=await checkConversationRelease(SHA);await observeReceiverDeployment(RECEIVER);
@@ -119,7 +120,7 @@ export function createZolaOsFeatureHost(){
     journal=openReleaseJournal({root:RECORD});}
    journal.stream('release').append({schema:1,type:'feature_release',operationId:plan.operationId,step,phase});console.log(step+': '+phase);
   },
-  async hold(){const c=await checkConversationRelease(SHA);if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(oldState,held);},
+  async hold(){const c=await checkConversationRelease(SHA);if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;await exchange(oldState,held);},
   async stop(){stop();},
   async prepare(){
    stopped();
@@ -136,7 +137,7 @@ export function createZolaOsFeatureHost(){
    atomic(ENV,envNew,oldEnv);atomic(RUNTIME,runtimeNew,oldRuntime);sys('daemon-reload');await installed();
   },
   async switchRelease(){
-   stopped();await installed();const next={version:1,mode:'held',releaseSha:SHA,runId:plan.runId,apiGeneration:null,workerGeneration:null};exchange(held,next);held=next;
+   stopped();await installed();const next={version:1,mode:'held',releaseSha:SHA,runId:plan.runId,apiGeneration:null,workerGeneration:null};await exchange(held,next);held=next;
    run('/bin/bash',['scripts/release-switch.sh',SHA],{...process.env,PATH:'/opt/nodejs/node-v22.23.1-linux-x64/bin:/usr/bin:/bin',BLACKSPIRE_DEPLOYMENT_ENVIRONMENT:'production'});
   },
   async start(){
@@ -147,12 +148,12 @@ export function createZolaOsFeatureHost(){
   async store(){await store.publishManifest({releaseSha:SHA,runId:plan.runId,apiGeneration:newState.apiGeneration,workerGeneration:newState.workerGeneration});await store.start();},
   async writer(){await renewWriter(SHA,plan.runId,plan.operationId);},
   async verifyHeld(){await installed();await lifecycle(SHA,plan.runId);await bounded(()=>ready(false,SHA));},
-  async open(){await installed();await ready(false,SHA);exchange(held,newState);},
+  async open(){await installed();await ready(false,SHA);await exchange(held,newState);},
   async verifyOpen(){await installed();await lifecycle(SHA,plan.runId);await bounded(()=>ready(true,SHA));await ready(true,SHA,true);},
   async finish(){retain(RECORD+'/result.json',{version:1,status:'FEATURE_RELEASE_ACTIVE',planDigest:hash(plan),stateDigest:hash(newState),releaseSha:SHA,telegramActivated:true});},
   async contain(){
    if(!touched)return;const s=state();if(![plan.previousSha,SHA].includes(s.releaseSha)||![plan.previousRunId,plan.runId].includes(s.runId))fail();
-   if(s.mode==='open')exchange(s,{...s,mode:'held',apiGeneration:null,workerGeneration:null});stop();
+   if(s.mode==='open')await exchange(s,{...s,mode:'held',apiGeneration:null,workerGeneration:null});stop();
   },
   async rollback(){
    stopped();
@@ -160,12 +161,12 @@ export function createZolaOsFeatureHost(){
    if(storeProof){await store.restore(storeProof);if(!store.restored(storeProof))fail();}
    if(authorityProof){await authority.restore(authorityProof);if(!await authority.restored(authorityProof))fail();}
    for(const [file,before,after]of [[ENV,oldEnv,envNew],[RUNTIME,oldRuntime,runtimeNew]]){const b=read(file).bytes;if(!b.equals(before.bytes)&&!b.equals(after))fail();atomic(file,before.bytes,before);}
-   sys('daemon-reload');const s=state(),oldHeld={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};if(!same(s,oldHeld))exchange(s,oldHeld);held=oldHeld;
+   sys('daemon-reload');const s=state(),oldHeld={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};if(!same(s,oldHeld))await exchange(s,oldHeld);held=oldHeld;
    const temp='/opt/blackspire-command/.rollback-'+plan.operationId;fs.symlinkSync('/opt/blackspire-command/releases/'+plan.previousSha,temp);fs.renameSync(temp,'/opt/blackspire-command/current');sync('/opt/blackspire-command');
    const a=await inspectBuyerWriterArtifact({artifactRoot:'/opt/blackspire-command/releases/'+plan.previousSha,releaseSha:plan.previousSha,environment:'production'});if(a.artifactDigest!==plan.previousArtifactDigest)fail();
    sys('start',GATEWAY,'blackspire-command.target');const p=await bounded(()=>lifecycle(plan.previousSha,plan.previousRunId));newState={...oldHeld,mode:'open',apiGeneration:p.api.generation,workerGeneration:p.worker.generation};
    await publishBuyerStoreInstalledManifest({releaseSha:plan.previousSha,runId:plan.previousRunId,apiGeneration:p.api.generation,workerGeneration:p.worker.generation},{inspect:inspectBuyerWriterArtifact});sys('start',STORE);
-   await renewWriter(plan.previousSha,plan.previousRunId,plan.rollbackAttemptId);await bounded(()=>ready(false,plan.previousSha));exchange(oldHeld,newState);await ready(true,plan.previousSha,true);
+   await renewWriter(plan.previousSha,plan.previousRunId,plan.rollbackAttemptId);await bounded(()=>ready(false,plan.previousSha));await exchange(oldHeld,newState);await ready(true,plan.previousSha,true);
    retain(RECORD+'/rollback-result.json',{version:1,status:'FEATURE_RELEASE_ROLLED_BACK',planDigest:hash(plan),stateDigest:hash(newState),releaseSha:plan.previousSha});
   },
   close(){journal?.close();globalJournal?.close();}
