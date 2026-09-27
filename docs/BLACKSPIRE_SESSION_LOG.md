@@ -2835,3 +2835,7 @@ Implemented exact recovered-predecessor attestation and distinct feature configu
 ## 2026-09-27 — Exact release preparation and storage headroom
 
 Verified full CI at c9d6b01, sealed its backend artifact, and passed native predecessor verification. Fast-forwarded the configured preview release branch and verified the matching frontend deployment READY. Restored Vercel browser access, but native deployment API credential remains HTTP 403. Reclaimed unused build caches, yielding approximately 1.3 GB free. Live readiness passes all nine checks on unchanged backend. Feature activation host and native receiver authentication remain unresolved; Telegram not activated, voice deferred.
+
+## 2026-09-27 — Server Vercel authentication repaired
+
+User completed CLI device authorization. Verified new credential returns HTTP 200 for exact READY receiver and securely refreshed root-only operator credential. Native receiver verification passes by deployment ID and immutable hostname; feature predecessor check passes again. No production restart or Telegram activation. Remaining work is feature activation host/orchestrator, recovery verification and live private-chat delivery.
