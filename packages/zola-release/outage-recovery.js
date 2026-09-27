@@ -8,11 +8,19 @@ export function validateOutagePredecessor({priorPlan,priorResult,priorState,oldS
     ||environmentDigest!==priorPlan.newEnvironmentDigest)throw Error('Outage predecessor rejected');
 }
 export const OUTAGE_STEPS=Object.freeze(['hold','stop','start','store','writer','verifyHeld','open','verifyOpen']);
-export async function runOutageRecovery(host) {
-  const plan=await host.preflight();let entered=false;
+export function validateOutageStopResume(events,operationId) {
+ const expected=[
+  {schema:1,type:'outage_recovery',operationId,step:'hold',phase:'intent'},
+  {schema:1,type:'outage_recovery',operationId,step:'hold',phase:'complete'},
+  {schema:1,type:'outage_recovery',operationId,step:'stop',phase:'intent'},
+ ];
+ if(JSON.stringify(events)!==JSON.stringify(expected))throw Error('Outage stop resume rejected');
+}
+export async function runOutageRecovery(host,{resumeStop=false}={}) {
+  const plan=await host.preflight();let entered=resumeStop;
   try {
-    for(const step of OUTAGE_STEPS) {
-      await host.record(step,'intent');
+    for(const step of (resumeStop?OUTAGE_STEPS.slice(1):OUTAGE_STEPS)) {
+      if(!(resumeStop&&step==='stop'))await host.record(step,'intent');
       if(step==='hold')entered=true;
       await host[step](plan);
       await host.record(step,'complete');

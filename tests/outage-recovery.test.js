@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {hash} from '../packages/zola-release/commander-journal.js';
-import {OUTAGE_STEPS,runOutageRecovery,validateOutagePredecessor} from '../packages/zola-release/outage-recovery.js';
+import {OUTAGE_STEPS,runOutageRecovery,validateOutagePredecessor,validateOutageStopResume} from '../packages/zola-release/outage-recovery.js';
 
 function fixture(){
  const oldState={mode:'open',releaseSha:'a'.repeat(40),runId:'fixture-run',apiGeneration:'a',workerGeneration:'w'};
@@ -43,4 +43,18 @@ test('every interrupted entered transition contains; failed preflight has no eff
  assert.equal(seen.at(-1),step==='preflight'?'preflight':'contain');
  assert.equal(seen.includes('finish'),false);
  }
+});
+
+test('stop resume accepts only exact retained interrupted history and does not replay hold',async()=>{
+ const events=[
+ {schema:1,type:'outage_recovery',operationId:'fixture',step:'hold',phase:'intent'},
+ {schema:1,type:'outage_recovery',operationId:'fixture',step:'hold',phase:'complete'},
+ {schema:1,type:'outage_recovery',operationId:'fixture',step:'stop',phase:'intent'}];
+ assert.doesNotThrow(()=>validateOutageStopResume(events,'fixture'));
+ assert.throws(()=>validateOutageStopResume(events.slice(0,2),'fixture'));
+ assert.throws(()=>validateOutageStopResume(events,'different'));
+ assert.throws(()=>validateOutageStopResume([...events,events[2]],'fixture'));
+ const {h,seen}=host();await runOutageRecovery(h,{resumeStop:true});
+ assert.equal(seen.includes('hold'),false);assert.equal(seen.includes('stop:intent'),false);
+ assert.equal(seen.includes('stop:complete'),true);assert.equal(seen.at(-1),'finish');
 });

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {validatePasswordMaintenanceReadiness} from './password-maintenance.js';
-import {validateOutagePredecessor} from './outage-recovery.js';
+import {validateOutagePredecessor,validateOutageStopResume} from './outage-recovery.js';
 import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -48,7 +48,7 @@ async function ready(open,sha){
  validatePasswordMaintenanceReadiness(r.status,j,{open,releaseSha:sha});
 }
 async function bounded(fn){let last;for(let i=0;i<30;i++){try{return await fn();}catch(e){last=e;await new Promise(r=>setTimeout(r,1000));}}throw last;}
-export function createOutageRecoveryHost(){
+export function createOutageRecoveryHost({resumeStop=false}={}){
  const RECORD='/var/lib/blackspire-operator/storage-outage-recovery-20260927';
  let globalJournal,journal,plan,privateState,held,newState,touched=false;
  const state=()=>validateReleaseAdmissionState(readRootOwnedJson(STATE,{groupId:fs.lstatSync(STATE).gid,maxBytes:2048}));
@@ -80,7 +80,7 @@ export function createOutageRecoveryHost(){
  }
  const host={
   async preflight(){
-   if(process.getuid()!==0||process.version!=='v22.23.1'||fs.existsSync(RECORD))fail();
+   if(process.getuid()!==0||process.version!=='v22.23.1'||(!resumeStop&&fs.existsSync(RECORD)))fail();
    globalJournal=openReleaseJournal();
    const events=globalJournal.stream('release').events(),end=events.at(-1);
    if(end?.type!=='sequence_completed'||fs.existsSync(ROOT+'/pending.json'))fail();
@@ -88,11 +88,11 @@ export function createOutageRecoveryHost(){
    const priorResult=readRootOwnedJson(PREDECESSOR+'/result.json',{groupId:0,maxBytes:4096});
    const priorWriter=readRootOwnedJson(PREDECESSOR+'/writer-result.json',{groupId:0,maxBytes:4096});
    const priorState=readRootOwnedJson(PREDECESSOR+'/new-state.json',{groupId:0,maxBytes:4096});
-   const oldState=state(),gid=fs.lstatSync(ENV).gid,envBytes=read(ENV,0o640,gid);
+   const oldState=resumeStop?priorState:state(),gid=fs.lstatSync(ENV).gid,envBytes=read(ENV,0o640,gid);
    validateOutagePredecessor({priorPlan,priorResult,priorState,oldState,configurationDigest:config(),environmentDigest:hash(envBytes.toString())});
    const sha=oldState.releaseSha,artifactRoot='/opt/blackspire-command/releases/'+sha;
    if(current()!==artifactRoot||![API,WORKER].every(u=>['failed','inactive'].includes(active(u)))
-     ||![STORE,GATEWAY].every(u=>active(u)==='active'))fail();
+     ||![STORE,GATEWAY].every(u=>active(u)===(resumeStop?'inactive':'active')))fail();
    const space=fs.statfsSync('/');if(space.bavail*space.bsize<1073741824)fail();
    const db=new DatabaseSync('/opt/blackspire-command/shared/database/command.sqlite',{readOnly:true});
    try {
@@ -113,11 +113,19 @@ export function createOutageRecoveryHost(){
    const binding=readRootOwnedJsonDigestSnapshot(bindingPath,{groupId:bindingGid,maxBytes:4096});
    const commit=readRootOwnedJsonDigestSnapshot(bindingPath+'.commit.json',{groupId:bindingGid,maxBytes:4096});
    if(binding.digest!==priorWriter.bindingDigest||commit.digest!==priorWriter.commitDigest)fail();
-   plan={version:1,operationId:randomUUID(),releaseSha:sha,artifactRoot,runId:oldState.runId,gid:fs.lstatSync(STATE).gid,
+   const retained=resumeStop?readRootOwnedJson(RECORD+'/plan.json',{groupId:0,maxBytes:16384}):null;
+   plan={version:1,operationId:retained?.operationId??randomUUID(),releaseSha:sha,artifactRoot,runId:oldState.runId,gid:fs.lstatSync(STATE).gid,
     oldState,artifactDigest:artifact.artifactDigest,configurationDigest:config(),writerConfigurationDigest:priorPlan.writerConfigurationDigest,
     priorBindingDigest:binding.digest,priorCommitDigest:commit.digest,releaseRecordDigest:hash(final),
     environmentDigest:hash(envBytes.toString()),predecessorResultDigest:hash(priorResult)};
    privateState={gid,envBytes,verifier,apiEnvironment:null,workerEnvironment:null};
+   if(resumeStop){
+    if(!same(plan,retained))fail();
+    journal=openReleaseJournal({root:RECORD});
+    validateOutageStopResume(journal.stream('release').events(),plan.operationId);
+    held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};
+    if(!same(state(),held))fail();touched=true;
+   }
    await unchanged();return structuredClone(plan);
   },
   async record(step,phase){
@@ -129,7 +137,10 @@ export function createOutageRecoveryHost(){
    console.log(step+': '+phase);
   },
   async hold(){await unchanged();held={...plan.oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(plan.oldState,held);},
-  async stop(){run('/usr/bin/systemctl',['stop','blackspire-command.target',...units]);if(units.some(u=>active(u)!=='inactive'))fail();},
+  async stop(){run('/usr/bin/systemctl',['stop','blackspire-command.target',...units]);
+   if(units.some(u=>!['failed','inactive'].includes(active(u))))fail();
+   for(const u of units)if(active(u)==='failed')run('/usr/bin/systemctl',['reset-failed',u]);
+   if(units.some(u=>active(u)!=='inactive'))fail();},
   async start(){await unchanged();run('/usr/bin/systemctl',['start',GATEWAY,'blackspire-command.target']);const p=await bounded(running);
    newState={...held,mode:'open',apiGeneration:p.api.generation,workerGeneration:p.worker.generation};retain(RECORD+'/new-state.json',newState);},
   async store(){await running();await publishBuyerStoreInstalledManifest({releaseSha:plan.releaseSha,runId:plan.runId,apiGeneration:newState.apiGeneration,workerGeneration:newState.workerGeneration},{inspect:inspectBuyerWriterArtifact});
