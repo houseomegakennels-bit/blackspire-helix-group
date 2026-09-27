@@ -1,0 +1,22 @@
+import {hash} from './commander-journal.js';
+export function validateOutagePredecessor({priorPlan,priorResult,priorState,oldState,configurationDigest,environmentDigest}) {
+  if(priorResult?.status!=='PASSWORD_ACTIVATED'||priorResult.version!==1
+    ||hash(priorPlan)!==priorResult.planDigest||hash(oldState)!==priorResult.stateDigest
+    ||hash(priorState)!==hash(oldState)||oldState.mode!=='open'
+    ||oldState.releaseSha!==priorPlan.releaseSha||oldState.releaseSha!==priorResult.releaseSha
+    ||oldState.runId!==priorPlan.runId||configurationDigest!==priorPlan.configurationDigest
+    ||environmentDigest!==priorPlan.newEnvironmentDigest)throw Error('Outage predecessor rejected');
+}
+export const OUTAGE_STEPS=Object.freeze(['hold','stop','start','store','writer','verifyHeld','open','verifyOpen']);
+export async function runOutageRecovery(host) {
+  const plan=await host.preflight();let entered=false;
+  try {
+    for(const step of OUTAGE_STEPS) {
+      await host.record(step,'intent');
+      if(step==='hold')entered=true;
+      await host[step](plan);
+      await host.record(step,'complete');
+    }
+    await host.finish(plan);return {status:'OUTAGE_RECOVERED'};
+  } catch(error) {if(entered)await host.contain(plan);throw error;}
+}
