@@ -25,7 +25,7 @@ test('Jarvis markup exposes evidence download, approval history, and status badg
   // Behavior lives in the CSP-externalized /jarvis.js, which is read from disk here
   // because serving it is the control plane's concern, not this test's.
   const appScript = fs.readFileSync('apps/jarvis-pwa/public/jarvis.js', 'utf8');
-  assert.match(html, /<script src="\/jarvis\.js"><\/script>/, 'the page loads its script same-origin');
+  assert.match(html, /<script src="\/zola\.js\?v=[A-Za-z0-9-]+"><\/script>/, 'the page loads its script same-origin');
   assert.doesNotMatch(html + appScript, /localStorage/i, 'admin token must never be persisted to localStorage');
   assert.match(appScript, /downloadExport\('json'\)/);
   assert.match(appScript, /downloadExport\('md'\)/);

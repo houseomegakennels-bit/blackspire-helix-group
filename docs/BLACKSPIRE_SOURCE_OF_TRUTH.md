@@ -2,6 +2,9 @@
 
 ## 2026-09-27 — Isolated Telegram release candidate
 
+Full CI found four stale assertions in acceptance, hardening and PWA suites: legacy greeting, discarded duplicate replies, disabled browser speech, and unversioned Jarvis script URL. Updated them to the already-authorized Zola behavior while retaining authentication and dangerous-action checks. All 34 tests in those suites pass locally. Full CI rerun remains pending; no production deployment or Telegram activation. Public readiness was verified HTTP 200 with all nine checks true on the unchanged deployed SHA.
+
+
 Created feat/zola-telegram-release-20260927 directly from deployed SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Imported only the Zola UI, private Telegram transport, canonical context modules and related tests/setup helper; historical release operator changes from the broader branding branch are excluded. The prepared bot accepts ordinary messages as read_only, retains explicit /task write for changes, sends plain text to avoid MarkdownV2 rejection of task punctuation, and renders canonical completion text. No paid voice change.
 
 One hundred targeted tests pass on the isolated candidate. A real Hermes dispatch using the disposable mock provider proves that its recorded request packet contains server-owned history and the plain current message, excludes forged client history, and completes without unnecessary approval. This is provider-packet verification, not a live Codex or Telegram delivery proof. Production remains on the prior sealed artifact and Telegram remains STAGED_NOT_ACTIVE.

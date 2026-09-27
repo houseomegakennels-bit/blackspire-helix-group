@@ -90,7 +90,7 @@ test('Telegram webhook secret validation, duplicate protection, unauthorized use
   assert.equal(response.status, 200);
   const dispatch = await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893');
   assert.ok(dispatch.text[0]);
-  assert.equal((await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893')).ignored, true);
+  assert.deepEqual(await handleTelegramUpdate({ update_id: 3, message: { from: { id: 1001 }, chat: { id: 1 }, text: '/health' } }, 'http://localhost:8893'), dispatch, 'identical retries reuse the reply');
 });
 
 test('disabled Telegram webhook cannot acknowledge or enqueue updates', async () => {

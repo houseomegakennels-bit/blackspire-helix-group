@@ -2832,3 +2832,8 @@ Native recovery completed OUTAGE_RECOVERED at /var/lib/blackspire-operator/stora
 Created feat/zola-telegram-release-20260927 directly from deployed SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Imported only the Zola UI, private Telegram transport, canonical context modules and related tests/setup helper; historical release operator changes from the broader branding branch are excluded. The prepared bot accepts ordinary messages as read_only, retains explicit /task write for changes, sends plain text to avoid MarkdownV2 rejection of task punctuation, and renders canonical completion text. No paid voice change.
 
 One hundred targeted tests pass on the isolated candidate. A real Hermes dispatch using the disposable mock provider proves that its recorded request packet contains server-owned history and the plain current message, excludes forged client history, and completes without unnecessary approval. This is provider-packet verification, not a live Codex or Telegram delivery proof. Production remains on the prior sealed artifact and Telegram remains STAGED_NOT_ACTIVE.
+
+
+## 2026-09-27 — Telegram release CI regression repair
+
+Reconnected Commander. PR156 full CI had four stale contract assertions after the Zola branding/browser speech and Telegram retry changes. Reconciled those assertions; 34 affected-suite tests pass. Authentication and mutation confirmation checks remain intact. Full CI rerun pending. Public production readiness is healthy with all nine checks true at unchanged 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Telegram remains STAGED_NOT_ACTIVE; no cutover or credential change.
