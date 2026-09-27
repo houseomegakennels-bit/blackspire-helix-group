@@ -1,16 +1,505 @@
 # Blackspire Canonical Source of Truth
 
-## 2026-09-24 — nonroot CI fixture correction
+## 2026-09-27 — Isolated Telegram release candidate
 
-PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.
+Created feat/zola-telegram-release-20260927 directly from deployed SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Imported only the Zola UI, private Telegram transport, canonical context modules and related tests/setup helper; historical release operator changes from the broader branding branch are excluded. The prepared bot accepts ordinary messages as read_only, retains explicit /task write for changes, sends plain text to avoid MarkdownV2 rejection of task punctuation, and renders canonical completion text. No paid voice change.
 
-## 2026-09-24 — Buyer HELD pending-marker fix verified locally
+One hundred targeted tests pass on the isolated candidate. A real Hermes dispatch using the disposable mock provider proves that its recorded request packet contains server-owned history and the plain current message, excludes forged client history, and completes without unnecessary approval. This is provider-packet verification, not a live Codex or Telegram delivery proof. Production remains on the prior sealed artifact and Telegram remains STAGED_NOT_ACTIVE.
 
-Credential recovery completed its held transition on epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Fresh Seller acceptance completed, with receiver HTTP200. Buyer profiles was then admitted once and returned HTTP404 through the authority consumer; its task/provider result remains outcome_unknown. The permit retired UNKNOWN. Preserve this collector, its completed Seller result, failed Buyer result, all earlier UNKNOWN histories and the frozen candidate. Do not replay it.
 
-Source inspection found that the owned Buyer profiles fence requests a default shared lock that rejects pending.json before reaching its intended HELD read-only check. A disposable real-lock reproduction confirmed rejection before the handler. The fix observes HELD before allowing the profiles-only pending exception, then rechecks HELD state, release/epoch and generation binding under the shared lock before dispatch and after completion. User writes and OPEN profiles reads with a pending marker remain denied; HELD-to-OPEN changes before locking also refuse.
+## 2026-09-27 — Storage outage recovered
 
-Twenty-nine focused tests pass, including real pending-marker locking, disconnect lease retention, real confined-runtime attestation and receiver callback coverage. Build, lint and syntax typecheck pass. This code is not deployed and live Buyer acceptance remains UNVERIFIED. Next: publish the isolated repair for exact-head CI, review it, then prepare a sealed successor through the native release/retirement gates. No manual patch to the installed artifact, source-proof bypass, production OPEN or main merge occurred.
+The final Telegram staging check found public HTTP 502 and failed API/worker services. Root storage was full; both service logs reported database or disk is full. Cleared package-manager caches and six abandoned, older-than-seven-days disposable test directories after checking process references. Approximately 1.1 GB became available. The production SQLite integrity check passed; no active/queued tasks were present.
+
+Added an exact-predecessor same-release recovery operator. It verifies the retained successful password-maintenance result, current admission digest, unchanged configuration/API environment and sealed artifact, database integrity and free space; then holds intake, stops services, restarts the unchanged artifact, publishes fresh store/writer generation bindings, verifies HELD readiness, opens and verifies public readiness. No password, credentials, source artifact or feature configuration is changed. The first attempt stopped at stop because systemd retained failed status on already-stopped units. A narrowly validated exact-history resume clears that status without replaying hold and preserves the interrupted evidence. Four recovery tests pass, including every-step containment and altered predecessor/history rejection.
+
+Native recovery completed OUTAGE_RECOVERED at /var/lib/blackspire-operator/storage-outage-recovery-20260927. API, worker, store and gateway are active; local and public readiness return HTTP 200 with all nine checks true at unchanged SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Storage headroom remains limited and needs follow-up cleanup/capacity work. Telegram remains STAGED_NOT_ACTIVE. A feature successor must now validate this latest recovery result/generations, not the earlier password-maintenance state directly.
+
+
+## 2026-09-27 — Telegram pairing verified and transport repairs prepared
+
+Verified the root-only paired record for BlackspireZolaBot: token present, exactly one private owner bound, webhook secret present, status STAGED_NOT_ACTIVE. No credential values were exposed. Prepared private-chat enforcement with TELEGRAM_PRIVATE_CHAT_ID (production rejects missing pairing), checked Telegram delivery responses, webhook 503 on processing/delivery failure, and bounded retry reply caching with conflicting-update rejection. Failed document sends retain their file. Forty-four targeted Telegram, unified-input, policy and canonical-context tests pass, including private owner/group/bot rejection and failed-send retry with one canonical task. These repairs are NOT DEPLOYED.
+
+The existing successor activation and configuration operators encode historical predecessor/retirement authority; verifier maintenance is restricted to password changes. Neither is a valid feature-release activation path from the current completed deployment. A new reviewed transition with current predecessor/configuration evidence, fresh artifact and generation bindings, rollback/HELD containment and live delivery verification is still required. No production restart, webhook registration, credential installation or transport activation occurred.
+
+## 2026-09-26 — Telegram staging and canonical context successor
+
+User authorized remaining non-voice repairs and Telegram setup. No Telegram credential or allowlist is present in the running API or known service environment files. Added a root-only hidden-entry Telegram staging helper: verifies bot identity, refuses active webhooks, pairs one fresh private-chat owner, and never activates transport. Four Python pairing tests pass.
+
+Prepared a feature-gated backend repair that discards client-supplied history/instructions, classifies only the current request, and supplies separate server-owned historical context to read-only provider packets. Canonical recall is bounded to the same actor, channel, authority and workspace, can retrieve relevant completed older conversations, and survives database reopen. No memory-candidate promotion or migration. UI mutation requests now retain explicit plain input. Eighty-three targeted Node tests pass; backend changes are NOT DEPLOYED or enabled.
+
+Activation requires a new reviewed release with current artifact/configuration and generation bindings. Do not replay the completed release or stretch verifier-only maintenance. Telegram credential pairing was completed and verified on September 27; transport remains STAGED_NOT_ACTIVE. Further business adapters remain unfinished. See docs/ZOLA_TELEGRAM_CONTEXT_SUCCESSOR.md. Voice stays deferred.
+
+## 2026-09-26 — Operational upgrade verification and longer conversation context
+
+Live browser task task_cc0084ece47f83d8 was held for administrator approval, approved through the two-step UI, resumed, and completed with the requested harmless explanation. Approval history records administrator approval. Earlier live task task_746a5ce5f514fa4c was cancelled; canonical events and evidence recorded cancellation cleanup and ignored late response. OS process termination is UNVERIFIED. Isolated approval-resume tests pass 5/5, including rejection and expiry.
+
+Conversation context now admits up to twelve short turns from the selected canonical conversation and discards whole oldest user/assistant pairs when the 3900-character budget is exceeded. Existing conversations sent from the Command screen now receive the same context as typed follow-ups and voice. This is bounded conversation context, not durable cross-conversation memory. UI/context and mocked Telegram attachment tests pass 66/66. Deployed UI revision 86b230151a0e572e8e9341d208521261a11a6418; public HTML and JavaScript return 200 and match committed source. Public readiness returns 200 with all nine checks true. Lint, typecheck, build, memory and secret checks pass. Live task task_631d7c8fa11ee896 recalled the first message (Hello?) from six turns earlier when submitted from the Command screen. Historical assistant text containing deploy triggered conservative production_deploy approval on this harmless recall request; after explicit two-step approval it completed. History-aware policy classification requires a reviewed backend change, not client-side filtering or bypass.
+
+Registry audit confirms six read capabilities: Seller opportunities, Buyer profiles and matches, Deal records and analysis, and Nexus enrichment. This does not establish full roadmap completion. Harvester, Recon, Sentinel, Social OS and Book Studio are not registered in this capability registry. The running API has neither a Telegram bot token nor a user allowlist configured; Telegram remains dry-run. Paid voice remains deferred. Physical iPhone speech, installation refresh and long-term memory remain UNVERIFIED.
+
+## 2026-09-26 — Typed follow-up context repair
+
+Authenticated cloud-browser test completed task_b081171e190e59c9 with correct greeting and arithmetic. Follow-up task_c340f97329c78a72 completed but could not recall the prior calculation: typed follow-ups omitted the bounded history already used by voice. Route typed follow-ups through the same history envelope, preserve overlong original input for existing server validation, unwrap recent-conversation labels and rename the remaining composer accessibility label to Zola. Bump UI asset version. Deployed UI revision 0f0434128f2fb0fa1e96c181630692e63358c815. Fresh authenticated follow-up task_b8d84e53e8a0d7d2 returned The result was 42, proving prior-turn context through the browser and worker. UI/context tests pass 52/52; lint, typecheck, build, living-memory and secret checks pass. Signed-in task, evidence, system and empty approvals screens render. Events screen currently reports no events; event population, approval execution, cancellation and physical iPhone interactions remain UNVERIFIED.
+
+
+## 2026-09-26 — Non-voice operational verification
+
+Operator requested verification of all other Zola functions while deferring paid voice. Public readiness returns HTTP 200 with all nine checks true; API, worker, Buyer store and gateway are active. Fresh read-only Codex execution under the running worker identity, environment and mount namespace with pinned workspace descriptor returned status 0, containment proven, artifacts empty, and a natural greeting with correct arithmetic (17 + 25 = 42). Eight public UI, manifest, service-worker and PNG icon assets return 200 and match committed source. Unauthenticated tasks and workspaces return 401. Targeted UI, voice-context, password, workspace-authorization and Codex-worker tests pass 78/78. No runtime changes or restart were needed. Cloud browser is signed out: fresh authenticated browser submission, approvals, cancellation and physical iPhone interaction remain UNVERIFIED in this check. Paid voice upgrade remains deferred.
+
+
+## 2026-09-26 — Voice delivery refinement
+
+Operator requested substantially more natural speech. Confirmed no ElevenLabs, OpenAI or Cartesia API credential in the worker environment. No neural speech provider is connected; browser synthesis remains the actual audio engine. Updated voice-conversation wording instructions for short, relaxed replies, contractions, natural punctuation and no repeated introductions or task narration. This changes wording only, not voice fidelity. Natural speech provider integration remains blocked on a configured provider and usage budget.
+
+
+## 2026-09-26 — Voice conversation workspace
+
+Added explicit Talk to Zola mode with modal orb workspace, automatic recognized-turn submission, canonical completion polling, spoken answer, automatic listening resumption, tap interruption, end controls, denial/error pause and hidden-page shutdown. Dictation controls remain review-before-send. Voice conversation submissions use read_only and the existing server policy and idempotency path. Recent messages and completed replies from the selected conversation are sent in a bounded context envelope under the 4000-character input limit; this is contextual text, not elevated authority. The transcript displays the current user turn. Voice loop and bounded context tests pass alongside the 49 UI checks (51 total). This is turn-based browser speech over the existing Codex task runner, not a low-latency streaming audio provider. Physical iPhone speech and autoplay verification remains pending.
+
+
+## 2026-09-26 — Zola browser voice
+
+Replaced the disabled voice placeholder with explicitly tapped browser speech recognition for command and follow-up composers. Transcripts require review and normal Send; no automatic submission. Added Listen and Stop audio to completed canonical replies, browser speech synthesis with device voice fallback, permission/error notices, and hidden-page cleanup. No paid voice provider. iPhone microphone and speaker behavior requires device verification.
+
+
+## 2026-09-26 — Natural Zola replies
+
+User screenshot confirms a completed browser task after launcher repair, but its summary narrated internal packet metadata. Installed developer_instructions in the dedicated worker CODEX_HOME config, retained as scripts/zola-codex-config.toml, directing the provider to fulfill the request field and place a natural user-facing answer in summary while retaining the artifact contract and all existing authorization boundaries. No service restart or sealed release edit. Native strict-config accepted the setting. A fresh read-only greeting packet tested with descriptor pinning under worker identity and service mount namespace returned ok=true, containment proven, empty artifacts, and: Hello! I’m Zola, your Blackspire assistant. What do you need help with? Historical replies remain unchanged.
+
+
+## 2026-09-26 — Codex launcher descriptor repair
+
+The next user task passed workspace inspection but failed with no JSONL events. Reproduced the installed npm launcher dropping inherited descriptor 3 before starting the native executable; Codex rejected /proc/self/fd/3 as untrusted. A direct-path control succeeded. Installed a guarded, reversible launcher symlink to the same root-owned Codex 0.154.0 native binary, preserving descriptor inheritance without disabling repository checks or sandboxing. Retained the previous target under /var/lib/blackspire-operator/zola-codex-native-20260926. No API artifact, service environment or admission generation changed. Verified the actual runCliChild and parseCodexCliResult functions under the worker identity, configured sanitized environment and service mount namespace: status 0, containment proven, ok true, no artifacts, summary Hello from Zola. Browser conversation completion still requires a fresh user submission; the failed task was not replayed.
+
+
+## 2026-09-26 — iPhone orb icon and task workspace repair
+
+User confirmed authenticated access but task task_d6c7f40ccc39ff9e failed at workspace inspection. Reproduced Git dubious ownership under blackspire-worker against the designated shared workspace owned by blackspire-api. Added only /opt/blackspire-command/shared/workspace to system Git safe.directory; no wildcard, ownership, service environment or sealed release change. The production inspection function now returns zero changed files under the worker identity and configured environment; Codex availability probe succeeds. End-to-end new conversation response remains user verification pending. Rendered 180, 192 and 512 pixel PNG orb icons from the existing original SVG for Apple touch and manifest compatibility. Existing iPhone installations may require removal and re-addition to refresh cached artwork.
+
+
+## 2026-09-26 — Zola visual identity
+
+Prepared the Zola interface in the requested red, black and white palette: glossy orb, sign-in, command core, controls, conversation labels, PWA name and icon. The new canonical presentation route is /zola; legacy paths remain compatible. Persisted channel keys, historical records and installed PWA identity remain stable. A separate versioned static UI deployment at the existing TLS edge preserves the sealed API artifact and authentication, using exact asset locations and the existing security headers. Deployed and verified at https://command.blackspirehelix.com/zola from UI revision 9919581cd9d148ed9434f69deda56de1aff076a8. Cloud-browser inspection confirms Zola branding and the red, black and white orb; all six checked public assets match the committed files, and public readiness returns HTTP 200. UI tests pass 49/49; lint, typecheck and build pass.
+
+## 2026-09-26 — Same-release password maintenance
+
+Implemented a fixed operator maintenance path for the completed September 24 deployment. It requires the protected completed release journal and OPEN record, unchanged artifact and service configuration, idle healthy runtime and a valid root-only staged verifier. It records separate maintenance evidence, holds intake, stops services, installs only the API verifier, runs the existing offline session fence, restarts, republishes the generation-bound store manifest and writer attestation, and verifies HELD then public OPEN readiness. Original release evidence remains unchanged. An interrupted apply refuses automatic replay and contains services stopped HELD.
+
+34 focused maintenance, password, offline session-fence, protected manifest and writer-binding tests pass. Lint, typecheck and build pass. Native read-only preflight passed before production execution.
+
+Native execution installed the replacement verifier and revoked all prior browser sessions. The first attempt stopped HELD because its readiness check incorrectly expected writer availability while admission was held. The corrected check follows the existing HELD contract; an exact-history recovery preserves that failed attempt, validates stopped state and unchanged configuration, and publishes fresh generation-bound attestations. Recovery completed PASSWORD_ACTIVATED. Public readiness is 200 with all nine checks true, the old password returns HTTP 401, and the staged verifier was removed. The running API was privately checked against the staged verifier before cleanup. User confirmation of the new-password browser login remains pending. The original release records and journal are unchanged; maintenance and recovery evidence are separate.
+
+## 2026-09-26 — Command login recovery verified; rotation pending
+
+The root-only retained administrator password was compared privately with the verifier loaded by the running production API and matches. All four services remain active/running; loopback readiness returns 200 with all nine checks true at deployed main 6cdd47e9222501980d2dce0e0e42e05e91db05b0. The operator can display the retained password locally in their authenticated terminal and sign in at the existing /jarvis page. No password or verifier is recorded here. Interactive login remains operator verification pending.
+
+A separately staged replacement verifier is valid but has not been installed. No production environment change, session revocation or service restart occurred. The password runbook restart procedure does not account for the current generation-bound OPEN admission, writer binding and store manifest; rotation requires a supported maintenance transition and fresh applicable verification. Do not blindly restart or rewrite historical release evidence. Existing production remains healthy.
+
+## 2026-09-24 — Zola production OPEN and release complete
+
+The fixed release CLI from clean 9a1278e4e1db48a92c84eb9027ec6324d42efb7e returned COMPLETE / PASS. Candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e merged through PR125 as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Main CI 36035924867 succeeded. Vercel production dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x is READY at that exact SHA, and the VPS pointer matches.
+
+The protected journal contains 359 events ending in release_open_result, guarded_held_to_open confirmation and sequence_completed. Admission is OPEN at epoch fa25de00-5c65-44f0-b437-03e4f2b295aa; pending.json is absent. Exact accepted-held and OPEN records are retained and independently read back as OPEN. The previously missing release-records directory was created root-owned mode 0700 before same-intent publication resumed.
+
+All four services are active/running. Loopback health and readiness return 200/ok=true with all nine readiness checks true. Public https://command.blackspirehelix.com/health and /ready return 200/ok=true at the exact merged SHA. https://blackspirehelix.com/ returns 200.
+
+All six postmerge live reads passed with six cross-owner denials; authoritative command usage verifies zero paid provider calls. Dual-source before/after evidence verifies zero row and tuple-version changes across seventeen tables. Production smoke and rollback verification passed, and the bounded acceptance permit is consumed. Historical uncertain requests and retired evidence remain preserved and were not replayed. Recovery remains the explicitly verified stopped-HELD containment mode; no broader business-compatible recovery claim is made.
+
+Release work is complete. Do not rerun admission, writer acceptance or old collector requests. Use the retained final records and journal for subsequent operational review.
+
+
+## 2026-09-24 — six live reads passed; owned zero-proof binding corrected
+
+Clean fa0299e743f8c0982d9d7d90b8772820310105c6 confirmed API health, worker readiness, generation fence, all six live reads and production smoke. The retained collector reports PASS_LIVE_ACCEPTANCE. At 335 events zero_paid_nexus blocked because the default reader searched the old journal directory.
+
+The fixed mixed operator now selects its exact protected live collector directory and validates its protected configuration. Owned mutation verification uses the existing dual-source validators, binding configuration digest, merged SHA, epoch, identity and profile before comparing all seventeen tables. The legacy path remains separately validated. Four zero-proof tests pass. Native read-only operation checks against the retained report and authoritative command usage return paidProviderCalls=0 and mutationDelta=0 across seventeen tables, with no physical journal writes.
+
+Next: resume the pending zero-proof operation, finish rollback verification and final release records, then guarded OPEN. All services run the merged release HELD; OPEN remains UNVERIFIED.
+
+
+## 2026-09-24 — VPS cutover complete; health transport corrected
+
+Clean 2e5a805058ff9e0854368c09ce7ffec3881dd66c reconciled the retained store startup, completed VPS readiness/generation checks and confirmed journaled_vps_cutover. All four services run the merged release under HELD. Postmerge writer binding and held epoch are confirmed. Main CI run 36035924867 completed successfully at 6cdd47e9222501980d2dce0e0e42e05e91db05b0.
+
+The acceptance permit was minted and api_health intent retained at 314 events. Its fixed HTTP client suppressed Host, causing HTTP 400 before the health handler; native comparison with the same fixed endpoint and Host enabled returns 200. The client now emits the standard Host header while retaining the fixed loopback destination, response checks and timeout. Six tests pass, including a real HTTP server that verifies the generated header. Next: reconcile the same health observation and continue bounded postmerge acceptance. OPEN remains UNVERIFIED.
+
+
+## 2026-09-24 — merged production verified; interrupted store startup recovery
+
+PR125 is merged as 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Exact-head merge identity and Vercel production deployment dpl_eeHLiKfKKzUKMWiviwGzsP1Cpz6x are verified; Vercel is READY at that SHA. The fixed CLI advanced the VPS pointer to the same merged release under HELD epoch fa25de00-5c65-44f0-b437-03e4f2b295aa. API, worker and gateway run; the Buyer store remains stopped. Lifecycle and deployed artifact observations pass. The 287-event journal retains store_start intent with no result; OPEN remains UNVERIFIED.
+
+Pending owned-store startup can now reconcile through its existing durable manifest publication layers under the cutover lease. It verifies retained transition, receiver/authority bindings, service state and stable API/worker generations before startup; drift cannot start the store. Other interrupted steps retain existing observation/rollback behavior. Sixteen focused tests pass, including protected publication replay and lost-rename recovery. An in-memory copy of the native 287-event journal reaches cutover completion at 295 modeled events, without physical writes or redispatch of the original store_start operation.
+
+Next: execute the clean fixed CLI to reconcile store startup, verify readiness and generations, then complete postmerge acceptance and guarded OPEN. No business request or old acceptance is replayed.
+
+
+## 2026-09-24 — rollback, CI and diff passed; merge proof formatting repaired
+
+Clean 124729ff47261ac5fb8af40eb658f62307e5462d retained the successful successor rollback proof and confirmed rollback_acceptance, ci_security and final_diff. The merge precheck returned PASS from GitHub twice, but the sequence rejected its evidence because it contained attemptId:null before an attempt existed. No expected_head_merge intent or request was sent; PR125 remains open at f1f and main remains f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8.
+
+The precheck now omits only the unallocated attempt ID; execution/reconciliation still require the real durable attempt. Nine deployment tests pass, including a real sequence integration proving the exact-head merge intent exists before the request and the merged proof is accepted. Next: resume the clean fixed CLI through expected-head merge and production SHA checks. All services remain HELD; production deployment and OPEN remain UNVERIFIED.
+
+
+## 2026-09-24 — fresh backup verified; integrated recovery ready
+
+Clean e61fd20dcebb0bcf94a6d0dd71a574c2951ebdfc captured and verified the fresh protected backup. Rollback observation then recorded BLOCKED_EXTERNAL because the isolated frontend dependencies were absent. Deterministic frontend npm ci --ignore-scripts installed 482 locked packages using the development-volume cache; tracked files remain unchanged. The credential-free, isolated-network integrated rehearsal now reports PASS_FIXED_INTEGRATED_HTTP.
+
+A single successor observation is pinned to the exact unavailable rollback result digest 618a35c30b87b1bfc4da99e380874427796d2dfbea586050e55ebbe36afcd86b and attempt 38d6acaa-2b05-460f-b46e-36cdc57c2536. Schema-two intent/result records preserve the original unavailable result; another attempt, successful result, altered history or second retry cannot use this path. Fourteen focused rollback/deployment tests pass. The native rollback adapter completed against an in-memory copy of all 253 events, produced PASS and validated all 255 modeled events without physical release writes. Next: execute clean CLI to retain that observation and continue CI, final diff and expected-head merge gates. Runtime remains HELD and no main merge or OPEN is claimed.
+
+
+## 2026-09-24 — fresh acceptance passed; backup renewal prepared
+
+Clean 5c8d36e76988f989d38cc02580db162bad202d62 completed the distinct writer request and all four correlated gateway receipt operations. Bounded writer acceptance, migration preflight, retained migration lineage and postconditions passed. All six fresh premerge reads passed with six cross-owner denials, zero paid calls and zero unintended mutations. The new acceptance report and completed authority are retained separately from old Seller/Buyer evidence.
+
+The sequence stopped at rollback_acceptance with a probe intent and no result, at 251 events. Native read-only diagnosis located the failure in the protected-backup freshness check: the original backup exceeded one hour during repairs. The renewal implementation retains the old backup and binds a fresh protected capture to the exact release/input, operation and original manifest digest. Rollback and VPS planning resolve the same retained replacement. The one-hour validator remains unchanged. Capture has a separate retained intent; an interrupted capture without result cannot automatically repeat.
+
+An incomplete rollback probe may re-observe its exact read-only/disposable rehearsal, while completed results are never rerun. Thirteen rollback/deployment tests pass, including interrupted-probe reconciliation with one retained intent/result and unchanged attempt. Native renewal and rollback readiness remain UNVERIFIED. Next: execute the clean fixed CLI to capture/verify the fresh backup and continue toward merge; runtime remains HELD and production OPEN is not claimed.
+
+
+## 2026-09-24 — request-ID collision recovery verified
+
+Clean d95fca5e24f87406cdeb0ad6ff6123891b24924a recorded the expired unissued retirement and refreshed the protected test target. Its replacement token reused the original request ID, so the database uniqueness constraint correctly refused reservation. The release stopped with a second retained issue handle at 236 events. Native read-only observation confirms the second admission is absent, the original reservation is expired and unbound, both share the request ID, neither has a dispatch, the target version is current and no active dispatch exists.
+
+The correction derives a distinct deterministic request identity only for this exact rejected attempt. A second explicit retirement is pinned to the exact 236-event prefix and second handle; it cannot apply to an admitted request or another operation. Both blocked requests remain preserved. Twenty-six focused tests pass. The full commander validates an in-memory native model of the second retirement with zero selected handles and no physical mutation. Next: execute the fixed CLI, then continue acceptance. Runtime remains HELD; no merge or OPEN is claimed.
+
+
+## 2026-09-24 — expired writer issuance diagnosed; exact recovery prepared
+
+Clean e20986021db1a14fb3c88749fe007759bad0c585 retained the current writer issue handle, then stopped at the bounded writer gate. Native recovery returned ADMISSION_REJECTED. A read-only cluster-administrator observation proved the original admission is expired, reserved and unbound, matches its durable request/body, and has no dispatch. The dedicated synthetic acceptance job matches owner, signer and criteria but its saved version is stale after prior completed acceptance. No active dispatch exists and the job is failed. No business change resulted from this rejected issuance.
+
+Recovery is pinned to the exact 233-event prefix, operation, attempt, handle and protected target digest. It retains the old request, records an explicit unissued retirement only after all thirteen identity/no-effect predicates pass, then refreshes only the protected synthetic target timestamp using compare-and-publish. A subsequent gateway request gets a new durable handle. The expired original request is never replayed, and uncertain or successful originals cannot use this recovery.
+
+Twenty-four focused tests pass. A native in-memory model validated the real 233-event prefix plus the proposed retirement through the full commander reader and selected zero current handles; physical journal and target were unchanged. Prepared target digest is 1142db3c42add69f6095752b7c8a16d133eac6e5f5345baba5c19a7aed2fc6de. Next: execute the committed fixed CLI recovery and continue acceptance. All services remain HELD; main merge and production OPEN remain UNVERIFIED.
+
+
+## 2026-09-24 — HELD lifecycle confirmed; undispatched writer recovery
+
+Clean operator 27f1a707d7a5d14ccf453a8d1da3584fa6661eba resumed the retained admission attempt. Initial startup produced a lifecycle intent without a result; a later native observation verified the exact running f1f artifact and epoch d2619093-f021-42d0-8507-72acad955ec6. Same-intent reconciliation confirmed lifecycle, started the owned store, installed the writer binding, and passed generation, provider ACL and GET-only published n8n carryover gates. All four services now run HELD.
+
+The sequence stopped at bounded_writer_e2e because its durable journal scanned retired handles as current. The fix scopes handles through the strictly validated retirement partition. The native whole-history reader validates all 231 events; current attempt 76698759-cafd-49d2-af94-cad39a77256c has zero handles, while all four old handles remain retained. No current writer request was dispatched: native admitted transport persists its handle before every original dispatch.
+
+Reconciliation now permits the fixed writer transport only for a strictly empty current attempt. Any retained handle follows existing receipt recovery and is never reissued. Twenty-two writer tests pass, covering one-time empty-attempt dispatch, repeated observation, append failure, changed bindings and lost issue/apply/reconcile/receipt acknowledgements. Next: resume this same fixed CLI attempt after clean-source gates. Fresh six-read acceptance, merge, production deployment and OPEN remain UNVERIFIED; intake stays HELD.
+
+
+## 2026-09-24 — candidate cutover retained; lifecycle history repair
+
+The fixed successor CLI from clean bf4bc529f7e4391d10ae0e158c3d42c72ea45ed2 completed schema-six predecessor retirement, protected authority archival, exact Preview metadata adoption, successor configuration and gateway installation, and native candidate deployment. The current pointer is f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e. All four services remain stopped; the new epoch is HELD. No lifecycle start intent was issued. The release journal retains 213 events and the same admission_lease attempt 8de020dd-b0ae-460a-a6fe-7b7892f68213 for operation b9679cbd-5331-45ae-a026-02b7f5e117e9.
+
+Startup stopped because the legacy commander history validator did not recognize the mixed retirement and retained successor collector grammar. The repair validates those historical collector records strictly before accepting their event types; schema-six activation requires an empty legacy activation segment, while older completion requirements remain unchanged. Twenty-four focused regressions pass. A read-only native check validates all 213 real events and rejects three tampered in-memory copies. The new partition unit fixture mocks partitioning only; the separate native check is the real-history evidence.
+
+Next: commit the verified repair and reconcile the same fixed CLI attempt. Do not manually start services or repeat old admissions. Main remains f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8 and PR125 remains open. Fresh acceptance, main merge, production deployment and OPEN remain UNVERIFIED.
+
+
+## 2026-09-24 — native pre-cutover model passed; fixed successor CLI
+
+Clean operator 35d097852754f3f2c80b18e96e3abe6b6d1669a8 executed the real first five native stage adapters against an in-memory copy of the protected 186-event history plus a modeled retirement. Exact source, receiver audit, Preview checks, GET-only n8n carryover and all six isolated candidate reads passed. The model intentionally blocked at admission_lease; both physical journals remained unchanged. Its mutationSent field describes model journal/candidate activity, not a production cutover.
+
+Exact repaired-head receiver maintenance audit 36024932894 completed successfully using action=audit, with no routing or environment mutation. The independent canonical successor checkout initially lacked pg. Deterministic npm ci --ignore-scripts installed its lockfile dependencies; tracked source remains clean.
+
+A fixed root-only successor CLI now connects retirement, archive, Preview metadata adoption and native release composition with clean-source fencing and retained-intent reconciliation. A new postmerge live collector preparer requires the completed fresh premerge proof, exact merged SHA, production deployment, current HELD writer/lifecycle and the rebound owned acceptance target. It retains a separate denial issuance intent and refuses uncertain reissuance. Production configuration uses owned version seven and a fresh epoch; publication rejects a conflicting existing live configuration.
+
+Eleven focused live-configuration tests pass, including stale candidate/profile/epoch, wrong target, customer-target and duplicate-process refusals. Native postmerge preparation, retirement and full successor execution remain UNVERIFIED. Current runtime remains a8 HELD, with no main merge or OPEN. Next: complete clean final verification and execute the fixed authorized CLI, preserving any uncertain outcome rather than replaying it.
+
+
+## 2026-09-24 — fresh acceptance and native operation composition
+
+The successor Preview metadata handoff and fresh six-read acceptance implementation are now present. Preview publication retains exact old/new metadata and an intent before publication; uncertain acknowledgement is observed without redispatch. Fresh acceptance binds the completed authority archive, exact successor operation, live HELD lifecycle and writer proof, preserves the old Seller/Buyer rows, and uses a new epoch, denial receipt, permit and collector journal. UNKNOWN acceptance cannot be relabeled PASS or automatically repeated.
+
+Forty-six focused tests passed across Preview handoff, fresh evidence/history validation, native postmerge configuration publication, provider input binding and deployment stage composition. The postmerge gateway consumer now retains all nine successor receipt dependencies. VPS cutover takes backend identity from protected release input rather than the intentionally backend-free sequence input, ensuring the owned store stops before the other services and its profile reaches cutover.
+
+A fixed native operation factory now composes the exact successor source, owned ACL observer, owned runtime transitions, published n8n carryover and fresh acceptance. Its isolated candidate collector runs from the independent canonical successor checkout. Native composition execution and postmerge live collector preparation remain UNVERIFIED. No retirement, archive move, service stop, runtime pointer switch, merge or OPEN occurred. Next: verify the clean composition against actual retained history in memory, complete the fixed CLI and postmerge acceptance preparation, then run the authorized successor sequence.
+
+
+## 2026-09-24 — archive prepared; sequence and n8n carryover verified
+
+Clean operator d5ffb890b146bcc9f18a6aa994444f3dcc923a1a prepared the live metadata-only authority archive plan e584b29f954c00a40be7cd01de0ddf20f8f200217f9ea2597ce1c806beca36e1. Its protected-state digest matches the prior preflight. No authority file moved and services remain running HELD.
+
+The sequence parser now explicitly accepts the exact mixed predecessor's pending six_reads stage at ordinal 13, preserving all prior rows, and binds the repaired successor to current main. Legacy admission-stage retirement remains unchanged. The old schema-five operator overlay accepts separately pinned extended local source while retaining original source pins for frozen readers. The exact candidate's default source verification selects the independent successor checkout; schema-three database prerequisites use the selected native lineage observer.
+
+An in-memory model using the real 186-event protected history and exact prepared production input successfully reached the new operation's first gate. Its retirement event and adapters were model-only; no physical journal append or retirement occurred. Native GET-only n8n inspection verified the active candidate and completed attempt-nine cloud proof. Workflow state digest: 2b5f190442f7805b7bf6db6fe58f2772ff97a1e33528040bfed1104b17a2cc8c; prior proof digest: c96ad3861869d83a74847b608e0d3648ad0b8945f7ceb2d860eab20d38117f20. The existing 24 n8n events remain unchanged, digest 60ccc4e067cb0f5d9883153804320c35b2cc67b0f5e90e28bea32dc97e75dfbb.
+
+Separate carryover adapters retain the original backup and historical journal, permit only native GET observations of that exact published candidate, and require unchanged credential material plus current installed writer verification at the migration stage. They cannot deactivate, update, publish or rewrite credentials. Forty-one focused regressions and build/lint/syntax typecheck pass.
+
+The live stage adapters have not executed. Next: finish the new Preview metadata handoff, native fixed-operation composition and fresh owned acceptance setup before retirement/archive and runtime cutover. Full deployment, main merge and production OPEN remain UNVERIFIED.
+
+
+## 2026-09-24 — current-runtime preflight passed; protected archive implementation
+
+Clean operator 26e27ae1c362b39cf3f15ccdfad83b9a6d17b6da passed the strengthened native retirement preflight. Protected-state digest remains ede3ccf26694e1050179384e64cbe82427c076053d9e49d73d93fb833370b40c and lifecycle digest e41f5705c50ee235918e4719eefb7d45693d8b73c3481d5fd7c2e9f651d97c4e. Prepared input, database lineage and prior gateway receipt all verified. No stop was sent.
+
+A separate authority archive now binds the exact protected snapshot and schema-six retirement. It retains per-file intents before moving the expired claims/secret and prior writer commit/binding, preserves bytes and inode, refuses existing destinations or changed file identity, and observes uncertain outcomes without redispatch. The native fence requires the exact 187-event retired history, stopped services with no detached survivors, unchanged remaining protected files, inactive authority and unchanged acceptance/collector journals. Read-only completed archive verification allows a later fresh live authority while still validating the original archived files.
+
+Three native disposable filesystem tests pass, covering interrupted moves, replay, collision, identity drift and retirement drift. Build, lint and syntax typecheck pass. The preparation CLI holds the global release journal and admission exclusion, captures metadata-only snapshots, and does not stop services or move authority files. Live archive preparation and execution remain UNVERIFIED. Next: prepare the clean live archive plan, finish native successor operator composition, then execute retirement/archive and the full authorized successor sequence. Current a8 remains HELD; production OPEN is not claimed.
+
+
+## 2026-09-24 — successor inputs verified; current-runtime activation support
+
+Native preparation from clean operator ebcc0b2078632cdf5904f8cabbd8fe2aa9a56462 completed for candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e and operation b9679cbd-5331-45ae-a026-02b7f5e117e9. The final input digest is d249b16ea4aa576a71dbb0bd04f38f0a9dfed96e1538fe8b06165491d3887e84. A separate SQLite backup and exact original workflow backup were retained. Native migration successor verification passed with lineage digest 7e6aec9a795cb03aa0b0729e9245b0660c5a6bba23a4ae9b4c564af078e0dde8. Existing data was neither copied again nor rehardened; the published n8n candidate was observed without mutation.
+
+Activation, configuration and HELD rollover now explicitly distinguish the current a8 runtime predecessor from the original 2636 database lineage. The exact repaired candidate selects schema-six retirement and the new canonical checkout. Existing schema-five behavior remains covered. The gateway successor chains the prior completed a8 receipt (digest b270137e725a2af2707a72683a7f12f384f9fb361572664aa699d0d668f0e781), retaining its original installation state and all historical dependencies. Retirement preflight now additionally binds the prepared operation/input, native lineage and prior gateway receipt.
+
+Thirty-seven focused tests pass, including native disposable protected-file HELD rollover with lost acknowledgement, wrong-run and wrong-lineage refusals; exact configuration credential preservation; activation replay; and a two-generation native gateway receipt chain with tampering refusal. Build, lint and syntax typecheck pass. Synthetic journal parsing in the new isolated activation fixture is explicitly mocked; it is not production history evidence.
+
+No retirement, archive, service stop, pointer switch or production OPEN has occurred. Current a8 remains HELD. Next: repeat clean live preflight, implement and verify protected permit/writer archival and native operator composition, then execute the authorized successor sequence and fresh acceptance. Full cutover and acceptance remain UNVERIFIED.
+
+
+## 2026-09-24 — workflow carryover retained; empty bundle repair
+
+The same successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9 completed the explicit candidate workflow carryover with mutationSent=false. Its carryover observation digest is31172a5318c42604ddde2068636252763151a4da7e52b8c1ea8869d7c7e33180. Bundle initialization then stopped at the configuration publisher's64KiB limit before any backup or bundle output was written. The bundle intent a07c6d3f1ee619ce3959edacdc98bf91f4874e3c526f9373b9f64d10ef3fe44c remains unchanged; actual observation confirms both outputs absent.
+
+Backup copying now uses the existing protected2MiB byte publisher, retaining exact original bytes, ACL/ownership checks, atomic publication and fsync. An explicit one-shot empty-bundle reconciliation retains its own intent only when the backup, its staging names and bundle directory are absent. Existing partial or foreign outputs remain rejected. Twenty-five preparation tests pass, including a native root-owned128KiB disposable backup, exact-byte/inode replay and size-limit rejection. The native repair is not yet executed. Resume clean input preparation, then lineage; services and the original release/acceptance journals remain unchanged and HELD.
+
+## 2026-09-24 — published n8n candidate carryover preparation
+
+Native input preparation retained successor operation b9679cbd-5331-45ae-a026-02b7f5e117e9, plan digest fa66fcc2ea0008addc3d97da70b1fb4102e445bf5418f940bc0f9b48e27b8a3b, and workflow GET intent digest925906865e7602e0388e9dc1eb1e605e588d2de81d7e6ec74c44fbaaf8c646d6. It stopped before bundle/backup/input publication because the live workflow is already CANDIDATE and active. Two fresh GET-only native observations confirmed that exact generated candidate and published-version consistency; mutationSent=false. The legacy preparer correctly required BASELINE.
+
+The mixed successor now explicitly carries the already-published candidate. It preserves the exact original baseline backup bytes and package version, retains a separate carryover intent/result, checks two stable GET observations against the generated candidate, and reconciles only the retained GET-only workflow stage. The original failed intent is unchanged. Default baseline preparation and no-replay handling for unknown database backup remain unchanged. No workflow deactivate/update/publish request is added. Twenty-three focused preparation tests pass, including exact original-backup preservation and explicit reconciliation refusal paths.
+
+This is implementation evidence, not completion of native preparation. Resume the clean same-operation input preparation, then verify and prepare original migration lineage. Schema-six activation, protected permit/writer archival, runtime cutover and fresh full acceptance remain unfinished. Current services remain HELD and unchanged.
+
+## 2026-09-24 — successor input preparation bound to current mixed failure
+
+Clean operator b4233f67742a27ad9b22584ce5a67db0ec602075 passed the complete native retirement preflight, including exact successor source/CI/artifact/Preview and current protected runtime observation. Retirement was not executed.
+
+The input host now accepts an explicit source root and preparation observer while preserving its original defaults. A fixed mixed-successor wrapper permits only f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e, validates the exact current release prefix and mixed-read proof, and retains the original2636 database migration lineage through native source/copy/security readers. Its four-mode CLI prepares or inspects inputs and lineage, with clean source fences and native global journal exclusion. Twenty focused preparation regressions pass.
+
+The first native input snapshot stopped at the unchanged disk headroom gate: root free space482521088 was below required506097664 bytes. Cleared only unused ignored Next build caches in two inactive development review worktrees (separate mounted volume) and the two regenerable APT binary caches on root. Tracked source, sealed releases, historical evidence, backups and the package database were preserved. Root free space rose to598736896 bytes. The repeated native input snapshot passed with digest4dfc3854f2852dc69bba2f6fcd8aa89c40365cff57b1570a55bd3e86a2c99d40 and the expected sealed artifact and retained mixed-read proof. Disk capacity remains a point-in-time gate and must be remeasured.
+
+No final inputs or lineage were published by this read-only snapshot; service retirement, successor activation and fresh acceptance remain UNVERIFIED. Next: execute clean native input preparation, verify its live workflow observations, retain a new operation and database backup, prepare original migration lineage, then finish schema-six activation and archival before any service stop. Current a8 runtime stays HELD.
+
+## 2026-09-24 — mixed-read retirement implementation and successor preflight
+
+The exact merged candidate f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e passed PR125 CI36006474929. Native verifyReleaseSource and verifyReleaseCi verified the exact branch, required jobs and immutable CI artifact against main f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8. The sealed production artifact remains e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a, deployed=false and productionAccepted=false.
+
+A separate schema-six retirement validator now pins all 186 predecessor release events, their current-operation segment, mixed completed/UNKNOWN evidence, current HELD epoch and exact repaired successor. The coordinator retains stop intent before dispatch, never repeats an uncertain stop, requires observed quiescence with no detached service users, preserves protected writer/permit files, and appends retirement only after repeated successor and unchanged-state verification. Existing retirement schemas retain their original validators.
+
+The native running observer passed with admission exclusion held. It verified both older recoveries, unchanged task/provider/input rows, inactive expired authority, writer archives, installed writer manifest and content-addressed configuration, source provisioning records and loaded service unit/drop-in files. Protected-state digest ede3ccf26694e1050179384e64cbe82427c076053d9e49d73d93fb833370b40c; lifecycle digest e41f5705c50ee235918e4719eefb7d45693d8b73c3481d5fd7c2e9f651d97c4e. No credential bytes were recorded. Forty-two focused tests pass, including synthetic lost-acknowledgement, survivor, disk-failure and drift cases; build, lint and syntax typecheck pass.
+
+No retirement or stop was executed. Current a8e05ef runtime remains HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a. Full successor preparation/activation and fresh acceptance remain UNVERIFIED. Before executing the retirement, complete the exact current-predecessor input/migration preparation, schema-six activation/configuration/gateway/HELD consumers, permit/writer archival and native operator composition. These still contain2636-only predecessor or old canonical-root guards. Preserve them until explicit successor support is tested; do not weaken or bypass them. User release authorization remains in force.
+
+## 2026-09-24 — Buyer repair merged; successor artifact sealed and Preview Ready
+
+PR155 merged into release/zola-production-live as f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e after exact repair-head af6c58ba8eb4b32743b0b5124c7249a51b0e41eb passed all CI36005166601 gates and Vercel contexts. PR125 now targets the new candidate; its own exact merged-head CI36006474929 is running and remains a required gate.
+
+A separate canonical checkout at /mnt/blackspire-builds/development-cache/0/workspaces/zola-final-successor-20260924 holds the new release branch. The original canonical worktree remains clean at a8e05ef, preserving all frozen history readers. The new production artifact was built at /opt/blackspire-command/releases/f1f004ffcfe43ff92271ed3618f9b3d3bb7ac57e. Native sealed inspection passes with artifactDigest e986b12a074bff70795de3a564007783c62eb6a4cb5c5295c15465eaedf96b6a, deployed=false and productionAccepted=false.
+
+Connected Vercel inspection confirms dpl_F91bkRA33kQw1X7RsxigNUg9MdJv is READY Preview for the exact new SHA and release branch. Its origin is https://frontend-4rrto278r-houseomegakennels-4825s-projects.vercel.app. This is candidate build evidence, not runtime acceptance.
+
+Installed runtime remains the prior a8e05ef candidate, HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a. Do not run the old continuation after remote release-head advancement, patch the installed artifact, reuse UNKNOWN collector evidence or call the2636-only retirement/preparer. Next implementation must retain the exact mixed-read observer proof and both older recoveries, bind a new successor operation and current lifecycle/configuration, preserve and retire the current writer/permit files with durable intents, and extend native historical parsing and successor preparation explicitly. Then complete native deployment and fresh acceptance. No runtime switch, main merge or production OPEN occurred.
+
+## 2026-09-24 — mixed Seller/Buyer failure observer verified
+
+Separate read-only recovery observation now pins frozen credential recovery 4ac36431870cc062a321d895acbddd14b88fdbff and verifies its completed transition, retired expired UNKNOWN permit, unchanged archives and both older recovery chains. It checks the complete release/acceptance/collector hash chains, the one completed Seller task and one UNKNOWN Buyer task with their exact provider/input rows, absence of the other four admissions, inactive authority, current HELD lifecycle, writer binding, four services and exact corrected deployment.
+
+Actual host inspection passed with retainedEvidenceDigest 3069c5440095c4d8e363758e367f8050fe6601570efd864ef68fb76ddd92b348. The result explicitly retains one completed read and one unknown read, acceptancePassed=false, automaticReplayAllowed=false and productionOpen=false. Twenty-six focused regressions pass; build, lint and syntax typecheck pass. No production configuration, authority, journal, task or service was changed by this observer.
+
+The source fix is PR155 at af6c58ba8eb4b32743b0b5124c7249a51b0e41eb. Its first CI failed only because the new fixture used root-only /run; that fixture now passes under root and isolated nobody. Fresh CI36005166601 is running. The runtime repair is not deployed. A sealed successor and a separate exact retirement/preparation transition remain required; the existing2636-only retirement cannot be reused for this admitted mixed result. Keep the frozen canonical candidate and previous worktrees intact until that implementation validates their historical lineage.
+
+## 2026-09-24 — credential recovery complete; Seller passed and Buyer fence defect reproduced
+
+Credential recovery operator 9162c2262f23f350e0087299755fc9a6ea340eff completed all fifteen steps after explicit epoch-scoped writer archive reconciliation. The running candidate remains a8e05ef40e44b6695df5b30356af0e411fe36f1a, now HELD in epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. Transition journal has thirty-one rows, digest 840264d6e46408c0fbb2a2a247bae8c9ea68d4df561dad9517c6b126b1ede7d9.
+
+Fresh Seller index zero completed as task_218dbf70abb2d715; Vercel recorded HTTP200. Buyer profiles index one was admitted as task_b0331114f772152e and its sole provider attempt became outcome_unknown. Vercel and the local authority consumer recorded HTTP404. The permit retired UNKNOWN and its active marker is absent. No full six-read PASS or production OPEN is claimed. Acceptance journal digest e992c0aa653036919f112b00017d8e78de42558d04f778a2a02f5bbf9175a09a; collector digest aadb5c459b6c4230552b7f5018a7c3a6897d312cf8d3ae3a82fbd70dba8a7dcd; main release journal digest 7e958a8c22de9cf720f0a3191ba49227a08f7d8d6d91d5d009c1f1b462c4f206. Keep the completed Seller result, failed Buyer result and all previous UNKNOWN histories unchanged.
+
+A disposable real-lock reproduction confirmed that the Buyer daemon profiles-read fence rejects the retained pending marker before its allowed HELD read logic. Separate source fix 6117ae6bdeafb2cdbf5115814a3225b3f227c05d permits the pending marker only after observing HELD, then rechecks HELD under the shared lock and preserves generation and mutation denials. Twenty-nine related tests and build/lint/typecheck pass. Draft PR155 targets release/zola-production-live; exact-head CI36004343479 is running. The one authorized feature-branch publication used the fixed repository URL and left the default disabled push URL intact.
+
+The repair is not deployed. A new sealed successor is required; existing retirement/preparation code pins the older2636 predecessor and does not authorize retiring this admitted six-read failure or replacing the current artifact. Next: finish exact-head CI/review, retain the new release candidate, implement and validate a separately journaled successor preserving this mixed completed/UNKNOWN acceptance and both prior recoveries, then execute native release gates. Do not patch the installed artifact or rerun this failed collector.
+
+## 2026-09-24 — writer archive collision stopped successor transition
+
+Credential recovery b626dab retained plan 3775ac8968ffddc5c7680a56dcc9f602452ec1c023b646946431bb53c813b6d9 and installed new HELD epoch 2984e391-ab5c-4a8b-88bd-f85e6743ac6a with the corrected Preview. Readiness resume observed the original start without repeating it. Transition journal stopped at its twenty-third event, archive_writer_commit intent: the native archive name reused the fixed outer stage attempt and collided with the preserved previous recovery archive. No writer archive was overwritten.
+
+The native host now optionally scopes archives to the exact HELD epoch while retaining its default behavior. Runtime and plan epoch mismatch refuse before mutation. An explicit reconciliation checks the exact twenty-three-event prefix, unchanged current binding/commit, exact previous archive bytes and inodes, absent new destinations and preserved failed-read lineage before retaining a one-time reconciliation intent. It retires only the current commit into the new epoch archive; normal resume observes that result. A retained reconciliation intent prevents redispatch.
+
+Forty-six focused tests pass, including a real protected-file native host fixture with existing earlier archives, unchanged historical contents and wrong-epoch refusal. Production remains HELD; writer publication, fresh acceptance and OPEN are UNVERIFIED. Next: commit the verified repair, run explicit archive reconciliation, resume transition and immediately continue fresh acceptance.
+
+## 2026-09-24 — corrected-credential successor recovery verified
+
+A separate credential-recovery worktree preserves frozen admitted-read recovery 093c0983d5c180ceb3c42564f1f36f7830c344ca. Its observer binds the completed predecessor transition, retired UNKNOWN acceptance, collector, archived original claims/secret and both unchanged failed task/provider/input records. It rejects additional historical admissions, active authority, expired-proof drift, configuration mismatch and source drift. Historical terminal validation accepts only the original renewal predicate using retained snapshot configuration; it never treats present configuration as historical evidence.
+
+The existing fifteen-step durable HELD transition is bound to old epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5 and corrected Preview dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1. New plan, archive, collector and permit records use a separate protected credential-recovery root. Prior UNKNOWN histories remain unchanged. Fresh acceptance and post-merge writer binding revalidate predecessor lineage; other native release gates remain in place.
+
+Actual read-only preparation passed across seventeen protected files and four services. Inspection digest: 123f6ff717246716c380e170a264108fcb78915ada30ff52a1803ee86e2a38c2. Snapshot digest: 41ce168d69771b3dcdbbc265995b640c75e3c23b68e3feb51673640836be68b8. Deterministic offline npm ci completed. Focused tests passed 112/112; build, lint and syntax typecheck passed. This milestone verifies preparation, not transition execution or acceptance. Production remains HELD. Next: clean operator check, retain plan, apply the coordinated transition and immediately run native fresh acceptance from the canonical worktree.
+
+## 2026-09-24 — branch credential replaced; corrected Preview Ready
+
+Authenticated Supabase cloud-browser access recovered without another sign-in. The existing project service-role credential was read privately and its JWT role/project claims checked before replacing only the release/zola-production-live Preview value in Vercel. Vercel acknowledged the update. No credential value was printed or recorded; no key rotation or Production environment edit occurred.
+
+Connected Vercel deployment inspection confirms dpl_B1V6U9z5VQEowwBZ2LYxoCKFggh1 is READY Preview on release/zola-production-live at candidate a8e05ef40e44b6695df5b30356af0e411fe36f1a. Origin: https://frontend-dtm0w29el-houseomegakennels-4825s-projects.vercel.app. This is build/configuration evidence only; deployed Seller acceptance remains UNVERIFIED.
+
+Read-only host inspection confirms HELD epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5, unchanged API/worker generations, four active services, no active permit and the old receiver origin. The latest Seller task task_c5c8d9bca504952a and its sole provider attempt remain outcome_unknown. Acceptance and collector digests still match the prior entry. The main release journal digest is cd36d04dde54bda546ea7da51b19bd3c5ea314ecc181922f791e62cf38a5a426. No runtime transition, new read admission, merge or OPEN occurred.
+
+Next: preserve this completed recovery and failed acceptance, validate an exact successor transition to the corrected deployment, establish a new HELD epoch, and perform separately retained fresh acceptance before native release continuation. Do not rerun the failed collector or alter its UNKNOWN history. User authorization remains in force.
+
+## 2026-09-24 — runtime recovery complete; malformed Supabase key blocks Seller acceptance
+
+Recovery operator 7d2d17d completed the fifteen-step HELD transition using epoch 2cc33dc9-486b-4f59-ab79-386f81c6b2f5 and Preview dpl_EfJVukRyw39vR6P7koqm99TiaNCw. API, worker, buyer-store and gateway are active. Receiver/store configuration, installed manifest and writer binding were verified. An early lifecycle observation preceded readiness; resume observed the running services without issuing another start. Native continuation must run with the canonical release worktree as cwd. Diagnostic-only 3bb4063 reports sanitized source locations.
+
+Fresh denial issuance and baseline queries completed. Seller index zero was admitted as task_c5c8d9bca504952a; the collector stopped without a collected result. Its permit was retired UNKNOWN and its active marker is absent. Recovery acceptance journal has five rows and digest 3e5571b827c1aab279087aa37d24d9db4cb919c4c4463a9686c7fe7eefcbb34d; collector has sixteen rows and digest 009ee43f3d9ed7f68274653db2177faea754ca08415089ec0706205b09df3994. Preserve both histories and all prior UNKNOWN task/attempt records. Do not replay this collector or relabel its result.
+
+Supabase connected logs for the acceptance time show /rest/v1/seller_leads returning HTTP401, error code UNAUTHORIZED_INVALID_API_KEY, with both API-key and Authorization values reported as malformed JWT/base64/JSON. Vercel reports the corresponding receiver HTTP503. The branch SUPABASE_URL was privately verified to be a canonical HTTPS project origin. The branch service-role credential is sensitive/write-only and its correctness is not assumed from its presence. This is a confirmed credential failure, not a successful acceptance or a database schema issue.
+
+Next: securely access the existing Supabase project credential, replace only the branch-scoped Vercel service-role value, verify the intended credential against the read endpoint, redeploy, and reconcile with a separately retained fresh acceptance after preserving this failed attempt. Cloud browser currently requires Supabase sign-in; the connected plugin does not expose service-role key retrieval. No secret values were printed. Production remains HELD; no merge, cutover or OPEN occurred.
+
+## 2026-09-24 — stopped-runtime preparation reconciler verified
+
+The live transition stopped API, worker and buyer-store and preserved the expired successor claims and secret with their original bytes/inodes. The original release journal remains unchanged. Its separate recovery journal retains completed stop/archive steps and an unmatched prepare_bindings intent. No receiver URL, epoch, runtime configuration, manifest or writer binding was published.
+
+Native stopped-root validation rejected systemd's retained bin-to-usr/bin link and empty root/var/tmp scaffolding. The compatibility correction accepts only that exact relative link and empty root-owned, non-group/other-writable directories; unexpected content, ownership and link targets remain rejected. Actual stopped-root inventory now passes. Source-hash-pinned loading applies the same correction to frozen native consumers without modifying them.
+
+An explicit preparation reconciler verifies the exact five-event prefix, stopped services, preserved archive, byte-identical runtime configuration and absence of all preparation outputs before retaining its own intent and preparing metadata only. Subsequent ordinary resume must observe that result. Focused tests pass 68/68. Fresh acceptance, restart and production OPEN remain UNVERIFIED. Next: run clean preparation reconciliation, resume the held transition, then continue native fresh acceptance immediately.
+
+## 2026-09-24 — coordinated admitted-read recovery implemented
+
+The separate recovery operator now implements a durable HELD-only transition: stop services, preserve the expired permit files, prepare and publish the new receiver and owned-store bindings, create a new epoch, restart the exact candidate, publish the runtime manifest, renew the writer binding through native checks, and prepare a fresh collector configuration. Each step records intent before execution and observes an uncertain result without dispatching that step again. The original task and provider attempt remain UNKNOWN and unchanged.
+
+Fresh acceptance uses the installed canonical collector and shared delegated-session subsystem with a new epoch and six new idempotency keys. A separately retained permit history refuses unknown collection replay. The exact frozen native release entry is source-hash checked; its fixed operation set receives the fresh six-read adapter and a post-merge writer-binding adapter that uses the real recovery binding as its predecessor. Other release gates stay native. The old main journal and its failed permit histories are not rewritten or relabeled.
+
+Read-only native preparation passed across 17 protected files and four running services. Remote main still matches f3ac3d33c00885de3ebc6d7f5313a4965e75f0e8. Focused tests pass 64/64, covering interrupted transition steps, missing durable intents, unobservable effects, wrong/duplicated acceptance reads, permit/deployment mismatches, mutations, paid requests and frozen-entry source drift. Build, lint and syntax typecheck pass. This entry records implementation only: live transition, fresh acceptance and production OPEN remain UNVERIFIED. Next, run the clean operator check, retain its plan, apply the coordinated transition and immediately continue the native release. User authorization remains in force.
+
+## 2026-09-24 — admitted Seller failure inspection passes; runtime recovery unfinished
+
+A separate read-only recovery observer now validates the exact retained release and collector hash chains, original archive proof, current HELD lifecycle, expired inactive successor permit, sole Seller task and provider attempt, and absence of the other five task/input admissions. It also verifies the new Vercel deployment by both ID and hostname. Its first host run exposed an incompatibility in the historical retirement reader; the observer now validates the full pinned journal bytes/hash chain and independently parses the exact current-operation segment with the native sequence grammar. Historical records are not rewritten or discarded on disk.
+
+Actual protected-host inspection passes with retainedEvidenceDigest 267621ac0883097cc610e5ef4e4354d45ca6a6fc6626a9225465f7d0a229e16a. The output is observational only: UNKNOWN remains UNKNOWN, automaticReplayAllowed=false, acceptancePassed=false, productionOpen=false. Thirty-one focused tests pass, including hash-chain tampering, missing/duplicated/reordered evidence, extra admissions, active authority, state drift and incorrect deployment bindings. Neither a new permit nor task was created.
+
+The complete runtime recovery is NOT IMPLEMENTED. It must establish a new HELD epoch and fresh service generations, adopt the verified Preview through the stopped-service receiver transition, update the owned runtime manifest and writer binding, and create fresh denial and six-read acceptance evidence with new epoch keys. Native sequence/lifecycle/permit consumers must explicitly validate that transition while preserving prior UNKNOWN outcomes. A URL-only update or ordinary restart would leave those bindings inconsistent. The prior task must never be relabeled as successful. Current runtime, receiver URL, journals and protected configurations remain unchanged; no production restart, merge, cutover or OPEN occurred. The existing user approval remains valid; no further permission request is required for this work.
+
+## 2026-09-24 — native Vercel access restored and Preview scope confirmed
+
+Both original protected-token and stored CLI access-token requests returned HTTP403. The existing installed Vercel CLI whoami command successfully refreshed its normal login and returned the expected account. The renewed CLI token then verified the exact new deployment with HTTP200, expected project, READY Preview target and exact candidate SHA. The previous native credential was preserved in a root-only backup, and its protected file was atomically replaced with the verified refreshed credential without logging any value. This restores current access; the copied access token remains subject to expiry. Use the normal CLI refresh before future expiry-related recovery rather than requesting a new user token.
+
+The repository-native observeReceiverDeployment function now passes against both the new deployment ID and hostname. Authenticated environment metadata confirms exactly one Preview SUPABASE_URL and one Preview SUPABASE_SERVICE_ROLE_KEY scoped to release/zola-production-live, plus the intact Production entries and no all-Preview duplicate. Secret correctness and the full Seller request remain UNVERIFIED.
+
+The prior entry's provider-access blocker is resolved. Receiver binding still references the older deployment and was not mutated. Existing recovery validators only accept the earlier observation failure with zero admissions; they cannot reconcile the later admitted Seller outcome_unknown or adopt a new receiver/config binding. A separate reviewed recovery must preserve both UNKNOWN histories and the old task/attempt, bind the newly verified deployment and freshly validate acceptance. Do not replace configuration or rerun the current collector to evade its one-attempt guards. Production remains HELD; no new workflow execution, read-task dispatch, merge, receiver switch or production cutover occurred.
+
+## 2026-09-24 — corrected Preview variables and verified new deployment
+
+Operator screenshots show branch-scoped Preview entries for SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. The operator reported removing the additional all-Preview service-role entry. Exact complete branch names, secret correctness, and post-removal inventory are UNVERIFIED through the connected API; no secrets were requested in chat or logged. The operator then redeployed the existing candidate in Vercel.
+
+Authenticated connected Vercel deployment listing confirms dpl_EfJVukRyw39vR6P7koqm99TiaNCw is READY, Preview (target null), on release/zola-production-live at a8e05ef40e44b6695df5b30356af0e411fe36f1a. Its origin is https://frontend-hjgsm49to-houseomegakennels-4825s-projects.vercel.app. This confirms a successful build, not Seller authorization, successful six-read acceptance, or production OPEN.
+
+Read-only host inspection confirms all four receiver entries still reference the old frontend-3qnw8695h deployment. A metadata-only authenticated request using the native protected Vercel token returns HTTP403 for the new deployment, while the connected app can list it. The connected deploy action returns tool-not-found. Native provider access must be restored through an authorized credential update before its deployment verification can pass. Preserve both UNKNOWN histories, the admitted Seller task, original archive, existing receiver metadata and frozen operators. Do not rerun the collector or overwrite its bound evidence. Next work is exact failed-read reconciliation and a reviewed transition to the newly observed deployment; new runtime acceptance remains UNVERIFIED. Production remains HELD.
+
+## 2026-09-23 — successor checks passed; first Seller read outcome unknown
+
+Clean frozen successor2 734d9ada0924a981d423111e2088a36f034500db passed actual session preflight and one-time issuance. Immediate native continuation stopped at six_reads after 34.90 seconds. All five fresh before-baseline database queries completed, including authenticated owner visibility one and foreign visibility zero. The authenticated admission-denial check was confirmed. Index zero was admitted once for seller.opportunities.search, then its task and sole provider attempt became outcome_unknown. No collected record exists; indices one through five have no tasks at the subsequent read-only observation. Release events 180 through 183 retain successor intent, active, retired UNKNOWN and sequence stop. Production remains HELD; six-read acceptance and OPEN remain UNVERIFIED.
+
+Preserve the frozen operator, original archive, both UNKNOWN permit histories, session receipt and task/attempt records. Do not reissue, archive again, replay the admitted task or rerun the collector blindly. Next action is read-only failure diagnosis and exact reconciliation; the generic stored failure does not establish the underlying transport cause or zero downstream effects. No further production mutation was performed after this stop. Existing authenticated Vercel request logs identify one HTTP503 from the Seller route on the exact candidate deployment at 05:56:11 UTC; the local authority-consumer access log records one HTTP200 in that minute. The deployment error-cluster query contains no corresponding error. The route suppresses its caught exception, so the exact internal failure branch remains UNVERIFIED.
+
+## 2026-09-23 — collector successor source upgrade preserves completed archive
+
+Frozen successor 13b868da16f373eea06a456b5120c68c6f028605 completed archive preflight and archival successfully, preserving original claims and secret bytes/inodes and publishing the linked observation-failure terminal. Session preflight then stopped before issuance because the prior-session digest constant used JSON-quoted string bytes, while the shared hash function hashes strings directly. No new session intent or session was created.
+
+This separate descendant corrects only that digest and source-provenance separation. The completed archive still validates against frozen 13b868da16f373eea06a456b5120c68c6f028605, with unchanged protected paths, receipt hashes, terminal event and collector segment. New session issuance binds the new clean descendant source; frozen original renewal 30fcdaa81c8f6fb070cc0f5ec67e597ecd17330a and ninth operator remain checked. The new operator refuses archive mutation or reconciliation. Parent and child overlays use the new source root. Actual read-only lineage validation passes for the expired absent session. Production session issuance and successor six-read acceptance remain UNVERIFIED; root will run the complete preflight and immediately resume native execution after one successful issuance.
+
+## 2026-09-23 — separate successor for failed premerge observation
+
+The first renewed denial session succeeded, and the first premerge permit retired UNKNOWN after the collector stopped during its before-baseline owner query. The preserved collector contains four completed observation queries and one unmatched owner-query intent. The exact owned PostgreSQL record confirms a SET ROLE permission failure. Initial generation and identity HTTP reads occurred; zero task and unified-input admissions were observed for the six fixed read keys and denial key. The failure does not establish a complete baseline or successful six-read acceptance. The separately frozen role operator 6f63f1de8e4a4aa6d1ef9d54df98a41302c004a1 applied its minimal SET ROLE repair successfully. Its read-only canary then stopped at missing public-schema USAGE; that canary intent has no result and remains preserved. The separate schema operator 61b9fc0a7b6605208eabeb0d24f0201967ffc80c subsequently passed preflight and applied its reviewed schema/read-only privilege correction. Its fresh read-only owner canary passed with authenticated role, one owner row and zero foreign rows; the failed earlier canary remains unchanged. The successor session pins this chained proof.
+
+A separate successor preserves the frozen renewal operator, original release prefix, collector, receipts and audit lineage. Its explicit archive protocol waits for expired inactive authority, verifies the exact failure and zero admissions, and moves the old claims and secret without clobbering or changing their inode or bytes. Durable per-file intents distinguish completed moves from uncertainty; an uncertain move is never dispatched again. The linked terminal record retains the original UNKNOWN outcome. Distinct successor permit events are validated alongside the full original transcript, using the same operation, run, principal, generations and idempotency keys with new bounded authority. A separate collector segment starts a fresh complete before baseline and links its predecessor evidence.
+
+Hash-pinned parent and child overlays support only this exact recovery. The child rechecks the live runtime profile and new delegated-session lineage. Later native stages retain the historical proof without requiring the short-lived session to remain live. Production archive, successor session and successor six-read acceptance remain UNVERIFIED. Independent non-role review is complete. Root next coordinates archive, session issuance and immediate native continuation using the verified chained role/schema and owner/foreign canary proof. No prior query result is reused as a fresh baseline, and no new credential-possession proof is required.
+
+## 2026-09-23 — exact expired premerge denial renewal prepared
+
+Ninth possession and native n8n migration are confirmed; the pending six_reads stage has no premerge permit or collector effects. Its original delegated denial session expired before collection. This isolated successor preserves the original receipt, issued audit, collector configuration bytes and stage digests. A separate root-only recovery validates the exact expired receipt and issued audit, absent original session and empty marker family, database identity and existing principals, unchanged installed HELD runtime, clean source and absence of collector/permit effects before exclusive durable intent. It creates only one replacement session through the shared session subsystem, with a distinct renewed audit and fifteen-minute limit. Receipt publication precedes database commit; any retained intent prevents retry or overwrite.
+
+A hash-pinned parent overlay validates the renewal before the first premerge permit intent and explicitly passes a narrowly scoped bootstrap to the installed collector child. The child independently verifies clean source, runtime profile, original and renewed database/audit evidence, and expiry on every denial check. Original generic validators, configuration binding and later-stage resume behavior are preserved. Production renewal and six-read success remain UNVERIFIED; root coordinates issuance immediately before native continuation after review and preflight. No new proof workflow is needed.
+
+
+## 2026-09-23 — owned version-six premerge permit continuation
+
+Ninth credential possession finalized successfully in frozen operator 4ea5783d25392c1975fb10fc80880f0ae62ff1b8. Native release confirmed n8n migration and reached six_reads. Protected version-six collector configuration validates, but canonical premerge permit rejects version-six before writing any permit intent.
+
+A separate wrapper preserves frozen ninth, canonical source and deployed artifact. A hash-pinned loader changes only the canonical permit version predicate: version-six requires the exact owned backend, profile, schema-three release and operation; non-owned version-four behavior remains. Original config bytes/digest, journal history, generation fencing, read limits and no-replay rules remain intact. A bounded start guard requires confirmed n8n migration and the same sequence at six_reads or later, with no unmatched current-operation n8n intent. The wrapper verifies its clean descendant source and unchanged frozen ninth source, then imports the frozen launcher. Production wrapper execution and six-read success remain UNVERIFIED at this implementation checkpoint.
+
+
+## 2026-09-23 — ninth proof continuation prepared after exact eighth expiry
+
+A separate ninth operator preserves frozen eighth and all prior evidence. Eighth retirement pins its original workflow/version, successful supervisor invocation and second-rounded exit, completed proxy cleanup, and exactly two manual HTTP401 executions 4 and 5 after expiry. It retains only validated public execution projections and raw digests, rejects graph/inventory drift, and reconciles unknown deletion only through authenticated absence without redispatch. Actual protected eighth records and both authenticated execution projections pass read-only classification.
+
+Ninth uses a separate root, workflow challenge and supervised unit with unchanged fifteen-minute window and existing timeout budgets. Explicit native continuation requires the eighth retirement digest, unchanged corrected public credential metadata, all prior lineage, fresh paired possession evidence and cleanup. User approval remains valid; parent coordinates browser readiness before creating the timed window and executes immediately after fresh READY. Retirement and ninth preparation/execution have not occurred in this implementation milestone. Production OPEN remains UNVERIFIED.
+
+
+## 2026-09-23 — eighth expired before two manual executions
+
+Authenticated read-only inspection at 02:18:49Z confirms eighth expired at 01:28:54.021Z with complete proxy restoration and listener closure, no server receipt and no rejection. Workflow oHwmQO5Z0WWZfgaO subsequently executed twice: execution 4 at 02:17:21.536Z and execution 5 at 02:17:57.713Z, both terminal HTTP401 NodeApiError; the complete inventory has no next cursor. Both requests occurred after endpoint removal and do not establish whether the corrected credential is valid. Preserve these records and do not rerun eighth. A future fresh proof requires reviewed exact retirement of this two-execution expiry outcome and coordination with the user before starting another timed window. Production remains HELD and possession remains UNVERIFIED.
+
+## 2026-09-23 — eighth READY awaiting manual execution
+
+Eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 prepared plan 4913e56f910e4c4c405f05c9bd001692b96d58b15d9e32f022c4626c50da549b and inactive workflow oHwmQO5Z0WWZfgaO. Detached supervision acknowledged and explicit READY verification passed for PID 4116437. The fixed window expires 2026-09-23T01:28:54.021Z. Browser control is unavailable, so the user receives the exact workflow link to execute once before expiry. No execution or possession success is claimed. After the user executes, inspect authenticated execution inventory and protected receipt/rejection/cleanup before finalization; never retry an uncertain execution. Production remains HELD.
+
+## 2026-09-23 — failed seventh retired; eighth ready for preparation
+
+Reviewed eighth operator a2d904ba454471f3bcef67431be900f287ce9c19 is clean. After Commander reconnection, actual cloud execution 3 and saved credential metadata passed the new read-only projection and exact transition checks. The reviewed retirement completed AUTH_LENGTH_MISMATCH_RETIRED with workflowDeleted true and positiveProof false; failure evidence remains protected. Do not execute seventh. Eighth has not yet been prepared or executed. Browser control is currently unavailable; manual execution through a fresh workflow can be handed to the user after supervised READY. Production OPEN remains UNVERIFIED.
+
+## 2026-09-22 — failed credential proof and operator-confirmed correction
+
+Seventh workflow D1xx9Mal5UA9iLsb executed once as execution 3. Its exact request reached the verifier and received AUTH_LENGTH_MISMATCH, so possession failed. The error execution and rejection are retained; proxy restoration and listener closure are verified. The frozen seventh operator remains unchanged and its workflow must never execute again. Production remains HELD; OPEN is UNVERIFIED.
+
+The user manually replaced the saved ZOLA Buyer writer credential and reported Saved. An authenticated metadata-only observation confirms updatedAt 2026-09-22T23:16:49.971Z; no secret was read or logged. This confirms an update, not correct possession. A separate eighth operator implements retirement of only the exact failed seventh workflow, preserving its failed evidence and binding the explicit old-to-new public metadata transition. Sixty-one focused tests, normal build/lint/syntax checks and independent source review pass. Actual protected seventh records pass the failure classifier. Fresh paired cloud execution and verifier receipt, complete cleanup and native release gates are still required.
+
+## 2026-09-22 — sixth expiry after blocked click; seventh continuation
+
+Sixth operator 1d329762ee2c90c1b18f1518fb299789d2dad124 retired fifth successfully and prepared workflow Sx1U1E7g7K2UWH9B. Its verifier reached READY, but automatic browser approval review rejected the sole requested execution before dispatch. The user subsequently explicitly approved the requested credential verification and future work; by then sixth expired at 20:06:21.580Z. Read-only verification at 21:41Z found complete cleanup, original proxy, absent listener, no receipt/rejection and complete HTTP200 zero-execution inventory. No sixth execution or possession success occurred.
+
+A separate seventh operator preserves the frozen sixth tree and every prior record. Sixth retirement pins the exact workflow/version, operator and successful supervisor invocation/exit with zero-execution checks and no uncertain DELETE replay. Seventh binds that distinct retirement digest alongside all earlier lineage and requires its own fresh paired cloud execution/server receipt and complete cleanup before explicit native continuation. Do not execute expired sixth or rewrite its plan. Production OPEN remains UNVERIFIED.
+
+## 2026-09-22 — fresh cloud verification after browser recovery
+
+The new session retrieved the Blackspire Drive handoff and verified Commander access, clean frozen fifth source, current candidate pointer a8e05ef, original proxy digest and absent temporary listener. The authenticated fifth execution inventory is HTTP200 with zero rows and no cursor; protected cleanup is complete with no receipt or rejection. Browser control and n8n sign-in now work. Fifth possession remains UNVERIFIED and its expired workflow must never execute.
+
+A separate sixth operator preserves the frozen fifth tree and all retained records. Exact expired-fifth retirement requires its successful supervisor, restored proxy, absent listener and complete zero-execution inventories. The systemd exit timestamp has second precision; the classifier pins the actual observed second and separately requires current time past expiry. Unknown deletion never redispatches. A fresh sixth plan and explicit matching release continuation require prior retirement plus their own successful cloud execution, authenticated server receipt and complete cleanup. Implementation tests and review are separate from production execution and public OPEN.
+
+## 2026-09-22 — confirmed aggregate preflight deadline corrected
+
+Attempt-four retirement completed and deleted its unused workflow with zero executions. Fifth preparation then stopped before publishing its plan; a sanitized diagnostic confirmed Cloud fence elapsed deadline in its final combined preflight. Fifth-attempt aggregate fences now allow 25 seconds, retaining individual GET/native checks at 10 seconds except the existing startup-only native allowance. Two sequential proof fences fit inside 60-second proxy/socket limits, a 70-second HTTP-node limit and a 90-second workflow limit. Prior attempts retain their exact values and rendered bytes. No request retry, identity relaxation or expiry extension is introduced. Fifth possession and release remain UNVERIFIED.
+
+## 2026-09-22 — retirement observation deadline
+
+The first attempt-four retirement stopped before retaining any observation or deletion intent. A subsequent read-only diagnostic opened its recovery context in 7.1 seconds and completed the combined fence in 8.9 seconds; the original timeout remains plausible but UNVERIFIED. Only the not-ready recovery lane now allows twenty-five seconds for its combined sequential observation fence. Individual GET/native checks and ordinary proof-request fences retain ten seconds; no retry or repeated DELETE is introduced. Retirement and fifth credential proof remain UNVERIFIED.
+
+## 2026-09-22 — failed startup retirement and fifth proof window
+
+Attempt four published the temporary proxy and then exited before durable READY. Its records establish failure after proxy publication, without identifying whether the fence or READY publication failed. Separate retirement requires its exact failed supervisor identity, restored proxy, absent listener and READY/proof/rejection, exact inactive workflow and zero execution inventory. Unknown deletion is observed without replay; all prior records remain immutable.
+
+Attempt five has its own root, workflow, nonce, receipt and detached unit. Only its post-proxy startup fence has a twenty-five-second deadline; normal request fences retain ten seconds and HTTP limits remain unchanged. One retry is permitted only for a completed typed GET transport failure after rechecking source, plan, proxy, listener, supervisor identity and expiry. Deadline or invariant failure never retries overlapping work. Fixed phase records distinguish fence progress from READY publication without logging raw errors. Seventy-two focused tests pass, including delayed success, hard timeout without overlap, identity refusal and five-attempt lineage. Actual attempt-four protected records pass the pure classifier read-only. Production execution was not performed; fifth-attempt proof remains UNVERIFIED.
+
+## 2026-09-22 — expired diagnostic retirement and fourth proof window
+
+Attempt three reached READY and cleaned up on expiry before its sole later manual execution failed with HTTP401. That late response does not establish a credential mismatch. A separate retirement lane retains all original records, requires the exact inactive workflow/version, complete one-execution inventory, exact post-expiry failed execution and successful supervisor/proxy cleanup, and deletes only that diagnostic workflow. Unknown deletion is observed without replay. Attempt four uses distinct nonce, receipt, root, workflow and detached unit, with the same fifteen-minute window and bounded parent acknowledgment. Its explicit continuation requires all prior terminal evidence plus its own positive proof and cleanup. Operational order is fresh action-time approval, prepare/create, browser load, supervised start, READY verification and immediate single manual execution. Fifty-eight focused tests pass, including exact expired retirement, unknown deletion reconciliation, four-attempt lineage, real HTTP one-use verification and supervisor rendezvous. The original protected attempt-three records passed the pure classifier read-only. No production execution occurred during implementation; attempt-four possession remains UNVERIFIED.
+
+## 2026-09-21 — interrupted diagnostic attempt and supervised successor
+
+A separate abandonment lane preserves attempt-two records and accepts only the exact inactive workflow/version, zero authenticated execution inventory, original proxy bytes, absent temporary/listener, and existing successful proxy cleanup. It records deletion intent and adopts only authenticated absence after an uncertain DELETE; no repeat deletion or workflow execution is sent. Fresh attempt three has its own protected root, nonce, receipt, workflow name and explicit continuation mode while retaining original UNKNOWN and administrative HTTP405 history. A bounded detached systemd supervisor binds launch receipts, exact execution settings, invocation/PID identity and durable READY before manual execution; final proof requires successful supervisor exit and cleanup. The child waits at most ten seconds for its exact durable parent acknowledgment, revalidating its own unit and process identity without redispatching the service. Forty-seven focused tests pass, including child-first scheduling, delayed or missing acknowledgment and real HTTP one-use checks; actual attempt-two protected records pass the pure classifier. Native abandonment, supervisor launch and cloud proof remain UNVERIFIED and were not executed.
+
+## 2026-09-21 — observed diagnostic workflow adoption
+
+The original cloud proof operator created exactly one inactive diagnostic workflow, but strict serialized JSON comparison rejected the provider response because property order differed. Authenticated GET observations found the exact intended graph and settings unchanged. A separate repair compares structures without changing expected canonical bytes and adopts only that fixed observed workflow using GET requests. It preserves the original plan operator SHA and expiry, records distinct repair provenance, and cannot POST another workflow. Server, finalization and continuation require that adoption proof; no original plan or creation intent is rewritten. Actual key-possession execution remains pending.
+
+## 2026-09-21 — bounded cloud credential possession proof
+
+A separate operator can prepare a fifteen-minute exact nonce route on the existing Jarvis TLS origin, backed by an isolated loopback verifier. It compares the existing writer credential in constant time, records one authenticated receipt before replying, and restores the exact prior nginx bytes after response, expiry or handled termination. Unknown process or reload outcomes require explicit protected cleanup; a retained serve intent cannot restart the one-use endpoint. No sealed application source or business route is changed.
+
+An inactive saved Manual Trigger diagnostic workflow references the existing credential ID without embedding its value. The user initiates execution through the authenticated editor; the operator verifies the cloud execution against the retained graph and nonce receipt, deletes only that diagnostic workflow, and requires proxy/listener cleanup before release continuation. The proof establishes key possession; separate authenticated editor observation establishes the displayed header/domain configuration. It does not claim the masked value was read or that execution proves domain restriction semantics. Original synchronization remains UNKNOWN; the administrative attempt remains acknowledged HTTP405. Production proof execution and final release acceptance are still UNVERIFIED.
+
+## 2026-09-21 — bounded administrative n8n credential reassertion
+
+The original writer credential synchronization has an unresolved intent and remains UNKNOWN. A separate reviewed operator mode prepares one new administrative replacement of the same credential ID and exact retained source value, under the existing HELD lease and global guard. It requires two complete owner, project, workflow and execution inventories. Separate protected records retain the request intent, received HTTP status, bounded response completeness/digest, acknowledgment and result. A second ambiguity never dispatches again. Provider hook, audit and dependency side effects remain UNVERIFIED. No test executes a production PATCH.
+
+Release continuation consumes the distinct acknowledged proof without rewriting the original authority or result. It preserves the original operator SHA and independently checks current code, source and installed ingress. Phase-aware consumer checks permit only the journal-bound Buyer candidate graph while preserving every other workflow definition. Production reassertion and release acceptance remain pending independent review and execution.
+
+## 2026-09-21 — successor provider input binding
+
+The external successor operator now binds the protected owned profile into only the provider ACL adapter. It verifies the unchanged seven-field sequence input, operation, ordinal and observation digest, and rechecks the protected release, canonical source, descriptor and operator identity across awaited observation. Native sequence and journal digests remain unchanged. Five focused tests reproduce the original pre-query rejection and cover scoped normalization and drift denial. Actual read-only owned catalog, zero application routine references and native runtime isolation observations pass. Execution of the repaired release stage remains pending independent review.
+
+## 2026-09-21 — fixed successor coordinator compatibility operator
+
+The retained schema-five retirement binds candidate a8e05ef and operation c8b00904. Its first execution stopped before a new sequence append because two canonical coordinator guards still required historical main2775. A separate clean root operator now verifies the original hashes of exactly two coordinator modules and applies a narrow in-memory compatibility rule for that exact retirement proof, candidate, operation and reviewed mainf3ac. Historical schema-four and other retirement identities retain their original main constraint. Canonical source, sealed artifacts, existing journal rows and registry are not rewritten.
+
+The dedicated launcher uses the existing production composition and holds the normal journal guard. Initial execution requires exact remote main and ancestry; resumed merge execution uses retained CI and the existing exact-head/merged-identity observers. Actual Node loader tests exercise fresh in-memory sequence append and full commander reread without changing the retained prefix, plus main/operation/proof/source drift refusal. Native child graph inspection found no affected coordinator parser dependency in collectors, denial issuance, recovery children, deployment-record helpers or application daemons; no loader is propagated to those processes. Standalone canonical history tools still refuse the new main and require explicit reviewed operator composition. Production execution of this operator remains UNVERIFIED.
 
 ## 2026-09-21 — concurrent main reviewed and reconciled
 
@@ -1204,3 +1693,11 @@ PR #153 merged as 3019785f108f3da78720da265bb5ccc6e17ae2d4 after exact-head CI 3
 ## 2026-09-21 — Successor current source security extension
 
 The independently applied demo migration added restrictive authenticated policies without weakening the existing source freeze. The original observer correctly rejects its additional SearchJob policy. A separate successor-only read-only observer now retains the original migration body, receipt, source/copy/target proofs and strict native semantics; it independently verifies the complete seven-table current policy catalog, pinned auth.jwt dependency, effective denials and the exact applied SQL digest matching reviewed main3019785. Successor preparation publishes a separate current-source-security receipt instead of rewriting historical lineage results. Eighteen focused tests cover policy/function/receipt drift, historical consistency and no repeated SQL. A bounded actual original-source TLS read-only run passed using the original retained plan and receipt; no SQL or production-file mutation occurred. Release deployment remains UNVERIFIED.
+
+## 2026-09-21 — failed diagnostic workflow cleanup
+
+The single cloud diagnostic execution returned the verifier's negative response, with no authenticated server receipt. Root stopped the verifier; read-only checks confirmed the original nginx bytes restored and its loopback listener absent. Key possession remains UNVERIFIED: the negative response does not distinguish missing, duplicate or mismatched authentication headers. A separate operator cleanup retains the original plan, adoption, failed execution and prior uncertain credential outcomes. It permits one deletion of only the exact inactive diagnostic workflow after protected cleanup, HELD and consumer checks; uncertain deletion is observed without replay. Cleanup never creates successful possession evidence or authorizes release. Implementation and focused verification do not execute production deletion.
+
+## 2026-09-21 — second cloud credential verification attempt
+
+The operator observed the user save the existing credential; metadata changed, but possession remains UNVERIFIED. A distinct second-attempt root binds that metadata to the completed first-attempt failure cleanup without rewriting prior records. A fresh timed challenge, one cloud request, protected rejection categories without header values, durable workflow creation acknowledgment and strict saved-graph/execution checks precede any release continuation. The new reader requires the second attempt's positive paired receipt and complete proxy/listener/workflow cleanup. Focused tests cover rejection classes, immutable prior evidence, exact execution snapshot defaults, response acknowledgment recovery and refusal of stale metadata or mixed attempts. No second production workflow, endpoint or execution was created during implementation.

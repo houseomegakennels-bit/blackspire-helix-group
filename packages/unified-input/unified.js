@@ -1,3 +1,4 @@
+import { CONVERSATION_PREFIX, currentConversationMessage } from './conversation-context.js';
 import { withReleaseAdmission,heldAcceptanceContext } from '../shared/release-admission.js';
 import {createHash} from 'node:crypto';
 import { id, now, redact } from '../shared/util.js';
@@ -5,14 +6,20 @@ import { query, execSql, esc, transaction } from '../task-engine/db.js';
 import { createTask, getTask, getFlag, transition, recordEvidence, recordTaskEvent, audit, conversationEvents, pendingDeliveries, completeDelivery, failDelivery, deliveryRecords, taskRecords } from '../task-engine/tasks.js';
 import { getWorkspace } from '../workspace-registry/workspaces.js';
 import { evaluateRequestPolicy } from '../policy/policy.js';
-import { serializeTaskWithCanonicalResult } from '../task-engine/canonical-result.js';
+import { resolveCanonicalTaskResult, serializeTaskWithCanonicalResult } from '../task-engine/canonical-result.js';
 
 const CHANNELS = new Set(['telegram', 'jarvis', 'api']);
 const cancellationTokens = new Map();
 
 function createUnifiedInputAdmitted({ channel, actorId, channelKey, conversationId = null, workspaceId = 'blackspire-command', text, idempotencyKey, metadata = {}, authority = channel === 'telegram' ? 'telegram' : 'untrusted', executionIntent = 'workspace_mutation' }) {
   if (!CHANNELS.has(channel)) return { error: 'unsupported channel', status: 422 };
-  const request = String(text || '').trim();
+  let request = String(text || '').trim();
+  if (request.length > 4000) return { error: 'request must be under 4000 characters', status: 422 };
+  if (process.env.ZOLA_CANONICAL_CONTEXT === 'true' && request.startsWith(CONVERSATION_PREFIX)) {
+    if (executionIntent !== 'read_only') return { error: 'Conversation context requires read-only intent; submit changes as an explicit command', status: 422 };
+    try { request = currentConversationMessage(request); }
+    catch { return { error: 'Invalid conversation input', status: 422 }; }
+  }
   if (!request || request.length > 4000) return { error: 'request is required and must be under 4000 characters', status: 422 };
   if (!['read_only', 'workspace_mutation'].includes(executionIntent)) return { error: 'executionIntent must be read_only or workspace_mutation', status: 422 };
   const workspace = getWorkspace(workspaceId);
@@ -161,6 +168,10 @@ async function drainTelegramOutboxAdmitted(send, { limit = 20 } = {}) {
 
 export function sanitizeEventMessage(type, taskId, payload) {
   const safe = sanitize(payload);
+  if(type==='task.completed') {
+    const result=resolveCanonicalTaskResult({status:'completed',summary:typeof safe.summary==='string'?safe.summary:JSON.stringify(safe.summary)});
+    return result;
+  }
   return redact(`[${type}] ${taskId} ${safe.status || ''}${safe.summary ? `: ${typeof safe.summary === 'string' ? safe.summary : JSON.stringify(safe.summary)}` : ''}${safe.error ? `: ${safe.error}` : ''}`.trim());
 }
 

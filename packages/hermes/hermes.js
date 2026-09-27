@@ -1,3 +1,4 @@
+import { canonicalConversationContext } from '../unified-input/conversation-context.js';
 import { withReleaseAdmission } from '../shared/release-admission.js';
 import path from 'node:path';
 import { transition, audit, getFlag, getTask, heartbeat, createSubtasks, updateSubtask, recordProviderAttempt, prepareCodexDispatch, finishCodexDispatchWithUsage, recordUsage, recordChangedFile, recordCommandResult, recordEvidence, createApproval, latestApproval, monetarySpend, recordTaskEvent } from '../task-engine/tasks.js';
@@ -253,6 +254,7 @@ async function providerWithRetries(task, workspace, selected, plan, context, her
     recordEvidence(task.id, guard.ok ? 'dispatch_attempt' : 'dispatch_prevented', { allowed: guard.ok, reason: guard.reason || 'guard passed', provider: selected.provider, attempt });
     if (!guard.ok) return { ok: false, error: guard.reason };
     const requestPacket = { taskId: task.id, request: hermesRequest.objective, executionIntent: task.execution_intent, attempt, idempotencyKey: hermesRequest.idempotencyKey, deadline: hermesRequest.deadline, cancellationReference: hermesRequest.cancellationReference, dispatchOwnership: workerId && claimToken ? { workerId, claimToken } : null };
+    if (process.env.ZOLA_CANONICAL_CONTEXT === 'true' && task.execution_intent === 'read_only') requestPacket.conversationContext = canonicalConversationContext(task.id);
     const started = Date.now();
     let codexDispatch = null;
     if (selected.provider === 'codex') {
