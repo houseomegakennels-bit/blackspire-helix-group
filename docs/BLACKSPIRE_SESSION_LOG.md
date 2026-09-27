@@ -2857,3 +2857,8 @@ Extended the explicit paired-webhook production profile to both JavaScript start
 ## 2026-09-27 — Record verified startup and store-publication rollback
 
 The real production worker preflight and full CI passed. Native feature activation started the corrected API/worker, then failed at nested store manifest publication. Rollback restored the old release and verified public readiness. A fresh documentation-only successor preserves the already-tested runtime content while the operator composition is corrected. Four inactive old Zola test trees were byte-verified and relocated to the build volume, preserving content and restoring root-disk headroom.
+
+
+## 2026-09-27 — Zola backend, orb UI and private Telegram activated
+
+Completed the final native feature transaction on 170f209 after full CI success. All nine public readiness checks pass. Activated the verified private Telegram webhook without dropping pending updates; two pending owner commands received successful responses, the pending queue is empty and Telegram reports no delivery error. Unauthorized webhook requests return 401. Activated and byte-verified the corresponding context4 UI and orb asset. Retained protected success evidence and both rollback histories. Fresh owner text is still needed to verify a complete natural-language Telegram/Codex round trip. Voice remains deferred.
