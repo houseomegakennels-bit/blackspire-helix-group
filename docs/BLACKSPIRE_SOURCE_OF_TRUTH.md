@@ -1,5 +1,19 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Product directory simplified and browser checks recovered
+
+The public Products directory now uses the shared black/gold page styling, concise product cards with the existing logos/descriptions, direct links, audience labels and jump links for available products and concepts in development. Removed internal design commentary and repetitive introductory panels; retained every catalog item and product/workspace destination. The navigation/header changes remain on `polish/public-navigation`.
+
+Verified with Chromium and Playwright against the local production build at 390px and 1440px: menu opens, Products navigation succeeds, menu closes after navigation, active Products indicator renders, mobile document has no horizontal overflow, and no page errors occur. The agent-browser daemon could not start; direct Playwright provided the browser evidence. Frontend lint has zero errors (two pre-existing warnings), TypeScript and build pass; secret scan passes. The inherited book-studio build tracing warning remains. The canonical-memory checker still refuses the previously merged main changes beyond the older reviewed anchor; no gate or anchor was modified. Production publication remains UNVERIFIED and requires explicit authority. No production changes occurred.
+
+
+## 2026-09-27 — Public website navigation polish prepared locally
+
+Based on main `6cdd47e9`, branch `polish/public-navigation` adds a compact responsive disclosure menu, explicit Home and Products navigation, active-route indicators, keyboard Escape handling, a skip-to-content link, a smaller header logo and complete footer navigation. Existing destinations and black/gold branding are retained. No push or deployment occurred; repository AGENTS.md requires explicit authority for those steps.
+
+Validation: Node 22.23.1 deterministic npm ci, frontend lint (zero errors; two existing warnings), TypeScript, production build and secret scan pass. Build retains an existing book-studio filesystem-tracing warning. Browser verification is UNVERIFIED: Chromium download returned invalid archives. Living-memory check fails against already merged main changes since its prior verified anchor; this pass does not change that anchor or weaken the gate. Next: resolve that existing review checkpoint, visually check desktop/mobile menu interactions, and obtain explicit publish authority.
+
+
 ## 2026-09-24 — nonroot CI fixture correction
 
 PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.

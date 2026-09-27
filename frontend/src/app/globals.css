@@ -4361,3 +4361,44 @@ body::after {
 @media(max-width:900px){.public-hero{gap:32px;grid-template-columns:1fr;padding:48px 0}.public-grid{grid-template-columns:1fr}.public-process,.public-contact-grid,.public-demo-row{grid-template-columns:1fr;gap:24px}.public-nav{gap:1rem}.public-nav .public-client-link{padding-left:0;border-left:0}.public-section{padding:44px 0}}
 @media(max-width:600px){.public-wrap{padding:0 20px 40px}.public-marketing .luxury-header{position:relative}.public-nav{justify-content:flex-start;gap:.3rem 1.1rem;width:100%;font-size:.875rem}.public-nav>.public-button{font-size:.875rem;min-height:44px;padding:.6rem 1rem}.public-actions{flex-direction:column;align-items:stretch}.public-card,.public-demo{padding:22px}.public-footer{grid-template-columns:1fr;padding:32px 20px}.public-wrap h1{font-size:3.25rem}.public-hero{padding-top:32px}.public-demo{scroll-margin-top:20px}}
 @media(prefers-reduced-motion:reduce){.public-marketing *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Public navigation: one compact header, with a disclosure menu on small screens. */
+.public-navigation{margin-left:auto}
+.public-nav{flex-wrap:nowrap;gap:1.25rem}
+.public-nav>a{white-space:nowrap;min-height:44px;display:inline-flex;align-items:center}
+.public-nav>a[aria-current="page"]{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:8px}
+.public-brand-link>div{height:64px;width:112px}
+.public-menu-toggle{display:none}
+.public-skip-link{position:fixed;top:8px;left:16px;z-index:100;transform:translateY(-160%);background:#d7b675;color:#17130c;padding:12px 18px;border-radius:6px}
+.public-skip-link:focus{transform:translateY(0)}
+#main-content{scroll-margin-top:100px}
+@media(max-width:1050px){
+  .public-marketing .luxury-header{position:sticky;top:0}
+  .luxury-header-inner{position:relative;flex-wrap:nowrap}
+  .public-menu-toggle{display:inline-flex;align-items:center;gap:20px;min-height:44px;padding:10px 16px;border:1px solid var(--line-strong);border-radius:8px;color:var(--foreground);font:inherit;cursor:pointer}
+  .public-nav{display:none;position:absolute;top:100%;left:0;right:0;max-height:calc(100dvh - 100px);overflow-y:auto;background:#0b0b0c;border-bottom:1px solid #494034;padding:16px 24px 24px;box-shadow:0 16px 28px #0006}
+  .public-nav[data-open="true"]{display:flex;flex-direction:column;align-items:stretch;gap:4px;width:auto}
+  .public-nav>a{padding:12px 8px;font-size:1rem}
+  .public-nav .public-client-link{border-left:0;border-top:1px solid #494034;margin-top:8px;padding:16px 8px}
+  .public-nav>.public-button{margin-top:8px}
+  .public-brand-link>div{height:56px;width:98px}
+}
+
+.public-directory-intro{padding:36px 0 28px;max-width:850px}
+.public-directory-intro h1{font-size:clamp(2.5rem,4vw,3.5rem);max-width:760px}
+.public-products .public-product-section{padding-top:36px}
+.public-directory-links{display:flex;gap:12px 28px;flex-wrap:wrap;margin-top:28px}
+.public-directory-links a{display:inline-flex;align-items:center;min-height:44px;color:#e7cfa0;text-decoration:underline;text-underline-offset:6px}
+.public-product-section{scroll-margin-top:100px}
+.public-product-card{display:flex;flex-direction:column;gap:20px}
+.public-product-logo{height:140px;display:flex;justify-content:center;align-items:center;background:#0b0b0c;border-radius:8px}
+.public-product-logo img{max-height:120px;height:auto;width:auto;max-width:100%;object-fit:contain}
+.public-wrap .public-product-role{font-size:.875rem;color:#e7cfa0;margin:0}
+.public-product-card h3{margin-top:8px}
+.public-product-card p{margin-bottom:0}
+.public-product-audience{margin-top:auto;border-top:1px solid #3f372b;padding-top:18px}
+.public-product-audience>span{font-size:.875rem;color:#bdb7ae}
+.public-product-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px}
+.public-product-actions>a:last-child:not(:first-child){color:#e7cfa0;min-height:44px;display:inline-flex;align-items:center;text-decoration:underline;text-underline-offset:4px}
+@media(min-width:701px) and (max-width:1100px){.public-products .public-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.public-directory-intro{padding:24px 0}.public-directory-intro h1{font-size:clamp(2.5rem,10vw,3.25rem)}}
