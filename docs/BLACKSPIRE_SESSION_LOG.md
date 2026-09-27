@@ -2843,3 +2843,8 @@ User completed CLI device authorization. Verified new credential returns HTTP 20
 ## 2026-09-27 — Feature transaction prepared
 
 Added the current-predecessor native feature host and transactional runner with rollback and containment. Fifteen focused tests, lint, typecheck and build pass. Native preflight passes without production mutation. Paired Telegram configuration and canonical context are ready for the authorized release; webhook activation remains separate.
+
+
+## 2026-09-27 — Validate rolled-back feature predecessor and prepare corrected retry
+
+Preserved first-attempt evidence and added exact rollback-lineage validation instead of reusing stale recovery generations or deleting the attempt. All 17 feature transaction, authority and preflight tests pass, including altered rollback history/state/binding rejection; lint/typecheck/build and native retry preflight pass. Retry targets fresh a8727fc with explicit paired Telegram mode. Final CI, backend switch and webhook delivery verification are pending.

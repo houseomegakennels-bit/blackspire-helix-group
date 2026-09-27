@@ -14,10 +14,10 @@ import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js
 import {readRootOwnedJson,readRootOwnedJsonDigestSnapshot} from '../buyer-writer/protected-json.js';
 import {acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {validatePasswordMaintenanceReadiness} from './password-maintenance.js';
-const SHA='c9d6b01099b69ff1c6a1a5693650f363540c8090';
-const RECEIVER={releaseSha:SHA,mode:'preview',origin:'https://frontend-jqjl2vj2d-houseomegakennels-4825s-projects.vercel.app',deploymentId:'dpl_6PBTnPPuGpfoKHatWWvkWo377QNR'};
+const SHA='a8727fc798654f4380c4fb17c67d312f2c55ac5f';
+const RECEIVER={releaseSha:SHA,mode:'preview',origin:'https://frontend-5adbv6x7i-houseomegakennels-4825s-projects.vercel.app',deploymentId:'dpl_BziJFcxXc1c2ysYdT8CVcmhgf922'};
 const ROOT='/etc/blackspire/release-admission',STATE=ROOT+'/state.json';
-const RECORD='/var/lib/blackspire-operator/telegram-feature-release-20260927';
+const RECORD='/var/lib/blackspire-operator/telegram-feature-release-retry-20260927';
 const ENV='/etc/blackspire/command.env',RUNTIME=ROOT+'/runtime.env';
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service',STORE='blackspire-buyer-store.service',GATEWAY='blackspire-buyer-writer-gateway.service',UNITS=[API,WORKER,STORE,GATEWAY];
 const fail=()=>{throw Error('Feature transaction rejected; retain protected evidence');};
@@ -88,7 +88,7 @@ export function createTelegramFeatureHost(){
    if(process.getuid()!==0||process.version!=='v22.23.1'||fs.existsSync(RECORD))fail();
    globalJournal=openReleaseJournal();
    if(globalJournal.stream('release').events().at(-1)?.type!=='sequence_completed')fail();
-   const check=await checkFeatureRelease(SHA);await observeReceiverDeployment(RECEIVER);
+   const check=await checkFeatureRelease(SHA,{afterRollback:true});await observeReceiverDeployment(RECEIVER);
    const space=fs.statfsSync('/');if(space.bavail*space.bsize<1073741824)fail();
    oldState=state();oldEnv=read(ENV);oldRuntime=read(RUNTIME);
    if(hash(oldState)!==check.stateDigest||oldEnv.mode!==0o640||oldRuntime.mode!==0o640
@@ -96,16 +96,16 @@ export function createTelegramFeatureHost(){
    pair=readRootOwnedJson('/var/lib/blackspire-operator/zola-telegram/paired.json',{groupId:0,maxBytes:4096});
    if(!/^[0-9]+:[A-Za-z0-9_-]+$/.test(pair.token)||!Number.isSafeInteger(pair.botId)||!Number.isSafeInteger(pair.allowedUserId)
     ||pair.allowedUserId<=0||pair.privateChatId!==pair.allowedUserId||pair.status!=='STAGED_NOT_ACTIVE'||!/^[A-Za-z0-9_-]{32,128}$/.test(pair.webhookSecret))fail();
-   const keys=['TELEGRAM_BOT_TOKEN','TELEGRAM_ALLOWED_USERS','TELEGRAM_PRIVATE_CHAT_ID','TELEGRAM_WEBHOOK_SECRET','TELEGRAM_MODE','ZOLA_CANONICAL_CONTEXT'];
+   const keys=['TELEGRAM_BOT_TOKEN','TELEGRAM_ALLOWED_USERS','TELEGRAM_PRIVATE_CHAT_ID','TELEGRAM_WEBHOOK_SECRET','TELEGRAM_MODE','ZOLA_CANONICAL_CONTEXT','BLACKSPIRE_TELEGRAM_ENABLED'];
    const existing=oldEnv.bytes.toString().split('\n').filter(l=>keys.some(k=>l.startsWith(k+'=')));
    if(existing.length!==1||existing[0]!=='TELEGRAM_MODE=dry-run')fail();
    const bot=await fetch('https://api.telegram.org/bot'+pair.token+'/getWebhookInfo',{signal:AbortSignal.timeout(8000),redirect:'error'}).then(r=>r.json()).catch(fail);
    if(bot.ok!==true||bot.result?.url!=='')fail();
    plan={version:1,operationId:randomUUID(),commanderRunId:randomUUID(),runId:randomUUID(),rollbackAttemptId:randomUUID(),candidateSha:SHA,
     previousSha:oldState.releaseSha,previousRunId:oldState.runId,artifactDigest:check.artifactDigest,previousArtifactDigest:check.previousArtifactDigest,
-    previousAuthorityReceiptDigest:check.authorityReceiptDigest,previousRecoveryResultDigest:check.recoveryResultDigest,
+    previousAuthorityReceiptDigest:check.authorityReceiptDigest,previousRecoveryResultDigest:check.recoveryResultDigest,previousRollbackResultDigest:check.rollbackResultDigest,
     oldState,receiver:RECEIVER,apiEnvironmentDigest:hash(read('/etc/blackspire/command-api.env').bytes.toString())};
-   envNew=Buffer.from(oldEnv.bytes.toString().split('\n').filter(l=>l!=='TELEGRAM_MODE=dry-run').join('\n').replace(/\n?$/,'\n')+keys.map((k,i)=>k+'='+[pair.token,pair.allowedUserId,pair.privateChatId,pair.webhookSecret,'webhook','true'][i]).join('\n')+'\n');
+   envNew=Buffer.from(oldEnv.bytes.toString().split('\n').filter(l=>l!=='TELEGRAM_MODE=dry-run').join('\n').replace(/\n?$/,'\n')+keys.map((k,i)=>k+'='+[pair.token,pair.allowedUserId,pair.privateChatId,pair.webhookSecret,'webhook','true','enabled'][i]).join('\n')+'\n');
    runtimeNew=Buffer.from('BLACKSPIRE_RELEASE_RUN_ID='+plan.runId+'\n');
    plan.configurationDigest=hash(envNew.toString());plan.runtimeDigest=hash(runtimeNew.toString());
    return structuredClone(plan);
@@ -116,7 +116,7 @@ export function createTelegramFeatureHost(){
     journal=openReleaseJournal({root:RECORD});}
    journal.stream('release').append({schema:1,type:'feature_release',operationId:plan.operationId,step,phase});console.log(step+': '+phase);
   },
-  async hold(){const c=await checkFeatureRelease(SHA);if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(oldState,held);},
+  async hold(){const c=await checkFeatureRelease(SHA,{afterRollback:true});if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(oldState,held);},
   async stop(){stop();},
   async prepare(){
    stopped();
@@ -138,7 +138,7 @@ export function createTelegramFeatureHost(){
   },
   async start(){
    await installed();sys('start',GATEWAY,'blackspire-command.target');const p=await bounded(()=>lifecycle(SHA,plan.runId));
-   for(const role of ['api','worker']){const e=envOf(p[role].pid);if(e.TELEGRAM_BOT_TOKEN!==pair.token||e.TELEGRAM_PRIVATE_CHAT_ID!==String(pair.privateChatId)||e.ZOLA_CANONICAL_CONTEXT!=='true'||e.TELEGRAM_MODE!=='webhook')fail();}
+   for(const role of ['api','worker']){const e=envOf(p[role].pid);if(e.TELEGRAM_BOT_TOKEN!==pair.token||e.TELEGRAM_PRIVATE_CHAT_ID!==String(pair.privateChatId)||e.ZOLA_CANONICAL_CONTEXT!=='true'||e.TELEGRAM_MODE!=='webhook'||e.BLACKSPIRE_TELEGRAM_ENABLED!=='enabled')fail();}
    newState={...held,mode:'open',apiGeneration:p.api.generation,workerGeneration:p.worker.generation};retain(RECORD+'/new-state.json',newState);
   },
   async store(){await store.publishManifest({releaseSha:SHA,runId:plan.runId,apiGeneration:newState.apiGeneration,workerGeneration:newState.workerGeneration});await store.start();},

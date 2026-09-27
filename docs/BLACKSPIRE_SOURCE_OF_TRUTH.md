@@ -1,10 +1,16 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Feature rollback verified; corrected Telegram retry prepared
+
+The first c9d6b01 feature transaction reached start and failed on unconditional production Telegram restrictions. Its automatic rollback completed FEATURE_RELEASE_ROLLED_BACK, restoring 6cdd47e and verified public readiness with fresh API/worker/store/writer generations. The original attempt and protected backups are retained unchanged.
+
+Added an explicit retry predecessor verifier that checks the exact completed rollback journal, its original outage-recovery lineage, current configuration and environment, fresh admission state and current writer binding digests. It rejects altered or incomplete history. The retry uses a distinct record directory and fresh a8727fc product artifact/receiver, with BLACKSPIRE_TELEGRAM_ENABLED=enabled. Seventeen operator tests, lint, typecheck and build pass; native read-only transaction preflight passes. Product shell/API/supervisor profile tests pass. Full exact-commit CI and backend activation remain pending; Telegram webhook remains inactive. Voice deferred.
+
 ## 2026-09-27 — Telegram feature transaction prepared
 
 Implemented a distinct feature transaction from the verified recovered OPEN predecessor. It checks the exact sealed c9d6b01 candidate and configured Vercel receiver, stages protected backups, holds intake, stops services, publishes credential-preserving writer/store/receiver bindings and paired Telegram configuration, switches the artifact, starts fresh generations, verifies HELD readiness, then opens and verifies public readiness. The webhook remains separate and inactive until after backend success.
 
-Failure handling contains intake, stops services, restores previous configuration and artifact, renews store/writer generation bindings and verifies the prior public service. Failure of rollback reasserts HELD containment. Fifteen tests pass, including injected failure at every step and completed-step journal write, preflight failure and rollback failure. Lint, typecheck and build pass. Native read-only transaction preflight passes. Not applied yet.
+Failure handling contains intake, stops services, restores previous configuration and artifact, renews store/writer generation bindings and verifies the prior public service. Failure of rollback reasserts HELD containment. Fifteen tests pass, including injected failure at every step and completed-step journal write, preflight failure and rollback failure. Lint, typecheck and build pass. Native read-only transaction preflight passed. Subsequently applied and rolled back at start; see the later rollback entry.
 
 ## 2026-09-27 — Native Vercel authorization repaired
 
