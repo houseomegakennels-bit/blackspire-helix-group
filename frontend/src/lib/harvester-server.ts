@@ -3,7 +3,8 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { inferNcCountyFromCity, matchBuyersForProperty, persistOutreachDraftRecord } from "@/lib/buyer-engine-server";
+import { matchBuyersForProperty, persistOutreachDraftRecord } from "@/lib/buyer-engine-server";
+import { inferNcCountyFromCity } from "@/lib/real-estate-jurisdiction";
 import { launchBuyerSearchFromDeal, createDealFromSellerLead } from "@/lib/deal-engine-server";
 import { runNexusSkipTrace, type NexusLeadRecord } from "@/lib/nexus-server";
 import {
