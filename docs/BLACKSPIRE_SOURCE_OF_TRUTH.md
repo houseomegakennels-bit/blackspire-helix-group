@@ -1,5 +1,10 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Deal report release successor prepared
+
+Candidate 98d45ec34c1d11d1bdb2dda9b476313542b47ac3 adds bounded deal status and review-priority summaries. A distinct operator validates the completed 128ea3f feature receipt at zola-os-release-retry-20260927, operation 949a58fd-8a2e-44f1-90a2-c59bd9641ade, current generations/configuration and installed authority. The environment remains byte-identical, including the existing paired Telegram principal; the new transition rebinds release identities only. Historical operators remain unchanged. Twelve exact-predecessor, protected authority and rollback tests pass. Native exact-predecessor preflight passes. Full product CI and activation remain pending. Vercel receiver dpl_Cjz2m87yZqZnw4MzGPhn3DgXrC1V is READY at the candidate SHA. Runtime remains 128ea3f until successful activation.
+
+
 ## 2026-09-27 — Zola OS and Telegram identity repair live
 
 Production backend and UI are active at 128ea3f775c0de725cbbcbe60b4c2603627b94bd. Full exact-commit CI run 36302634902 passed. The native successor completed FEATURE_RELEASE_ACTIVE, and UI publication completed ZOLA_OS_UI_ACTIVE with 14 source files and 15 nginx aliases. Public HTML/CSS/JS/orb bytes match the sealed release. Local and public readiness pass all nine checks; API, worker, store and writer services are active.
