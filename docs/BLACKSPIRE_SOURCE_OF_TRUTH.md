@@ -1,5 +1,14 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Zola OS conversation successor prepared
+
+The owner Telegram greeting completed through Codex, while a later deal read failed before dispatch because the numeric transport actor lacked a canonical capability principal. Product branch feat/zola-os-conversation-20260927 prepares explicit paired read-only delegation, quiet actionable Telegram delivery, and a phone-first red/black/white conversation interface. Candidate 128ea3f775c0de725cbbcbe60b4c2603627b94bd is sealed for production; full exact-commit CI is pending.
+
+A distinct Zola OS operator validates the completed 170f209 final feature receipt, hash-chained step/writer journal, current generations, configuration/runtime/API environment digests, writer bindings, and installed authority dependencies. It preserves the ACTIVE webhook and paired credentials, adds only the explicit existing-principal binding, and uses the verified store/receiver/writer transition with contained rollback. Sixteen protected authority, predecessor, rollback and runtime-store tests pass. Historical recovery/activation operators remain unchanged. Native read-only predecessor preflight passed on the previous cf2d90 candidate; rerun for the final candidate after Vercel READY. No production mutation yet.
+
+An undeployed package initially stamped unassigned was retained outside its candidate path rather than edited in place; packaging was rerun with explicit production state ownership. No deployment record existed and the live pointer was unchanged. Voice remains deferred.
+
+
 ## 2026-09-27 — Zola and private Telegram live
 
 Native final feature activation completed FEATURE_RELEASE_ACTIVE at 170f209c53b8950466694988d2274ace6fef1a54, artifact digest 00d389e3c5e0b0c96452b2958397ecd434744c52127bad18994fe6b05b996f2a. Exact-commit CI run 36300094886 passed. API, worker, store and writer bindings activated successfully; HELD checks passed, admission opened and all nine public readiness checks passed. The operator uses the existing runtime store factory to propagate deployed-artifact inspection through both protected publication layers. Twenty-three targeted operator tests pass.

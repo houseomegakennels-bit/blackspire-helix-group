@@ -2858,3 +2858,11 @@ Reused the existing runtime store factory in the feature host so both manifest-p
 ## 2026-09-27 — Zola backend, orb UI and private Telegram activated
 
 Completed the final native feature transaction on 170f209 after full CI success. All nine public readiness checks pass. Activated the verified private Telegram webhook without dropping pending updates; two pending owner commands received successful responses, the pending queue is empty and Telegram reports no delivery error. Unauthorized webhook requests return 401. Activated and byte-verified the corresponding context4 UI and orb asset. Retained protected success evidence and both rollback histories. Fresh owner text is still needed to verify a complete natural-language Telegram/Codex round trip. Voice remains deferred.
+
+## 2026-09-27 — Zola OS conversation successor prepared
+
+The owner Telegram greeting completed through Codex, while a later deal read failed before dispatch because the numeric transport actor lacked a canonical capability principal. Product branch feat/zola-os-conversation-20260927 prepares explicit paired read-only delegation, quiet actionable Telegram delivery, and a phone-first red/black/white conversation interface. Candidate 128ea3f775c0de725cbbcbe60b4c2603627b94bd is sealed for production; full exact-commit CI is pending.
+
+A distinct Zola OS operator validates the completed 170f209 final feature receipt, hash-chained step/writer journal, current generations, configuration/runtime/API environment digests, writer bindings, and installed authority dependencies. It preserves the ACTIVE webhook and paired credentials, adds only the explicit existing-principal binding, and uses the verified store/receiver/writer transition with contained rollback. Sixteen protected authority, predecessor, rollback and runtime-store tests pass. Historical recovery/activation operators remain unchanged. Native read-only predecessor preflight passed on the previous cf2d90 candidate; rerun for the final candidate after Vercel READY. No production mutation yet.
+
+An undeployed package initially stamped unassigned was retained outside its candidate path rather than edited in place; packaging was rerun with explicit production state ownership. No deployment record existed and the live pointer was unchanged. Voice remains deferred.
