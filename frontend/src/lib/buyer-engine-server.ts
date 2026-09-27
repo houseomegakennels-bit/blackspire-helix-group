@@ -1875,6 +1875,12 @@ export async function runBuyerReverseSearch(
   rawCriteria: BuyerReverseSearchCriteria,
 ): Promise<BuyerReverseSearchResult> {
   const criteria = normalizeBuyerReverseSearchCriteria(rawCriteria);
+  const hasGeographicCriteria = Boolean(
+    criteria.targetCounty || criteria.targetCity || criteria.targetZipCodes?.length,
+  );
+  if (hasGeographicCriteria && !criteria.targetState) {
+    throw new Error("Target state is required when reverse search uses county, city, or ZIP criteria.");
+  }
   const [sellerLeads, dealCandidates] = await Promise.all([
     listSellerLeads().catch(() => []),
     listReverseSearchDealCandidates().catch(() => []),
