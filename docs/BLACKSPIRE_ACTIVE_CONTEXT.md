@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-09-27 — Storage outage recovered
+
+The final Telegram staging check found public HTTP 502 and failed API/worker services. Root storage was full; both service logs reported database or disk is full. Cleared package-manager caches and six abandoned, older-than-seven-days disposable test directories after checking process references. Approximately 1.1 GB became available. The production SQLite integrity check passed; no active/queued tasks were present.
+
+Added an exact-predecessor same-release recovery operator. It verifies the retained successful password-maintenance result, current admission digest, unchanged configuration/API environment and sealed artifact, database integrity and free space; then holds intake, stops services, restarts the unchanged artifact, publishes fresh store/writer generation bindings, verifies HELD readiness, opens and verifies public readiness. No password, credentials, source artifact or feature configuration is changed. The first attempt stopped at stop because systemd retained failed status on already-stopped units. A narrowly validated exact-history resume clears that status without replaying hold and preserves the interrupted evidence. Four recovery tests pass, including every-step containment and altered predecessor/history rejection.
+
+Native recovery completed OUTAGE_RECOVERED at /var/lib/blackspire-operator/storage-outage-recovery-20260927. API, worker, store and gateway are active; local and public readiness return HTTP 200 with all nine checks true at unchanged SHA 6cdd47e9222501980d2dce0e0e42e05e91db05b0. Storage headroom remains limited and needs follow-up cleanup/capacity work. Telegram remains STAGED_NOT_ACTIVE. A feature successor must now validate this latest recovery result/generations, not the earlier password-maintenance state directly.
+
+
 ## 2026-09-27 — Telegram activation
 
 Bot pairing for BlackspireZolaBot is verified; status STAGED_NOT_ACTIVE. Transport repairs pass 44 targeted tests but are not deployed. Next: a reviewed feature-release transition from the current completed OPEN deployment, including current password-maintenance generations, private owner/token configuration, fresh store/writer bindings, HELD/OPEN readiness and live inbound/outbound proof. Historical successor operators and password-only maintenance are not reusable authority for this release. Voice remains deferred.

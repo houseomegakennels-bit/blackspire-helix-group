@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Storage outage recovered
+
+Zola is restored and readiness passes all nine checks. Preserve the new storage-outage recovery evidence and use its generation state as the current predecessor for subsequent deployment. Root free space is approximately 1.1 GB; reclaim only verified disposable build/test/cache data or add capacity before large builds. Telegram is paired but not activated; complete the distinct feature-release transition and live private delivery verification.
+
 ## 2026-09-27 — Telegram activation
 
 Bot pairing for BlackspireZolaBot is verified; status STAGED_NOT_ACTIVE. Transport repairs pass 44 targeted tests but are not deployed. Next: a reviewed feature-release transition from the current completed OPEN deployment, including current password-maintenance generations, private owner/token configuration, fresh store/writer bindings, HELD/OPEN readiness and live inbound/outbound proof. Historical successor operators and password-only maintenance are not reusable authority for this release. Voice remains deferred.
