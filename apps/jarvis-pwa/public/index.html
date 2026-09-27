@@ -96,6 +96,9 @@
       <div class="panel wide">
         <h2 id="composerHeading">What’s next?</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
         <div class="stack">
+          <label class="sr-only" for="cmd">Command for Zola</label>
+          <textarea id="cmd" placeholder="What are we working on?" enterkeyhint="send"></textarea>
+          <details class="request-options"><summary>Request options</summary>
           <label class="sr-only" for="workspace">Workspace</label>
           <select id="workspace" aria-label="Workspace"></select>
           <label for="executionIntent">How should Zola help?</label>
@@ -104,8 +107,7 @@
             <option value="workspace_mutation">Propose a workspace change</option>
           </select>
           <p class="muted fs-12" id="executionIntentHint">Answer and research leaves files unchanged. Choose a workspace change when you want edits.</p>
-          <label class="sr-only" for="cmd">Command for Zola</label>
-          <textarea id="cmd" placeholder="What are we working on?" enterkeyhint="send"></textarea>
+          </details>
           <div class="row row-center">
             <button class="primary" id="sendBtn" type="button">Send</button>
             <button class="mic ghost" id="micBtn" type="button" aria-describedby="micHint" aria-label="Dictate command" aria-pressed="false">

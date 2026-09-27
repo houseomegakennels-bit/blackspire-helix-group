@@ -146,3 +146,10 @@ ol.msgs li[data-task-id] .chip::before{content:"";display:inline-block;width:20p
  section[data-view="conversation"]>.panel{grid-column:1/-1}
 }
 @media(max-width:359px){#app{padding-inline:14px}.rail{max-width:66%}.badge{font-size:9px}.panel{padding:18px}}
+
+.request-options>summary{padding:6px 0}
+.request-options[open]{display:grid;gap:10px}
+.request-options[open]>summary{margin-bottom:10px}
+.request-options label{display:block;margin-top:10px}
+.request-options select{margin:8px 0}
+@media(max-width:759px){.helix-card{min-height:225px}.helix-wrap{width:180px;height:180px}}

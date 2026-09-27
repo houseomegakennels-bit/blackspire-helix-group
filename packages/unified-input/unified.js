@@ -184,7 +184,8 @@ export function sanitizeEventMessage(type, taskId, payload) {
     return 'I couldn’t finish that request. Open Zola for the details, or try again.';
   }
   if (type === 'task.cancelled') return 'Cancelled. I’ve stopped this request.';
-  if (type === 'task.waiting_for_approval' || type === 'task.waiting_approval') return 'This needs your approval. Open Zola to review it.';
+  if (type === 'task.waiting_for_approval') return 'This needs your approval. Open Zola to review it.';
+  if (type === 'task.waiting_for_manual_response') return 'I need a manual response to continue. Open this task in Zola.';
   if (type === 'task.outcome_unknown') return 'I couldn’t confirm the outcome. Please review this task in Zola before retrying.';
   return redact(`[${type}] ${taskId} ${safe.status || ''}${safe.summary ? `: ${typeof safe.summary === 'string' ? safe.summary : JSON.stringify(safe.summary)}` : ''}${safe.error ? `: ${safe.error}` : ''}`.trim());
 }

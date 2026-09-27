@@ -132,7 +132,7 @@ export function recordTaskEvent(taskId, type, payload = {}) {
   const safePayload = JSON.parse(redact(JSON.stringify({ taskId, conversationId: task.conversation_id, type, ...payload })));
   execSql(`INSERT INTO task_events VALUES (${esc(eventId)},${esc(task.conversation_id)},${esc(taskId)},${esc(type)},${esc(JSON.stringify(safePayload))},${esc(now())});`);
   // Internal telemetry stays in the canonical event log. Chat gets outcomes and decisions only.
-  if (!['task.completed','task.failed','task.cancelled','task.waiting_for_approval','task.waiting_approval','task.outcome_unknown'].includes(type)) return eventId;
+  if (!['task.completed','task.failed','task.cancelled','task.waiting_for_approval','task.waiting_for_manual_response','task.outcome_unknown'].includes(type)) return eventId;
   const bindings = query(`SELECT * FROM conversation_bindings WHERE conversation_id=${esc(task.conversation_id)} AND channel='telegram';`);
   for (const binding of bindings) {
     execSql(`INSERT OR IGNORE INTO channel_deliveries VALUES (${esc(id('delivery'))},${esc(eventId)},${esc(task.conversation_id)},'telegram',${esc(binding.channel_key)},'pending',0,'','',${esc(now())},${esc(now())});`);
