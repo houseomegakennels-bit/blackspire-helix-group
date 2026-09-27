@@ -29,7 +29,7 @@ export function MarketingShell({
   const watermarkSrc =
     watermarkLogoSrc ?? "/brand/blackspire-helix-group-logo-fit.png";
   return (
-    <main
+    <div
       className={`luxury-shell min-h-screen text-foreground ${isDivisionWatermark ? "luxury-shell-division" : "public-marketing"}`}
       style={themeStyle}
     >
@@ -52,11 +52,13 @@ export function MarketingShell({
         />
       </div>
       <div className="luxury-scroll-rail" aria-hidden="true" />
+      <a href="#main-content" className="public-skip-link">Skip to content</a>
       <header className="luxury-header sticky top-0 z-40 border-b border-[var(--line)] bg-[hsl(0_0%_3%/.72)] backdrop-blur-2xl">
         <div className="luxury-header-inner mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:py-4 lg:px-6">
           <Link
             href="/"
-            className="min-w-0 max-w-[270px] transition duration-300 hover:opacity-95"
+            aria-label="Blackspire Helix Group home"
+            className="public-brand-link min-w-0 max-w-[270px] transition duration-300 hover:opacity-95"
           >
             <div className="relative h-[80px] w-[138px] overflow-hidden sm:h-[94px] sm:w-[164px]">
               <Image
@@ -74,7 +76,7 @@ export function MarketingShell({
         </div>
       </header>
 
-      {children}
+      <main id="main-content" tabIndex={-1}>{children}</main>
 
       <footer className="public-footer">
         <div>
@@ -87,10 +89,14 @@ export function MarketingShell({
         <div className="public-footer-links">
           <a href={publicContact.emailHref}>{publicContact.email}</a>
           <a href={publicContact.phoneHref}>{publicContact.phone}</a>
-          <Link href="/ecosystem">Explore our products</Link>
+          <Link href="/services">Services</Link>
+          <Link href="/demos">Demos</Link>
+          <Link href="/ecosystem">Products</Link>
+          <Link href="/about">About</Link>
+          <Link href="/contact">Contact</Link>
           <Link href="/workspaces">Client access</Link>
         </div>
       </footer>
-    </main>
+    </div>
   );
 }

@@ -1,145 +1,79 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
-
-import { EcosystemCard } from "@/components/ecosystem-card";
 import { MarketingShell } from "@/components/marketing-shell";
-import { ecosystemProjects } from "@/lib/ecosystem";
+import { ecosystemProjects, type EcosystemProject } from "@/lib/ecosystem";
 
 export const metadata: Metadata = {
-  title: "Ecosystem | Blackspire Helix Group",
-  description:
-    "Explore the Blackspire Helix Group ecosystem, including live operator divisions and expanding product concepts under the parent brand.",
+  title: "Products | Blackspire Helix Group",
+  description: "Explore Blackspire products for your business and see what is in development.",
 };
 
-const liveProjects = ecosystemProjects.filter((project) => project.status === "live");
-const buildingProjects = ecosystemProjects.filter((project) => project.status === "building");
-const ecosystemLanes = [
-  {
-    id: "01",
-    title: "Live operator divisions",
-    copy: "Revenue-facing systems with working routes, branded identities, and clear audience fit.",
-  },
-  {
-    id: "02",
-    title: "Expanding concepts",
-    copy: "Ideas that already belong to the Blackspire world but still need product shaping or go-to-market definition.",
-  },
-  {
-    id: "03",
-    title: "Parent-brand coherence",
-    copy: "Each division can feel distinct without losing the shared command language of the flagship brand.",
-  },
-] as const;
+function ProductCard({ project }: { project: EcosystemProject }) {
+  return (
+    <article className="public-card public-product-card">
+      {project.logoSrc ? (
+        <div className="public-product-logo">
+          <Image src={project.logoSrc} alt="" width={240} height={160} />
+        </div>
+      ) : null}
+      <div>
+        <p className="public-product-role">{project.role}</p>
+        <h3>{project.name}</h3>
+        <p>{project.description}</p>
+      </div>
+      <div className="public-product-audience">
+        <span>For</span>
+        <p>{project.targetUser}</p>
+      </div>
+      <div className="public-product-actions">
+        <Link className="public-button-secondary" href={project.href}>
+          Explore product<span className="sr-only">: {project.name}</span>
+        </Link>
+        {project.productHref ? (
+          <Link href={project.productHref}>
+            Open workspace<span className="sr-only">: {project.name}</span>
+          </Link>
+        ) : null}
+      </div>
+    </article>
+  );
+}
 
 export default function EcosystemPage() {
   return (
     <MarketingShell>
-      <div className="mx-auto max-w-[1450px] px-4 py-10 lg:px-6">
-        <section className="brand-panel px-6 py-8 lg:px-8">
-          <div className="grid gap-8 xl:grid-cols-[1fr_360px] xl:items-end">
-            <div className="reveal-up">
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Ecosystem Command</p>
-              <h1 className="brand-display brand-accent-text mt-3 text-4xl leading-tight text-white lg:text-6xl">
-                Blackspire Helix Group portfolio map.
-              </h1>
-              <p className="mt-5 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-                Every division belongs to one of two states: live operator surface or expanding concept.
-                The ecosystem page keeps those lanes clear so the brand reads as organized instead of crowded.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3" style={{ animationDelay: "0.15s" }}>
-              <div className="brand-card card-lift p-4">
-                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Total</div>
-                <div className="brand-display mt-2 text-3xl text-white">{String(ecosystemProjects.length).padStart(2, "0")}</div>
-              </div>
-              <div className="brand-card card-lift p-4">
-                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Live</div>
-                <div className="brand-display mt-2 text-3xl text-white">{String(liveProjects.length).padStart(2, "0")}</div>
-              </div>
-              <div className="brand-card card-lift p-4">
-                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Building</div>
-                <div className="brand-display mt-2 text-3xl text-white">{String(buildingProjects.length).padStart(2, "0")}</div>
-              </div>
-            </div>
-          </div>
+      <div className="public-wrap public-products">
+        <section className="public-directory-intro">
+          <h1>Find the right tool for your business.</h1>
+          <p className="public-lead">Explore Blackspire products, learn what each one does, or open your existing workspace.</p>
+          <nav className="public-directory-links" aria-label="Product sections">
+            <a href="#available">Available products</a>
+            <a href="#development">In development</a>
+            <Link href="/workspaces">Client access</Link>
+          </nav>
         </section>
-
-        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
-          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Portfolio logic</p>
-              <h2 className="brand-display mt-3 text-3xl text-white">How to read the ecosystem</h2>
-            </div>
-            <Link href="/contact" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              Ask about a build lane
-            </Link>
-          </div>
-
-          <div className="scroll-reveal mt-6 grid gap-4 lg:grid-cols-3" style={{ animationDelay: "0.1s" }}>
-            {ecosystemLanes.map((lane, i) => (
-              <div key={lane.id} className="brand-card card-lift p-5" style={{ animationDelay: `${i * 0.07}s` }}>
-                <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">{lane.id}</div>
-                <div className="mt-4 text-xl font-semibold text-white">{lane.title}</div>
-                <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">{lane.copy}</p>
-              </div>
+        <section id="available" className="public-section public-product-section">
+          <h2>Available products</h2>
+          <div className="public-grid">
+            {ecosystemProjects.filter((project) => project.status === "live").map((project) => (
+              <ProductCard key={project.slug} project={project} />
             ))}
           </div>
         </section>
-
-        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
-          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Live systems</p>
-              <h2 className="brand-display mt-3 text-3xl text-white">Active division surfaces</h2>
-            </div>
-            <Link href="/workspaces" className="brand-button inline-flex px-5 py-3 text-sm uppercase tracking-[0.18em] transition">
-              Open workspace directory
-            </Link>
-          </div>
-          <div className="scroll-reveal mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3" style={{ animationDelay: "0.1s" }}>
-            {liveProjects.map((project) => (
-              <EcosystemCard key={project.slug} project={project} />
+        <section id="development" className="public-section public-product-section">
+          <h2>In development</h2>
+          <p className="public-intro">Explore the concepts taking shape. Contact us to discuss availability.</p>
+          <div className="public-grid">
+            {ecosystemProjects.filter((project) => project.status === "building").map((project) => (
+              <ProductCard key={project.slug} project={project} />
             ))}
           </div>
         </section>
-
-        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
-          <div className="scroll-reveal">
-            <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Expanding systems</p>
-            <h2 className="brand-display mt-3 text-3xl text-white">Concepts still forming under the parent brand</h2>
-          </div>
-          <div className="scroll-reveal mt-6 grid gap-6 lg:grid-cols-2 xl:grid-cols-3" style={{ animationDelay: "0.1s" }}>
-            {buildingProjects.map((project) => (
-              <EcosystemCard key={project.slug} project={project} />
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-6 brand-panel px-6 py-8 lg:px-8">
-          <div className="scroll-reveal flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Next move</p>
-              <h2 className="brand-display mt-3 text-3xl text-white">Need the public story or the operator layer?</h2>
-            </div>
-          </div>
-
-          <div className="scroll-reveal mt-6 grid gap-4 md:grid-cols-2" style={{ animationDelay: "0.1s" }}>
-            <Link href="/workspaces" className="brand-card card-lift block p-5">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Operator access</div>
-              <div className="mt-4 text-xl font-semibold text-white">Open workspace directory</div>
-              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                Move from portfolio browsing into the live systems that already run the business logic.
-              </p>
-            </Link>
-            <Link href="/contact" className="brand-card card-lift block p-5">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--gold-soft)]">Project intake</div>
-              <div className="mt-4 text-xl font-semibold text-white">Start a branded system build</div>
-              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                Use the intake brief if you want a division, command surface, or automation flow built with this same level of structure.
-              </p>
-            </Link>
-          </div>
+        <section className="public-section public-close">
+          <h2>Not sure which product fits?</h2>
+          <p>Tell us what you want to simplify. We’ll help you find a useful starting point.</p>
+          <Link href="/contact" className="public-button">Let’s talk</Link>
         </section>
       </div>
     </MarketingShell>
