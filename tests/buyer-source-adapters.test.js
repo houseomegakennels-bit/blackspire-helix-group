@@ -25,6 +25,14 @@ test('unsupported county and non-land Wake/Lincoln return null without resolving
   const adapters=createBuyerSourceAdapters({resolveSource:denied,getJson:denied,postFormJson:denied,postForsythJson:denied});
   for(const input of [job('Guilford'),job('Wake','residential'),job('Lincoln','residential')])assert.equal(await adapters.prefetch(input),null);
 });
+test('NC adapters refuse same-named counties outside North Carolina',async()=>{
+  const denied=async()=>assert.fail('non-NC jobs must not resolve or fetch an NC source');
+  const adapters=createBuyerSourceAdapters({resolveSource:denied,getJson:denied,postFormJson:denied,postForsythJson:denied});
+  for(const state of ['VA','SC','TN']) {
+    assert.equal(await adapters.prefetch({...job('Wake'),state}),null);
+    assert.equal(await adapters.prefetch({...job('Orange'),state}),null);
+  }
+});
 test('Ashe mapping retains raw attributes but overrides provider source markers',async()=>{
   const row={OWNER_NAME:'SYNTHETIC',_source_type:'forged',_no_cash_data:false};
   const adapters=createBuyerSourceAdapters({resolveSource:async()=>({source_url:'https://source.example.invalid/query'}),

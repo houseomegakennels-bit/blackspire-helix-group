@@ -3,7 +3,8 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { inferNcCountyFromCity, matchBuyersForProperty, persistOutreachDraftRecord } from "@/lib/buyer-engine-server";
+import { matchBuyersForProperty, persistOutreachDraftRecord } from "@/lib/buyer-engine-server";
+import { inferNcCountyFromCity } from "@/lib/real-estate-jurisdiction";
 import { launchBuyerSearchFromDeal, createDealFromSellerLead } from "@/lib/deal-engine-server";
 import { runNexusSkipTrace, type NexusLeadRecord } from "@/lib/nexus-server";
 import {
@@ -477,7 +478,7 @@ function parseExtraction(text: string, metadata: Record<string, unknown> = {}): 
   return {
     address: addressParts.address ?? seededAddress,
     city: addressParts.city ?? seededCity,
-    state: addressParts.state ?? seededState ?? "NC",
+    state: addressParts.state ?? seededState,
     zip: addressParts.zip ?? seededZip,
     county: cleanText(countyMatch),
     askingPrice: toNumber(money),
@@ -1054,7 +1055,7 @@ export async function createHarvesterIntake(input: HarvesterIntakeInsertInput) {
     propertyAddress: cleanText(input.propertyAddress),
     county: cleanText(input.county),
     city: cleanText(input.city),
-    state: cleanText(input.state)?.toUpperCase() ?? "NC",
+    state: cleanText(input.state)?.toUpperCase() ?? null,
     zip: cleanText(input.zip),
     posterName: cleanText(input.posterName),
     notes: cleanText(input.notes),
@@ -1190,7 +1191,7 @@ export async function extractHarvesterOpportunity(input: {
   // County backfill: infer the NC county from the city when extraction left it
   // blank/Unknown, so the property record and buyer matching have a real county.
   const countyBlank = !payload.county || /^(unknown|unresolved|n\/a)$/i.test(payload.county.trim());
-  if (countyBlank && payload.city) {
+  if (countyBlank && payload.city && payload.state?.trim().toUpperCase() === "NC") {
     const inferredCounty = inferNcCountyFromCity(payload.city);
     if (inferredCounty) payload.county = inferredCounty;
   }
@@ -1286,7 +1287,10 @@ async function persistSellerLeadFromHarvester(
 ) {
   const ownerMailingAddress = intake.sourceUrl || opportunity.address || "Harvester intake";
   const ownerName = opportunity.sellerName || (intake.metadata.posterName as string | undefined) || "Unknown poster";
-  const propertyState = opportunity.state || "NC";
+  const propertyState = opportunity.state?.trim().toUpperCase();
+  if (!propertyState || !/^[A-Z]{2}$/.test(propertyState)) {
+    throw new Error("Resolve the property state before creating a seller lead from Harvester.");
+  }
 
   const { data: owner, error: ownerError } = await supabase
     .from("owners")
@@ -1591,7 +1595,7 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
   // groups). Harvester DISPLAYS the result; it no longer re-implements buyer logic.
   const buyerResult = await matchBuyersForProperty({
     county: opportunity.county,
-    state: opportunity.state ?? "NC",
+    state: opportunity.state,
     city: opportunity.city,
     zip: opportunity.zip,
     propertyType: opportunity.beds && opportunity.baths ? "residential" : opportunity.condition ?? null,

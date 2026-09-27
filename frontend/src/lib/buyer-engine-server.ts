@@ -16,6 +16,7 @@ import {
   type AuthAdminUserRecord,
 } from "@/lib/buyer-engine-auth";
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
+import { inferCountyFromCity, inferNcCountyFromCity, normalizeUsStateCode } from "@/lib/real-estate-jurisdiction";
 import {
   buildCountyCapabilities,
   fallbackCountyCapabilities,
@@ -107,6 +108,7 @@ export type BuyerGroupRegistryRow = {
 export type BuyerReverseSearchCriteria = {
   buyerName?: string;
   buyerGroup?: string;
+  targetState?: string;
   targetCounty?: string;
   targetCity?: string;
   targetZipCodes?: string[];
@@ -126,6 +128,7 @@ export type BuyerReverseSearchMatch = {
   sourceId: string;
   propertyAddress: string;
   city: string;
+  state: string;
   county: string;
   zip: string;
   estimatedArv: number;
@@ -1188,6 +1191,7 @@ export type BuyerForPropertyResult = {
   buyerCount: number;
   demandScore: number;
   assignmentPotential: "high" | "medium" | "low";
+  state: string | null;
   county: string | null;
 };
 
@@ -1198,49 +1202,21 @@ function normalizeCountyName(county?: string | null): string {
     .toLowerCase();
 }
 
-// NC city -> county for the common cities (so a property with a city but no
-// county — e.g. "Durham" or "Greensboro" — still matches buyers).
-const NC_CITY_TO_COUNTY: Record<string, string> = {
-  charlotte: "mecklenburg", greensboro: "guilford", winstonsalem: "forsyth",
-  raleigh: "wake", durham: "durham", fayetteville: "cumberland", cary: "wake",
-  wilmington: "newhanover", highpoint: "guilford", concord: "cabarrus",
-  gastonia: "gaston", asheville: "buncombe", greenville: "pitt",
-  jacksonville: "onslow", chapelhill: "orange", burlington: "alamance",
-  huntersville: "mecklenburg", rockymount: "nash", kannapolis: "cabarrus",
-  statesville: "iredell", monroe: "union", apex: "wake", wakeforest: "wake",
-  hickory: "catawba", goldsboro: "wayne", mooresville: "iredell",
-  newbern: "craven", salisbury: "rowan", sanford: "lee", garner: "wake",
-  thomasville: "davidson", lexington: "davidson", kernersville: "forsyth",
-};
+const normalizeStateCode = normalizeUsStateCode;
 
 const UNKNOWN_COUNTY = new Set(["", "unknown", "unresolved", "n/a", "na", "none"]);
 
-/** Infer an NC county from a city name (Title Case), or null if unknown. */
-export function inferNcCountyFromCity(city?: string | null): string | null {
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (!cityKey) return null;
-  const mapped = NC_CITY_TO_COUNTY[cityKey];
-  if (mapped) return mapped.replace(/\b\w/g, (m) => m.toUpperCase());
-  return null;
-}
+export { inferNcCountyFromCity };
 
-/** Resolve a usable county for buyer matching, inferring from city when needed. */
-function resolveBuyerCounty(county?: string | null, city?: string | null): { core: string; display: string | null } {
+/** Resolve a usable county for buyer matching using state-scoped inference only. */
+function resolveBuyerCounty(state: string, county?: string | null, city?: string | null): { core: string; display: string | null } {
   const core = normalizeCountyName(county);
   if (core && !UNKNOWN_COUNTY.has(core)) {
     return { core, display: county ?? null };
   }
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (NC_CITY_TO_COUNTY[cityKey]) {
-    const mapped = NC_CITY_TO_COUNTY[cityKey];
-    return { core: mapped, display: mapped.replace(/\b\w/g, (m) => m.toUpperCase()) };
-  }
-  // Last resort: many NC cities share their county's name (Durham, Orange, etc).
-  const cityCore = normalizeCountyName(city);
-  if (cityCore && !UNKNOWN_COUNTY.has(cityCore)) {
-    return { core: cityCore, display: city ?? null };
-  }
-  return { core: "", display: null };
+  const inferred = inferCountyFromCity(state, city);
+  if (!inferred) return { core: "", display: null };
+  return { core: normalizeCountyName(inferred), display: inferred };
 }
 
 function resolvePropertyTypeBucket(input: BuyerForPropertyInput): "land" | "residential" {
@@ -1366,33 +1342,38 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
 export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false, readClient, ownedProfiles }: { readOnly?: boolean; readClient?: SupabaseClient; ownedProfiles?: {rows: BuyerProfileRow[];count:number} } = {}): Promise<BuyerForPropertyResult> {
   if (readOnly && !readClient && !ownedProfiles) throw new Error("Observed read client required");
   const supabase = ownedProfiles || ownedBuyerStoreEnabled() ? null : readClient ?? getSupabaseAdmin();
-  const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
+  const stateCode = normalizeStateCode(input.state);
+  const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(stateCode, input.county, input.city);
   const bucket = resolvePropertyTypeBucket(input);
   const limit = input.limit ?? 10;
 
-  if (!countyCore) {
-    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low", county: input.county ?? null };
+  if (!stateCode || !countyCore) {
+    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low", state: stateCode || null, county: input.county ?? null };
   }
 
   // Real buyers from the BuyerProfile universe (the source of truth). Fetch the
   // top-200 by volume for scoring, and a true county-wide count for validation.
-  const owned = ownedProfiles ?? (ownedBuyerStoreEnabled() ? await buyerStoreRequest<{rows:BuyerProfileRow[];count:number}>("profiles-list",{county:countyCore,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200}) : null);
+  const owned = ownedProfiles ?? (ownedBuyerStoreEnabled() ? await buyerStoreRequest<{rows:BuyerProfileRow[];count:number}>("profiles-list",{county:countyCore,state:stateCode,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200}) : null);
   const [{ data: profileRows, error: profileError }, { count: countyBuyerCount, error: countError }] = owned ? [{data:owned.rows,error:null},{count:owned.count,error:null}] : await Promise.all([
     supabase!
       .from("BuyerProfile")
       .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
       .ilike("county", `%${countyCore}%`)
+      .ilike("state", stateCode)
       .order("purchase_count", { ascending: false, nullsFirst: false })
       .limit(200),
     supabase!
       .from("BuyerProfile")
       .select("id", { count: "exact", head: true })
-      .ilike("county", `%${countyCore}%`),
+      .ilike("county", `%${countyCore}%`)
+      .ilike("state", stateCode),
   ]);
   if (readOnly && (profileError || countError)) throw new Error("Buyer matches unavailable");
 
-  const rows = (profileRows ?? []) as BuyerProfileRow[];
-  const buyerCount = countyBuyerCount ?? rows.length;
+  const rows = ((profileRows ?? []) as BuyerProfileRow[]).filter(
+    (row) => normalizeStateCode(row.state) === stateCode && normalizeCountyName(row.county) === countyCore,
+  );
+  const buyerCount = ownedProfiles ? rows.length : countyBuyerCount ?? rows.length;
 
   const profileMatches: BuyerForPropertyMatch[] = rows.map((row) => {
     const { score, reasons } = scoreBuyerProfile(row, bucket);
@@ -1419,6 +1400,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
     ? await listBuyerGroupRegistry(false, { readOnly: true, readClient: readClient ?? supabase ?? undefined })
     : await listBuyerGroupRegistry(false).catch(() => []);
   const institutionalMatches: BuyerForPropertyMatch[] = registry
+    .filter((group) => (group.states ?? []).some((value) => normalizeStateCode(value) === stateCode))
     .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
     .map((group) => ({
       buyerId: group.id,
@@ -1427,7 +1409,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
       source: "institutional_registry" as const,
       matchScore: 62,
       confidence: 60,
-      reasons: [`Institutional buyer group active in ${input.county}.`, group.groupType ? `Profile: ${group.groupType}.` : ""].filter(Boolean),
+      reasons: [`Institutional buyer group active in ${countyDisplay ?? input.county}, ${stateCode}.`, group.groupType ? `Profile: ${group.groupType}.` : ""].filter(Boolean),
       purchaseCount: null,
       lastPurchase: null,
       recommendedAction: "Route through the institutional disposition lane.",
@@ -1442,7 +1424,7 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
   const demandScore = Math.min(100, Math.round(qualified * 7 + topScore * 0.3));
   const assignmentPotential = demandScore >= 70 ? "high" : demandScore >= 40 ? "medium" : "low";
 
-  return { matches, buyerCount, demandScore, assignmentPotential, county: countyDisplay ?? input.county ?? null };
+  return { matches, buyerCount, demandScore, assignmentPotential, state: stateCode, county: countyDisplay ?? input.county ?? null };
 }
 
 const getCachedCountyCapabilities = unstable_cache(
@@ -1672,6 +1654,7 @@ function normalizeBuyerReverseSearchCriteria(criteria: BuyerReverseSearchCriteri
   return {
     buyerName: criteria.buyerName?.trim() || "",
     buyerGroup: criteria.buyerGroup?.trim() || "",
+    targetState: normalizeStateCode(criteria.targetState),
     targetCounty: criteria.targetCounty?.trim() || "",
     targetCity: criteria.targetCity?.trim() || "",
     targetZipCodes,
@@ -1766,6 +1749,7 @@ function buildBuyerProfileReason(criteria: BuyerReverseSearchCriteria, propertyT
 
 function scoreReverseSearchMatch(input: {
   criteria: BuyerReverseSearchCriteria;
+  state: string;
   county: string;
   city: string;
   zip: string;
@@ -1779,6 +1763,15 @@ function scoreReverseSearchMatch(input: {
 }) {
   const reasons: string[] = [];
   let score = 0;
+  const state = normalizeStateCode(input.state);
+  const targetState = normalizeStateCode(input.criteria.targetState);
+  if (targetState && state !== targetState) {
+    return { matchScore: 0, matchReasons: ["State does not match buyer target."] };
+  }
+  if (targetState && state === targetState) {
+    score += 24;
+    reasons.push("State matches buyer target.");
+  }
   const county = input.county.trim().toLowerCase();
   const city = input.city.trim().toLowerCase();
   const zip = input.zip.trim().toLowerCase();
@@ -1882,6 +1875,12 @@ export async function runBuyerReverseSearch(
   rawCriteria: BuyerReverseSearchCriteria,
 ): Promise<BuyerReverseSearchResult> {
   const criteria = normalizeBuyerReverseSearchCriteria(rawCriteria);
+  const hasGeographicCriteria = Boolean(
+    criteria.targetCounty || criteria.targetCity || criteria.targetZipCodes?.length,
+  );
+  if (hasGeographicCriteria && !criteria.targetState) {
+    throw new Error("Target state is required when reverse search uses county, city, or ZIP criteria.");
+  }
   const [sellerLeads, dealCandidates] = await Promise.all([
     listSellerLeads().catch(() => []),
     listReverseSearchDealCandidates().catch(() => []),
@@ -1900,6 +1899,7 @@ export async function runBuyerReverseSearch(
     const estimatedMao = estimateSellerLeadMao(lead, estimatedArv);
     const scored = scoreReverseSearchMatch({
       criteria,
+      state: lead.state ?? "",
       county: lead.county,
       city: lead.city,
       zip: lead.zipCode,
@@ -1918,6 +1918,7 @@ export async function runBuyerReverseSearch(
       sourceId: lead.id,
       propertyAddress: lead.propertyAddress,
       city: lead.city,
+      state: normalizeStateCode(lead.state),
       county: lead.county,
       zip: lead.zipCode,
       estimatedArv,
@@ -1948,6 +1949,7 @@ export async function runBuyerReverseSearch(
     );
     const scored = scoreReverseSearchMatch({
       criteria,
+      state: deal.state ?? "",
       county: deal.county ?? "",
       city: deal.city ?? "",
       zip: deal.zip_code ?? "",
@@ -1966,6 +1968,7 @@ export async function runBuyerReverseSearch(
       sourceId: deal.id,
       propertyAddress: deal.property_address ?? "Unknown property",
       city: deal.city ?? "",
+      state: normalizeStateCode(deal.state),
       county: deal.county ?? "",
       zip: deal.zip_code ?? "",
       estimatedArv,
@@ -1986,7 +1989,7 @@ export async function runBuyerReverseSearch(
   const dedupedByAddress = new Map<string, BuyerReverseSearchMatch>();
   for (const match of [...dealMatches, ...sellerMatches]) {
     if (match.matchScore < 18) continue;
-    const key = `${match.propertyAddress.trim().toLowerCase()}|${match.zip}`;
+    const key = `${match.state}|${match.propertyAddress.trim().toLowerCase()}|${match.zip}`;
     const current = dedupedByAddress.get(key);
     if (!current || match.matchScore > current.matchScore) {
       dedupedByAddress.set(key, match);

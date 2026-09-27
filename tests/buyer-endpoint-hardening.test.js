@@ -57,7 +57,8 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
     ownedBuyerStoreEnabled: () => false,
     getEnvState: () => ({ enabled }),
     getSupabaseAdmin: () => { if (!enabled) throw new Error('synthetic missing configuration'); return supabase; },
-    normalizeCountyName: (value) => value.toLowerCase(),
+    normalizeCountyName: (value) => String(value ?? '').toLowerCase(),
+    normalizeStateCode: (value) => String(value ?? '').trim().toUpperCase(),
     resolveBuyerCounty: () => ({ core: 'forsyth', display: 'Forsyth' }),
     resolvePropertyTypeBucket: () => 'residential',
     scoreBuyerProfile: () => ({ score: 80, reasons: ['Synthetic persisted buyer'] }),
@@ -114,7 +115,7 @@ test('read-only Buyer matching rejects each failed persisted data source', async
   ]) {
     const fixture = buyerFixture(options);
     const expected = (options.profileError || options.countError) ? 'Buyer matches unavailable' : options.registryError?.message || 'Buyer registry unavailable';
-    await assert.rejects(fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), (error) => error.message.includes(expected));
+    await assert.rejects(fixture.matches({ state: 'NC', county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), (error) => error.message.includes(expected));
     assert.equal(fixture.seedCalls(), 0);
   }
 });
@@ -127,7 +128,7 @@ test('read-only Buyer registry rejects missing configuration without synthetic f
 
 test('read-only Buyer matching accepts empty persisted rows without seeding', async () => {
   const fixture = buyerFixture();
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
+  const result = await fixture.matches({ state: 'NC', county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.equal(result.matches.length, 0);
   assert.equal(result.buyerCount, 0);
   assert.equal(fixture.seedCalls(), 0);
@@ -136,10 +137,10 @@ test('read-only Buyer matching accepts empty persisted rows without seeding', as
 
 test('read-only Buyer matching returns persisted profiles and institutional groups without seeding', async () => {
   const fixture = buyerFixture({
-    profiles: [{ id: 'buyer-1', buyer_name: 'Persisted buyer', purchase_count: 3 }],
-    registry: [{ id: 'group-1', canonicalName: 'Persisted group', counties: ['Forsyth'], active: true }],
+    profiles: [{ id: 'buyer-1', buyer_name: 'Persisted buyer', county: 'Forsyth', state: 'NC', purchase_count: 3 }],
+    registry: [{ id: 'group-1', canonicalName: 'Persisted group', states: ['NC'], counties: ['Forsyth'], active: true }],
   });
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
+  const result = await fixture.matches({ state: 'NC', county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.deepEqual(Array.from(result.matches, (row) => row.buyerId), ['buyer-1', 'group-1']);
   assert.equal(result.buyerCount, 1);
   assert.equal(fixture.seedCalls(), 0);

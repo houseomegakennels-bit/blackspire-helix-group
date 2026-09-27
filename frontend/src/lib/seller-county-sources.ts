@@ -1,8 +1,9 @@
 import type { SellerSourceType } from "@/lib/seller-engine";
+import type { RealEstateExpansionState } from "@/lib/real-estate-jurisdiction";
 
 export type SellerCountyStarterSource = {
   county: string;
-  state: "NC";
+  state: RealEstateExpansionState;
   name: string;
   sourceType: SellerSourceType;
   sourceUrl: string;

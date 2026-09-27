@@ -1530,6 +1530,10 @@ async function fetchMecklenburgCountyRawSales(job: SearchJobRecord) {
 }
 
   return { async prefetch(job: SearchJobRecord): Promise<Array<Record<string, unknown>> | null> {
+    // These adapters are reviewed North Carolina source paths. Fail closed for
+    // every other jurisdiction so a same-named county in VA/SC/TN can never
+    // reuse an NC endpoint or transformation by accident.
+    if (job.state.trim().toUpperCase() !== "NC") return null;
     if (isWakeLandJob(job)) return fetchWakeCountyRawSales(job);
     if (isLincolnLandJob(job)) return fetchLincolnCountyRawSales(job);
     if (isForsythJob(job)) return fetchForsythCountyRawSales(job);

@@ -20,6 +20,7 @@ type ReverseSearchResponse = {
 const initialCriteria: BuyerReverseSearchCriteria = {
   buyerName: "",
   buyerGroup: "",
+  targetState: "",
   targetCounty: "",
   targetCity: "",
   targetZipCodes: [],
@@ -151,6 +152,7 @@ export function BuyerEngineReverseSearchPage({
             <div className="grid gap-4 md:grid-cols-2">
               <input value={criteria.buyerName ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerName: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer name" />
               <input value={criteria.buyerGroup ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerGroup: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer group" />
+              <input value={criteria.targetState ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetState: event.target.value.toUpperCase().slice(0, 2) }))} className="brand-input px-3 py-3 text-sm uppercase outline-none" placeholder="State (NC, VA, SC, TN)" maxLength={2} />
               <input value={criteria.targetCounty ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCounty: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target county" />
               <input value={criteria.targetCity ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCity: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target city" />
               <input value={Array.isArray(criteria.targetZipCodes) ? criteria.targetZipCodes.join(", ") : ""} onChange={(event) => setCriteria((current) => ({ ...current, targetZipCodes: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target zip codes (comma separated)" />
@@ -231,7 +233,7 @@ export function BuyerEngineReverseSearchPage({
                     </div>
                     <h4 className="mt-3 text-xl font-semibold text-white">{match.propertyAddress}</h4>
                     <p className="mt-1 text-sm text-[var(--copy-soft)]">
-                      {match.city}, {match.county} {match.zip}
+                      {match.city}, {match.county}, {match.state} {match.zip}
                     </p>
                   </div>
 
