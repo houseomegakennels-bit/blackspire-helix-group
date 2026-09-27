@@ -36,11 +36,48 @@ import {
 import type { OutreachDraftRecord } from "@/lib/outreach-drafts";
 import { getCountyLaunchBlock } from "@/lib/buyer-engine-data";
 import { isResendConfigured, sendReconEmail } from "@/lib/recon-engine/email";
+import { evaluateRealEstateTransactionPolicy, type RealEstateTransactionAction } from "@/lib/real-estate-transaction-policy";
 
 type EnvState = {
   enabled: boolean;
   missing: string[];
 };
+
+type PersistedDealJurisdiction = {
+  state: string | null;
+  county: string | null;
+  city: string | null;
+};
+
+async function getPersistedDealJurisdiction(dealId: string): Promise<PersistedDealJurisdiction | null> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("deal_leads")
+    .select("state,county,city")
+    .eq("id", dealId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return {
+    state: typeof data.state === "string" ? data.state.trim().toUpperCase() : null,
+    county: typeof data.county === "string" ? data.county.trim() : null,
+    city: typeof data.city === "string" ? data.city.trim() : null,
+  };
+}
+
+async function evaluatePersistedDealTransactionPolicy(dealId: string, action: RealEstateTransactionAction) {
+  const jurisdiction = await getPersistedDealJurisdiction(dealId);
+  return {
+    jurisdiction,
+    decision: evaluateRealEstateTransactionPolicy({
+      state: jurisdiction?.state ?? null,
+      county: jurisdiction?.county ?? null,
+      city: jurisdiction?.city ?? null,
+      action,
+    }),
+  };
+}
 
 type DealLeadJoin = {
   id: string;
@@ -4006,6 +4043,11 @@ export async function downloadDealDocument(dealId: string, documentId: string) {
 }
 
 export async function sendDealEmail(input: SendDealEmailInput) {
+  const transactionPolicy = await evaluatePersistedDealTransactionPolicy(input.dealId, "send_deal_email");
+  if (!transactionPolicy.decision.allowed) {
+    return { ok: false as const, error: transactionPolicy.decision.reason };
+  }
+
   if (!isResendConfigured()) {
     return { ok: false as const, error: "RESEND_API_KEY is not configured for email sending yet." };
   }
@@ -5446,7 +5488,12 @@ export async function validateDealFieldsForTemplate(
   if (!detail) return null;
 
   const requestedUse = sanitizeDraftType(options?.requestedUse || templateType);
-  const template = await getContractTemplateByType(templateType, options?.state, options?.templateKey);
+  const transactionPolicy = await evaluatePersistedDealTransactionPolicy(dealId, "generate_contract");
+  const persistedState = transactionPolicy.jurisdiction?.state ?? undefined;
+  if (options?.state?.trim() && persistedState && options.state.trim().toUpperCase() !== persistedState) {
+    throw new Error("Requested contract state does not match the persisted property state.");
+  }
+  const template = await getContractTemplateByType(templateType, persistedState, options?.templateKey);
   if (!template) {
     throw new Error(`No template is registered for ${templateType}.`);
   }
@@ -5459,22 +5506,25 @@ export async function validateDealFieldsForTemplate(
   const missingFields = template.requiredFields.filter((field) => !formatContractFieldValue(field, values[field]));
   const blockedByApproval = template.approvalStatus === "reference_only";
   const blockedByStorage = !template.storagePath;
+  const blockedByTransactionPolicy = !transactionPolicy.decision.allowed;
 
   return {
     template,
     requestedUse,
     purposeValid: purposeCheck.ok,
-    blockingError: purposeCheck.ok
-      ? blockedByApproval
-        ? "Reference template only. Attorney-approved or attorney-reviewed language is required before signature prep."
-        : blockedByStorage
-          ? "This template has no reusable file attached yet."
-          : null
-      : purposeCheck.error,
+    blockingError: blockedByTransactionPolicy
+      ? transactionPolicy.decision.reason
+      : purposeCheck.ok
+        ? blockedByApproval
+          ? "Reference template only. Attorney-approved or attorney-reviewed language is required before signature prep."
+          : blockedByStorage
+            ? "This template has no reusable file attached yet."
+            : null
+        : purposeCheck.error,
     missingFields,
     availableFields: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, formatContractFieldValue(key, value)])),
     disclaimerRequired: true,
-    canGenerate: purposeCheck.ok && !blockedByApproval && !blockedByStorage,
+    canGenerate: transactionPolicy.decision.allowed && purposeCheck.ok && !blockedByApproval && !blockedByStorage,
   };
 }
 
