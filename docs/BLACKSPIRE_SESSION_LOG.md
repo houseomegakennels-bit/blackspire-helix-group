@@ -2839,3 +2839,7 @@ Verified full CI at c9d6b01, sealed its backend artifact, and passed native pred
 ## 2026-09-27 — Server Vercel authentication repaired
 
 User completed CLI device authorization. Verified new credential returns HTTP 200 for exact READY receiver and securely refreshed root-only operator credential. Native receiver verification passes by deployment ID and immutable hostname; feature predecessor check passes again. No production restart or Telegram activation. Remaining work is feature activation host/orchestrator, recovery verification and live private-chat delivery.
+
+## 2026-09-27 — Feature transaction prepared
+
+Added the current-predecessor native feature host and transactional runner with rollback and containment. Fifteen focused tests, lint, typecheck and build pass. Native preflight passes without production mutation. Paired Telegram configuration and canonical context are ready for the authorized release; webhook activation remains separate.

@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Telegram feature transaction prepared
+
+Implemented a distinct feature transaction from the verified recovered OPEN predecessor. It checks the exact sealed c9d6b01 candidate and configured Vercel receiver, stages protected backups, holds intake, stops services, publishes credential-preserving writer/store/receiver bindings and paired Telegram configuration, switches the artifact, starts fresh generations, verifies HELD readiness, then opens and verifies public readiness. The webhook remains separate and inactive until after backend success.
+
+Failure handling contains intake, stops services, restores previous configuration and artifact, renews store/writer generation bindings and verifies the prior public service. Failure of rollback reasserts HELD containment. Fifteen tests pass, including injected failure at every step and completed-step journal write, preflight failure and rollback failure. Lint, typecheck and build pass. Native read-only transaction preflight passes. Not applied yet.
+
 ## 2026-09-27 — Native Vercel authorization repaired
 
 User completed the Commander Vercel CLI device authorization. Verified the new CLI credential against the exact receiver deployment API (HTTP 200, READY, matching c9d6b01099b69ff1c6a1a5693650f363540c8090), then atomically refreshed the root-only operator credential without exposing credential values. The existing native observeReceiverDeployment now passes both deployment-ID and immutable-hostname checks for dpl_6PBTnPPuGpfoKHatWWvkWo377QNR. Re-ran native feature preflight successfully against the current recovered OPEN predecessor and sealed candidate.
