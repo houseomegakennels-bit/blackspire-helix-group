@@ -63,8 +63,28 @@ export function validateFeatureRollbackPredecessor(v, rollback) {
  if(hash(events)!==hash(expected))fail();
  return true;
 }
-function rollbackReceipt() {
- const dir='/var/lib/blackspire-operator/telegram-feature-release-20260927';
+
+export function validateFeatureStoreRollbackPredecessor(v, prior, rollback) {
+ validateFeatureRollbackPredecessor({...v,state:rollback.plan.oldState,writer:prior.writer,bindingDigest:prior.writer.bindingDigest,commitDigest:prior.writer.commitDigest},prior);
+ const {plan:p,result:r,writer,events}=rollback;
+ if(p.version!==1||p.previousRollbackResultDigest!==hash(prior.result)||p.previousRecoveryResultDigest!==hash(v.result)
+  ||hash(p.oldState)!==prior.result.stateDigest||p.previousSha!==v.plan.releaseSha||p.previousRunId!==v.plan.runId
+  ||p.candidateSha!=='a8727fc798654f4380c4fb17c67d312f2c55ac5f'
+  ||r?.version!==1||r.status!=='FEATURE_RELEASE_ROLLED_BACK'||r.planDigest!==hash(p)||r.stateDigest!==hash(v.state)
+  ||r.releaseSha!==p.previousSha||v.state.mode!=='open'||v.state.releaseSha!==p.previousSha||v.state.runId!==p.previousRunId
+  ||v.state.apiGeneration===p.oldState.apiGeneration||v.state.workerGeneration===p.oldState.workerGeneration
+  ||writer?.bindingDigest!==v.bindingDigest||writer?.commitDigest!==v.commitDigest)fail();
+ const release=(step,phase)=>({schema:1,type:'feature_release',operationId:p.operationId,step,phase});
+ const expected=['hold','stop','prepare','install','switchRelease','start'].flatMap(step=>[release(step,'intent'),release(step,'complete')]);
+ expected.push(release('store','intent'));
+ for(const step of ['retire_commit','retire_binding','publish'])for(const phase of ['intent','complete'])
+  expected.push({schema:1,type:'feature_writer',attemptId:p.rollbackAttemptId,step,phase});
+ expected.push(release('rollback','complete'));
+ if(hash(events)!==hash(expected))fail();
+ return true;
+}
+
+function rollbackReceipt(dir='/var/lib/blackspire-operator/telegram-feature-release-20260927') {
  const p=rootJson(dir+'/plan.json'),result=rootJson(dir+'/rollback-result.json');
  if(fs.existsSync(dir+'/result.json')||fs.existsSync(dir+'/commander.lock')||!/^[-a-f0-9]{36}$/.test(p.rollbackAttemptId))fail();
  const content=bytes(dir+'/release.jsonl',{mode:0o600}).toString();
@@ -88,8 +108,10 @@ export async function checkFeatureRelease(candidateSha, {afterRollback=false}={}
  const bindingFile='/etc/blackspire/buyer-writer-binding.json',gid=fs.lstatSync(bindingFile).gid;
  const binding=readRootOwnedJsonDigestSnapshot(bindingFile,{groupId:gid,maxBytes:4096}),commit=readRootOwnedJsonDigestSnapshot(bindingFile+'.commit.json',{groupId:gid,maxBytes:4096});
  const predecessor={plan,result,state,retainedState:rootJson(RECOVERY+'/new-state.json'),configurationDigest:config(),environmentDigest:envDigest(),writer,bindingDigest:binding.digest,commitDigest:commit.digest};
- const rollback=afterRollback?rollbackReceipt():null;
- if(rollback)validateFeatureRollbackPredecessor(predecessor,rollback);else validateFeaturePredecessor(predecessor);
+ const prior=afterRollback?rollbackReceipt():null;
+ const rollback=afterRollback==='store'?rollbackReceipt('/var/lib/blackspire-operator/telegram-feature-release-retry-20260927'):prior;
+ if(afterRollback==='store')validateFeatureStoreRollbackPredecessor(predecessor,prior,rollback);
+ else if(rollback)validateFeatureRollbackPredecessor(predecessor,rollback);else validateFeaturePredecessor(predecessor);
  if(candidateSha===state.releaseSha||fs.realpathSync('/opt/blackspire-command/current')!=='/opt/blackspire-command/releases/'+state.releaseSha
   ||fs.existsSync(ROOT+'/pending.json')||UNITS.some(u=>run(['show',u,'-p','ActiveState','--value']).trim()!=='active'))fail();
  const current=await inspectBuyerWriterArtifact({artifactRoot:'/opt/blackspire-command/releases/'+state.releaseSha,releaseSha:state.releaseSha,environment:'production'});

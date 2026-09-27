@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Reuse verified runtime store publication for final Telegram attempt
+
+The a8727fc attempt started the corrected API and worker, then rolled back at store publication because the feature host used the sealed-store factory for nested runtime manifest publication. Switched the host to the existing createOwnedRuntimeStoreTransition factory, which forwards deployed-artifact inspection at both protected layers while preserving sealed preparation. Its actual protected-file integration fixtures cover publication, replay, identity/generation drift and lost rename acknowledgement.
+
+The next attempt explicitly validates both retained rollback histories, their original recovery lineage, current generation/configuration/binding digests and preserved authority files. It uses a distinct final record directory and fresh 170f209 artifact/receiver. The product runtime tree is unchanged from fully passing a8727fc CI; 170f209 changes only rollback documentation and immutable release identity. No webhook activation yet.
+
 ## 2026-09-27 — Feature rollback verified; corrected Telegram retry prepared
 
 The first c9d6b01 feature transaction reached start and failed on unconditional production Telegram restrictions. Its automatic rollback completed FEATURE_RELEASE_ROLLED_BACK, restoring 6cdd47e and verified public readiness with fresh API/worker/store/writer generations. The original attempt and protected backups are retained unchanged.

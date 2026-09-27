@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {hash} from '../packages/zola-release/commander-journal.js';
-import {validateFeaturePredecessor,validateFeatureAuthoritySnapshot,validateFeatureRollbackPredecessor} from '../packages/zola-release/feature-release-preflight.js';
+import {validateFeaturePredecessor,validateFeatureAuthoritySnapshot,validateFeatureRollbackPredecessor,validateFeatureStoreRollbackPredecessor} from '../packages/zola-release/feature-release-preflight.js';
 function fixture() {
  const state={mode:'open',releaseSha:'a'.repeat(40),runId:'run',apiGeneration:'api',workerGeneration:'worker'};
  const plan={releaseSha:state.releaseSha,runId:state.runId,configurationDigest:'config',environmentDigest:'env'};
@@ -62,4 +62,32 @@ test('rollback predecessor rejects altered history, identity, configuration and 
   x=>x.v.commitDigest='changed',x=>x.rollback.result.status='FEATURE_RELEASE_ACTIVE',
   x=>x.v.retainedState.runId='changed'
  ]){const x=rollbackFixture();mutate(x);assert.throws(()=>validateFeatureRollbackPredecessor(x.v,x.rollback));}
+});
+
+function storeRollbackFixture(){
+ const {v,rollback:prior}=rollbackFixture();
+ const oldState=structuredClone(v.state);
+ v.state={...v.state,apiGeneration:'third-api',workerGeneration:'third-worker'};
+ const plan={version:1,previousRecoveryResultDigest:hash(v.result),previousRollbackResultDigest:hash(prior.result),oldState,
+  previousSha:oldState.releaseSha,previousRunId:oldState.runId,candidateSha:'a8727fc798654f4380c4fb17c67d312f2c55ac5f',
+  operationId:'op2',rollbackAttemptId:'rollback2'};
+ const release=(step,phase)=>({schema:1,type:'feature_release',operationId:'op2',step,phase});
+ const events=['hold','stop','prepare','install','switchRelease','start'].flatMap(step=>[release(step,'intent'),release(step,'complete')]);
+ events.push(release('store','intent'));
+ for(const step of ['retire_commit','retire_binding','publish'])for(const phase of ['intent','complete'])
+  events.push({schema:1,type:'feature_writer',attemptId:'rollback2',step,phase});
+ events.push(release('rollback','complete'));
+ const rollback={plan,result:{version:1,status:'FEATURE_RELEASE_ROLLED_BACK',planDigest:hash(plan),stateDigest:hash(v.state),releaseSha:oldState.releaseSha},writer:v.writer,events};
+ return {v,prior,rollback};
+}
+test('store rollback retains the verified first rollback lineage and current generations',()=>{
+ const x=storeRollbackFixture();assert.equal(validateFeatureStoreRollbackPredecessor(x.v,x.prior,x.rollback),true);
+});
+test('store rollback refuses missing ancestry, drift and incomplete store-attempt history',()=>{
+ for(const mutate of [
+  x=>x.rollback.plan.previousRollbackResultDigest='changed',x=>x.prior.events.pop(),
+  x=>x.rollback.events[12].phase='complete',x=>x.rollback.events.pop(),
+  x=>x.v.state.apiGeneration='new-api',x=>x.v.bindingDigest='changed',
+  x=>x.v.configurationDigest='changed',x=>x.rollback.plan.oldState.workerGeneration='changed'
+ ]){const x=storeRollbackFixture();mutate(x);assert.throws(()=>validateFeatureStoreRollbackPredecessor(x.v,x.prior,x.rollback));}
 });

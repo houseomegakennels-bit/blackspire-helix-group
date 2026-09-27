@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {hash,openReleaseJournal} from './commander-journal.js';
 import {checkFeatureRelease} from './feature-release-preflight.js';
 import {createFeatureAuthorityRebind} from './feature-authority-rebind.js';
-import {createOwnedStoreTransition} from './owned-store-transition.js';
+import {createOwnedRuntimeStoreTransition} from './owned-runtime-store.js';
 import {createReceiverOriginTransition,observeReceiverDeployment} from './receiver-origin-transition.js';
 import {observeHeldLifecycle} from './held-lifecycle.js';
 import {createHeldWriterBindingHost} from './held-writer-binding.js';
@@ -14,10 +14,10 @@ import {inspectBuyerWriterArtifact} from '../buyer-writer/artifact-inspection.js
 import {readRootOwnedJson,readRootOwnedJsonDigestSnapshot} from '../buyer-writer/protected-json.js';
 import {acquireReleaseAdmissionLock,validateReleaseAdmissionState} from '../shared/release-admission.js';
 import {validatePasswordMaintenanceReadiness} from './password-maintenance.js';
-const SHA='a8727fc798654f4380c4fb17c67d312f2c55ac5f';
-const RECEIVER={releaseSha:SHA,mode:'preview',origin:'https://frontend-5adbv6x7i-houseomegakennels-4825s-projects.vercel.app',deploymentId:'dpl_BziJFcxXc1c2ysYdT8CVcmhgf922'};
+const SHA='170f209c53b8950466694988d2274ace6fef1a54';
+const RECEIVER={releaseSha:SHA,mode:'preview',origin:'https://frontend-51l64gwm9-houseomegakennels-4825s-projects.vercel.app',deploymentId:'dpl_DitsD2u4oeWLviukoUgXSWZt8uFV'};
 const ROOT='/etc/blackspire/release-admission',STATE=ROOT+'/state.json';
-const RECORD='/var/lib/blackspire-operator/telegram-feature-release-retry-20260927';
+const RECORD='/var/lib/blackspire-operator/telegram-feature-release-final-20260927';
 const ENV='/etc/blackspire/command.env',RUNTIME=ROOT+'/runtime.env';
 const API='blackspire-command.service',WORKER='blackspire-command-worker.service',STORE='blackspire-buyer-store.service',GATEWAY='blackspire-buyer-writer-gateway.service',UNITS=[API,WORKER,STORE,GATEWAY];
 const fail=()=>{throw Error('Feature transaction rejected; retain protected evidence');};
@@ -88,7 +88,7 @@ export function createTelegramFeatureHost(){
    if(process.getuid()!==0||process.version!=='v22.23.1'||fs.existsSync(RECORD))fail();
    globalJournal=openReleaseJournal();
    if(globalJournal.stream('release').events().at(-1)?.type!=='sequence_completed')fail();
-   const check=await checkFeatureRelease(SHA,{afterRollback:true});await observeReceiverDeployment(RECEIVER);
+   const check=await checkFeatureRelease(SHA,{afterRollback:'store'});await observeReceiverDeployment(RECEIVER);
    const space=fs.statfsSync('/');if(space.bavail*space.bsize<1073741824)fail();
    oldState=state();oldEnv=read(ENV);oldRuntime=read(RUNTIME);
    if(hash(oldState)!==check.stateDigest||oldEnv.mode!==0o640||oldRuntime.mode!==0o640
@@ -116,14 +116,14 @@ export function createTelegramFeatureHost(){
     journal=openReleaseJournal({root:RECORD});}
    journal.stream('release').append({schema:1,type:'feature_release',operationId:plan.operationId,step,phase});console.log(step+': '+phase);
   },
-  async hold(){const c=await checkFeatureRelease(SHA,{afterRollback:true});if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(oldState,held);},
+  async hold(){const c=await checkFeatureRelease(SHA,{afterRollback:'store'});if(hash(oldState)!==c.stateDigest)fail();held={...oldState,mode:'held',apiGeneration:null,workerGeneration:null};touched=true;exchange(oldState,held);},
   async stop(){stop();},
   async prepare(){
    stopped();
    authority=createFeatureAuthorityRebind({operationId:plan.operationId,commanderRunId:plan.commanderRunId,candidateSha:plan.previousSha,candidateArtifactDigest:plan.previousArtifactDigest,newMainSha:SHA,artifactDigest:plan.artifactDigest,epochRunId:plan.runId,previousRunId:plan.previousRunId,previousAuthorityReceiptDigest:plan.previousAuthorityReceiptDigest,previousRecoveryResultDigest:plan.previousRecoveryResultDigest},{assertStopped:stopped});
    authorityProof=await authority.prepare();retain(RECORD+'/authority-plan.json',authorityProof);
    const runtime=JSON.parse(read('/etc/blackspire-buyer-store/runtime.json').bytes);
-   store=createOwnedStoreTransition({inspect:inspectBuyerWriterArtifact});storeProof=await store.prepare({releaseSha:SHA,previousSha:plan.previousSha,origin:RECEIVER.origin,backendProfile:'owned-postgres-v1',profileDigest:runtime.client.profileDigest});retain(RECORD+'/store-plan.json',storeProof);
+   store=createOwnedRuntimeStoreTransition();storeProof=await store.prepare({releaseSha:SHA,previousSha:plan.previousSha,origin:RECEIVER.origin,backendProfile:'owned-postgres-v1',profileDigest:runtime.client.profileDigest});retain(RECORD+'/store-plan.json',storeProof);
    receiver=createReceiverOriginTransition({assertStopped:stopped,readMetadata:()=>({schema:1,releaseSha:SHA,frontendOrigin:RECEIVER.origin,deploymentId:RECEIVER.deploymentId})});
    receiverProof=await receiver.prepare({releaseSha:SHA,mode:'preview'});retain(RECORD+'/receiver-plan.json',receiverProof);
   },

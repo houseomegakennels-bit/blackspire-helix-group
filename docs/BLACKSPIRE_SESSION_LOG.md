@@ -2848,3 +2848,8 @@ Added the current-predecessor native feature host and transactional runner with 
 ## 2026-09-27 — Validate rolled-back feature predecessor and prepare corrected retry
 
 Preserved first-attempt evidence and added exact rollback-lineage validation instead of reusing stale recovery generations or deleting the attempt. All 17 feature transaction, authority and preflight tests pass, including altered rollback history/state/binding rejection; lint/typecheck/build and native retry preflight pass. Retry targets fresh a8727fc with explicit paired Telegram mode. Final CI, backend switch and webhook delivery verification are pending.
+
+
+## 2026-09-27 — Correct store runtime composition and retain both rollback histories
+
+Reused the existing runtime store factory in the feature host so both manifest-publication layers inspect the deployed artifact. Added exact chained rollback predecessor checks and rejection tests; preserved both prior attempt directories and created a distinct final-attempt path. Final target 170f209 is a documentation-only successor of the verified a8727fc runtime. Backend activation and real Telegram delivery remain pending.
