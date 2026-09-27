@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Bounded deal status reports prepared
+
+Prepared richer deal reports with record count and limited-collection disclosure, source snapshot, stage, next action, missing inputs, recorded contract readiness, motivation score, MAO and strategy. Suspected test labels and unknown-property identities are advisory flags; all returned records remain visible and no source data changes. Review priority uses the highest motivation score among returned unflagged records, explicitly not an independently verified recommendation. Latest activity is unavailable in the source and is disclosed as such. Reports remain below 3500 characters with per-record detail truncation explicitly marked.
+
+Deal status and focus/priority questions now select the same current authorized deal.records.search capability. Thirty-four targeted tests pass, including cross-workspace and permission gates, no mutation, flagged record handling and maximum message size. Lint, typecheck and build pass. The owner screenshot confirms the earlier runtime context correction now produces current operating-state guidance. Production is still 128ea3f775c0de725cbbcbe60b4c2603627b94bd; this report upgrade is not deployed. Full CI and a new protected successor release are next. Broader workspace overview and voice remain deferred.
+
+
 ## 2026-09-27 — Live Telegram acceptance and stale workspace context repaired
 
 The real owner request task_e923b58f5367bf5c completed deal.records.search at 08:30 UTC and its final Telegram response was delivered. Two later owner conversation tasks also completed and were delivered. All nine runtime readiness checks still pass at deployed SHA 128ea3f775c0de725cbbcbe60b4c2603627b94bd.

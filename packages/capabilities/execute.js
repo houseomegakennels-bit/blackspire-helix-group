@@ -38,7 +38,7 @@ export function selectCapabilityForTask(task, registry = blackspireCapabilityReg
   const buyerProfileMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:profile|profiles|list|find|show|cash buyer)\b/i.test(objective) && !/\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
   const buyerMatchMatch = /\b(?:buyer|buyers|buy)\b/i.test(objective) && /\b(?:match|matches|who would buy|for (?:this )?deal|for (?:this )?property)\b/i.test(objective);
   const dealAnalysisMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:underwriting|analysis|MAO|ARV|repair|wholesale|deal rating)\b/i.test(objective);
-  const dealRecordsMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:list|search|show|active|all)\b/i.test(objective) && !dealAnalysisMatch;
+  const dealRecordsMatch = /\bdeal(?:s)?\b/i.test(objective) && /\b(?:list|search|show|active|all|status|report|focus|prioriti[sz]e|first)\b/i.test(objective) && !dealAnalysisMatch;
   if (nexusEnrichmentMatch && !sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealAnalysisMatch && !dealRecordsMatch) return registry.get('nexus.enrichment.status');
   if (sellerMatch && !buyerProfileMatch && !buyerMatchMatch && !dealRecordsMatch && !dealAnalysisMatch) return registry.get('seller.opportunities.search');
   if (buyerMatchMatch) return registry.get('buyer.matches.search');
