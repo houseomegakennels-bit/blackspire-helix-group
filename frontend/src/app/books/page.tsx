@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
 import { MarketingShell } from "@/components/marketing-shell";
 import { listPublishedBooks } from "@/lib/book-studio/service";
 import { getAssetUrl } from "@/lib/book-studio/store";
+
+export const metadata: Metadata = { title: "Books | Blackspire Helix Group", description: "Watch and listen to Blackspire audiobook chapters." };
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +19,10 @@ export default async function PublicBooksPage() {
         <section className="brand-panel px-6 py-8 lg:px-8">
           <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Published Audiobooks</p>
           <h1 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-6xl">
-            Finished Blackspire books, ready to play online.
+            Books to watch and listen to.
           </h1>
           <p className="mt-5 max-w-4xl text-sm leading-7 text-[var(--copy-soft)]">
-            These are the public book pages. Each finished title plays chapter-by-chapter as MP4 scene reels with synchronized audiobook audio.
+            Choose a book, press play, and watch its illustrated audiobook chapters.
           </p>
         </section>
 
@@ -46,7 +49,7 @@ export default async function PublicBooksPage() {
                     <div className="text-2xl font-semibold text-white">{book.title}</div>
                     <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{book.synopsis}</p>
                     <div className="mt-4 text-[11px] uppercase tracking-[0.18em] text-[var(--gold-soft)]">
-                      {book.chapters.length} chapter players
+                      Watch book · {book.chapters.length} chapters
                     </div>
                   </div>
                 </Link>

@@ -92,6 +92,7 @@ export function MarketingShell({
           <Link href="/services">Services</Link>
           <Link href="/demos">Demos</Link>
           <Link href="/ecosystem">Products</Link>
+          <Link href="/books">Books</Link>
           <Link href="/about">About</Link>
           <Link href="/contact">Contact</Link>
           <Link href="/workspaces">Client access</Link>

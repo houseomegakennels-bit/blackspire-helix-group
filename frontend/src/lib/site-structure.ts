@@ -69,6 +69,14 @@ export const siteNavSections: SiteNavSection[] = [
 
 export const workspaceEntries: WorkspaceEntry[] = [
   {
+    title: "Books",
+    href: "/books",
+    division: "Creative Publishing",
+    status: "Public",
+    description: "Watch and listen to published Blackspire books, with a video player and chapter selection for every title.",
+    primaryAction: "Watch books",
+  },
+  {
     title: "Sentinel",
     href: "/workspace/sentinel",
     division: "Real Estate Intelligence",
