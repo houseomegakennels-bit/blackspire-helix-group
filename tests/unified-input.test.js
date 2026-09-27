@@ -16,7 +16,7 @@ prepareDisposableDatabase(process.env.BLACKSPIRE_DB_PATH);
 const { provisionRouteAuthorization } = await import('./helpers/provision-route-authorization.js');
 provisionRouteAuthorization(['blackspire-command', 'zero-budget']);
 const { createUnifiedInput, getConversation, cancelFromChannel, drainTelegramOutbox } = await import('../packages/unified-input/unified.js');
-const { getTask, taskRecords, deliveryRecords } = await import('../packages/task-engine/tasks.js');
+const { getTask, taskRecords, deliveryRecords, transition } = await import('../packages/task-engine/tasks.js');
 const { upsertWorkspace } = await import('../packages/workspace-registry/workspaces.js');
 const { processTask } = await import('../packages/hermes/hermes.js');
 const { handleTelegramUpdate } = await import('../apps/telegram/bot.js');
@@ -82,18 +82,19 @@ test('canonical cancellation emits sanitized Telegram event', async () => {
   assert.equal(cancelled.task.status, 'cancelled');
   const messages = [];
   await drainTelegramOutbox(async (reply) => { messages.push(...reply.text); return { sent: true }; });
-  assert.ok(messages.some((message) => message.includes('task.cancelled') && message.includes(created.taskId)));
+  assert.ok(messages.some((message) => message === 'Cancelled. I’ve stopped this request.'));
   assert.ok(messages.every((message) => !/token|password|api[_ -]?key/i.test(message)));
 });
 
 test('delivery failures stay retryable without changing canonical state', async () => {
   const created = createUnifiedInput({ channel: 'telegram', actorId: '1001', channelKey: 'chat-11', text: 'safe delivery failure', idempotencyKey: 'delivery-1' });
+  transition(created.taskId, 'failed', {error:'fixture failure'});
   await drainTelegramOutbox(async () => { throw new Error('mock transport unavailable token=super-secret'); });
   const deliveries = deliveryRecords(created.conversationId);
   assert.ok(deliveries.length > 0);
   assert.ok(deliveries.every((delivery) => delivery.status === 'pending'));
   assert.ok(deliveries.every((delivery) => !delivery.last_error.includes('super-secret')));
-  assert.equal(getTask(created.taskId).status, 'queued');
+  assert.equal(getTask(created.taskId).status, 'failed');
 });
 
 test('Telegram cannot use privileged commands', async () => {

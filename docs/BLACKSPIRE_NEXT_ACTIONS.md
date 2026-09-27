@@ -1,5 +1,34 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Bounded deal status reports live
+
+The report upgrade is now LIVE at 98d45ec34c1d11d1bdb2dda9b476313542b47ac3. Exact-commit full CI 36337238839 passed. The guarded successor completed FEATURE_RELEASE_ACTIVE at /var/lib/blackspire-operator/zola-deal-report-release-20260927. Public readiness passes all nine checks at the new SHA; Telegram webhook identity matches, zero updates are pending and no delivery error is reported. Pairing release metadata was updated without changing credentials or owner binding. All 14 UI source files are byte-identical to the previous version, so the current static UI remains valid. A fresh owner report remains the final live message-format acceptance check. No deal rows changed.
+
+
+Prepared richer deal reports with record count and limited-collection disclosure, source snapshot, stage, next action, missing inputs, recorded contract readiness, motivation score, MAO and strategy. Suspected test labels and unknown-property identities are advisory flags; all returned records remain visible and no source data changes. Review priority uses the highest motivation score among returned unflagged records, explicitly not an independently verified recommendation. Latest activity is unavailable in the source and is disclosed as such. Reports remain below 3500 characters with per-record detail truncation explicitly marked.
+
+Deal status and focus/priority questions now select the same current authorized deal.records.search capability. Thirty-four targeted tests pass, including cross-workspace and permission gates, no mutation, flagged record handling and maximum message size. Lint, typecheck and build pass. The owner screenshot confirms the earlier runtime context correction now produces current operating-state guidance. The prepared candidate has now passed full CI and deployment, as recorded above. Broader workspace overview and voice remain deferred.
+
+
+## 2026-09-27 — Live Telegram acceptance and stale workspace context repaired
+
+The real owner request task_e923b58f5367bf5c completed deal.records.search at 08:30 UTC and its final Telegram response was delivered. Two later owner conversation tasks also completed and were delivered. All nine runtime readiness checks still pass at deployed SHA 128ea3f775c0de725cbbcbe60b4c2603627b94bd.
+
+The two follow-up answers incorrectly claimed production was inactive because the actual provider workspace /opt/blackspire-command/shared/workspace still held July canonical notes at implementation 85753ff. Added a dated current-state reconciliation to its source of truth, active context, next actions and session log, preserving historical notes and all authority controls. Runtime documentation commit: 28b4e8c38796399cd9dd7249c2851efaa636e35b. No application release, service, data or permissions changed. Fresh-answer effectiveness remains UNVERIFIED.
+
+The seeded runtime checkout uses a local origin, so its living-memory checker reports UNTRUSTED_ORIGIN_URL; that limitation is documented rather than bypassed. Its secret and whitespace checks pass. This source branch retains the same verified milestone durably on GitHub. Deal report formatting still omits available status, nextAction and missingInputs. Suspected test/incomplete records need careful labeling; no rows were deleted. Latest activity is absent from the existing bounded result and must not be fabricated. Voice remains deferred.
+
+
+## 2026-09-27 — Current next action
+
+Zola OS and the Telegram identity repair are live at 128ea3f775c0de725cbbcbe60b4c2603627b94bd; backend/UI release receipts and all nine readiness checks pass. Ask the paired owner to resend the deal-status request in @BlackspireZolaBot, then verify canonical capability execution and final delivery. Do not replay the historical failed task or completed release operators. Voice remains deferred. Preserve /var/lib/blackspire-operator/zola-os-release-retry-20260927 as the latest predecessor evidence.
+
+
+## 2026-09-27 — Release conversation repair from the active Telegram deployment
+
+Use feat/zola-os-conversation-20260927, not the completed activation transaction. Finish visual review and full CI, seal a fresh artifact, attest the successful 170f209 feature result/current generations and authority receipt as predecessor, install the explicit paired read-only principal binding, preserve the active webhook and pending messages, and use the store/writer/receiver transition with rollback. Verify the owner's fresh deal read and a single human-readable reply. No automatic replay of historical failed requests. Voice remains deferred. Older pending-activation entries below are historical and superseded by the successful 170f209 release.
+
+
 ## 2026-09-27 — Deploy isolated candidate
 
 Use feat/zola-telegram-release-20260927, based directly on the deployed commit, for the feature artifact. One hundred targeted tests and mock provider-packet verification pass. Finish the distinct reviewed successor transition from the latest storage recovery, preserving store/writer permissions, frontend receiver compatibility and rollback/HELD containment. Install the private paired credentials only inside that transition and verify actual Telegram delivery. Production has not been updated.

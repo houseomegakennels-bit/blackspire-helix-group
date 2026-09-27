@@ -85,12 +85,39 @@ export const dealRecordsCapability = defineCapability({
   execute: async (context, validatedInput) => context.adapters.dealRecords({ ...validatedInput, workspaceId: context.workspace.id, signal: context.signal }),
 });
 
+function reportText(value, limit = 80) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
 export function summarizeDealRecords(result) {
-  if (!result.deals.length) return 'No Deal Engine records are currently available in this workspace.';
+  const count = result.deals.length;
+  if (!count) return 'No Deal Engine records were returned for this workspace. This does not establish that no deals exist elsewhere.';
+  const flagsFor = (row) => [
+    ...(/\b(?:test|demo|sample|fixture)\b/i.test(row.propertyAddress) ? ['Possible test record — verify'] : []),
+    ...(/^(?:unknown property|unknown|n\/a|tbd)$/i.test(row.propertyAddress.trim()) ? ['Property identity missing'] : []),
+    ...(row.missingInputs.length ? ['Incomplete information'] : []),
+  ];
+  const candidate = result.deals.find(row => flagsFor(row).length === 0);
+  const focus = candidate
+    ? `Review first: ${reportText(candidate.propertyAddress, 65)} — highest motivation score among returned records without the flags below. This is a review order, not a verified investment recommendation.`
+    : 'Review first: resolve the flagged records before choosing a deal to pursue.';
+  const header = `Deal status — ${count} retrieved (up to 5 by default; this is not a full pipeline count).\nSnapshot: ${result.sourceSnapshotAt}\n${focus}`;
+  const footer = 'Latest activity is not supplied by this source. Contract readiness and figures are recorded values, not independent verification. Flags are advisory; no records were changed.';
+  const budget = Math.floor((3500 - header.length - footer.length - 40) / count);
   const lines = result.deals.map((row, index) => {
-    const rating = row.dealRating ? ` [${row.dealRating}]` : '';
-    const ready = row.readyForContract ? ' ✓contract-ready' : '';
-    return `${index + 1}. ${row.propertyAddress} — score ${row.motivationScore}/100${rating}${ready}; MAO ${row.mao}; ${row.exitStrategy}`;
+    const flags = flagsFor(row);
+    const parts = [
+      `${index + 1}. ${reportText(row.propertyAddress, 65)} (${reportText(row.dealId, 24)})`,
+      `Stage: ${reportText(row.status, 40)}`,
+      ...(flags.length ? [`Check: ${flags.join('; ')}`] : []),
+      `Next: ${reportText(row.nextAction || 'No next action recorded.', 110)}`,
+      `Missing: ${row.missingInputs.length ? reportText(row.missingInputs.join('; '), 120) : 'None reported; completeness not verified.'}`,
+      `Motivation: ${row.motivationScore}/100; MAO: ${reportText(row.mao, 25)}; contract-ready: ${row.readyForContract ? 'recorded yes' : 'not recorded as ready'}`,
+      `Strategy: ${reportText(row.exitStrategy, 70)}`,
+    ];
+    const text = parts.join('\n');
+    return text.length > budget ? `${text.slice(0, budget - 26)}… [more detail available]` : text;
   });
-  return `Deal Engine records:\n${lines.join('\n')}`;
+  return `${header}\n\n${lines.join('\n\n')}\n\n${footer}`;
 }

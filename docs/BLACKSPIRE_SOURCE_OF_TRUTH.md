@@ -1,5 +1,36 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-09-27 — Bounded deal status reports live
+
+The report upgrade is now LIVE at 98d45ec34c1d11d1bdb2dda9b476313542b47ac3. Exact-commit full CI 36337238839 passed. The guarded successor completed FEATURE_RELEASE_ACTIVE at /var/lib/blackspire-operator/zola-deal-report-release-20260927. Public readiness passes all nine checks at the new SHA; Telegram webhook identity matches, zero updates are pending and no delivery error is reported. Pairing release metadata was updated without changing credentials or owner binding. All 14 UI source files are byte-identical to the previous version, so the current static UI remains valid. A fresh owner report remains the final live message-format acceptance check. No deal rows changed.
+
+
+Prepared richer deal reports with record count and limited-collection disclosure, source snapshot, stage, next action, missing inputs, recorded contract readiness, motivation score, MAO and strategy. Suspected test labels and unknown-property identities are advisory flags; all returned records remain visible and no source data changes. Review priority uses the highest motivation score among returned unflagged records, explicitly not an independently verified recommendation. Latest activity is unavailable in the source and is disclosed as such. Reports remain below 3500 characters with per-record detail truncation explicitly marked.
+
+Deal status and focus/priority questions now select the same current authorized deal.records.search capability. Thirty-four targeted tests pass, including cross-workspace and permission gates, no mutation, flagged record handling and maximum message size. Lint, typecheck and build pass. The owner screenshot confirms the earlier runtime context correction now produces current operating-state guidance. The prepared candidate has now passed full CI and deployment, as recorded above. Broader workspace overview and voice remain deferred.
+
+
+## 2026-09-27 — Live Telegram acceptance and stale workspace context repaired
+
+The real owner request task_e923b58f5367bf5c completed deal.records.search at 08:30 UTC and its final Telegram response was delivered. Two later owner conversation tasks also completed and were delivered. All nine runtime readiness checks still pass at deployed SHA 128ea3f775c0de725cbbcbe60b4c2603627b94bd.
+
+The two follow-up answers incorrectly claimed production was inactive because the actual provider workspace /opt/blackspire-command/shared/workspace still held July canonical notes at implementation 85753ff. Added a dated current-state reconciliation to its source of truth, active context, next actions and session log, preserving historical notes and all authority controls. Runtime documentation commit: 28b4e8c38796399cd9dd7249c2851efaa636e35b. No application release, service, data or permissions changed. Fresh-answer effectiveness remains UNVERIFIED.
+
+The seeded runtime checkout uses a local origin, so its living-memory checker reports UNTRUSTED_ORIGIN_URL; that limitation is documented rather than bypassed. Its secret and whitespace checks pass. This source branch retains the same verified milestone durably on GitHub. Deal report formatting still omits available status, nextAction and missingInputs. Suspected test/incomplete records need careful labeling; no rows were deleted. Latest activity is absent from the existing bounded result and must not be fabricated. Voice remains deferred.
+
+
+## 2026-09-27 — Zola OS and Telegram identity repair live
+
+Production backend and UI are active at 128ea3f775c0de725cbbcbe60b4c2603627b94bd. Full exact-commit CI run 36302634902 passed. The native successor completed FEATURE_RELEASE_ACTIVE, and UI publication completed ZOLA_OS_UI_ACTIVE with 14 source files and 15 nginx aliases. Public HTML/CSS/JS/orb bytes match the sealed release. Local and public readiness pass all nine checks; API, worker, store and writer services are active.
+
+The failed owner deal request exposed a numeric Telegram actor without a canonical capability principal. The explicit BLACKSPIRE_TELEGRAM_PRINCIPAL_ID binding now selects the existing blackspire-operator only for the exact paired private owner/chat/allowlist and read-only intent. Numeric input attribution and Telegram policy class remain; current workspace permissions, capability checks, revocation and disclosure gates remain enforced. Writes receive no delegated elevation.
+
+Internal progress events remain in audit history while Telegram sends final answers and actionable approval, policy-denial, manual-response or failure notices. The phone interface now uses Home/Chat/Work/Review/More navigation, red/black/white orb identity, readable typography, a first-screen composer and expandable operational details. Asset version os1 and service-worker cache v5 are deployed. The 390-pixel browser preview passed navigation/layout checks without errors. Voice remains deferred.
+
+Targeted binding, Telegram, capability, context, policy and PWA tests pass, together with lint, typecheck and build. Full CI initially caught suppressed policy-denial notices; those were restored before the successful final CI. Postdeployment Telegram webhook identity matches, pending count is zero and no delivery error is reported. Exact owner and allowlist configuration matches the protected pairing record. The old failed task remains preserved; no fresh owner deal request has arrived, so a live end-to-end deal read remains the next acceptance check.
+
+Protected success evidence: /var/lib/blackspire-operator/zola-os-release-retry-20260927. The first attempt stopped with only a hold-intent and unchanged admission/configuration/generations. The distinct retry verified that exact unstarted history and used bounded exclusive-lock acquisition; no historical operation was replayed. The existing webhook and credentials were preserved. Pairing release metadata now records the deployed SHA. Do not rerun completed activation or UI operators.
+
 ## 2026-09-27 — Zola and private Telegram live
 
 Native final feature activation completed FEATURE_RELEASE_ACTIVE at 170f209c53b8950466694988d2274ace6fef1a54, artifact digest 00d389e3c5e0b0c96452b2958397ecd434744c52127bad18994fe6b05b996f2a. Exact-commit CI run 36300094886 passed. API, worker, store and writer bindings activated successfully; HELD checks passed, admission opened and all nine public readiness checks passed. The operator uses the existing runtime store factory to propagate deployed-artifact inspection through both protected publication layers. Twenty-three targeted operator tests pass.

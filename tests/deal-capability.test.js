@@ -285,3 +285,7 @@ test('emergency stop mid-flight discards late result', async () => {
   assert.doesNotMatch(String(result.summary||''),/Winding Creek/);
   setFlag('emergency_stop', 'inactive');
 });
+
+test('deal status and prioritization questions retrieve authorized current records', () => {
+ for (const request of ['Give me a deal status report','Which deal should I focus on first?','Prioritize our deals']) assert.equal(selectCapabilityForTask({request})?.id, 'deal.records.search');
+});

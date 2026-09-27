@@ -368,6 +368,9 @@ function renderNav() {
   }
 }
 function renderViews() {
+  const screen = store.authed ? store.view : 'signin';
+  if (document.body.dataset.screen !== screen) document.querySelector('.nav-more')?.removeAttribute('open');
+  document.body.dataset.screen = screen;
   for (const section of document.querySelectorAll('section[data-view]')) {
     const name = section.dataset.view;
     section.hidden = store.authed ? name !== store.view : name !== 'signin';
