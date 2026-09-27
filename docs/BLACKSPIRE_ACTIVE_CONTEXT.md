@@ -1,5 +1,18 @@
 # Blackspire Active Context
 
+## 2026-09-27 — Zola OS and Telegram identity repair live
+
+Production backend and UI are active at 128ea3f775c0de725cbbcbe60b4c2603627b94bd. Full exact-commit CI run 36302634902 passed. The native successor completed FEATURE_RELEASE_ACTIVE, and UI publication completed ZOLA_OS_UI_ACTIVE with 14 source files and 15 nginx aliases. Public HTML/CSS/JS/orb bytes match the sealed release. Local and public readiness pass all nine checks; API, worker, store and writer services are active.
+
+The failed owner deal request exposed a numeric Telegram actor without a canonical capability principal. The explicit BLACKSPIRE_TELEGRAM_PRINCIPAL_ID binding now selects the existing blackspire-operator only for the exact paired private owner/chat/allowlist and read-only intent. Numeric input attribution and Telegram policy class remain; current workspace permissions, capability checks, revocation and disclosure gates remain enforced. Writes receive no delegated elevation.
+
+Internal progress events remain in audit history while Telegram sends final answers and actionable approval, policy-denial, manual-response or failure notices. The phone interface now uses Home/Chat/Work/Review/More navigation, red/black/white orb identity, readable typography, a first-screen composer and expandable operational details. Asset version os1 and service-worker cache v5 are deployed. The 390-pixel browser preview passed navigation/layout checks without errors. Voice remains deferred.
+
+Targeted binding, Telegram, capability, context, policy and PWA tests pass, together with lint, typecheck and build. Full CI initially caught suppressed policy-denial notices; those were restored before the successful final CI. Postdeployment Telegram webhook identity matches, pending count is zero and no delivery error is reported. Exact owner and allowlist configuration matches the protected pairing record. The old failed task remains preserved; no fresh owner deal request has arrived, so a live end-to-end deal read remains the next acceptance check.
+
+Protected success evidence: /var/lib/blackspire-operator/zola-os-release-retry-20260927. The first attempt stopped with only a hold-intent and unchanged admission/configuration/generations. The distinct retry verified that exact unstarted history and used bounded exclusive-lock acquisition; no historical operation was replayed. The existing webhook and credentials were preserved. Pairing release metadata now records the deployed SHA. Do not rerun completed activation or UI operators.
+
+
 ## 2026-09-27 — Storage outage recovered
 
 The final Telegram staging check found public HTTP 502 and failed API/worker services. Root storage was full; both service logs reported database or disk is full. Cleared package-manager caches and six abandoned, older-than-seven-days disposable test directories after checking process references. Approximately 1.1 GB became available. The production SQLite integrity check passed; no active/queued tasks were present.

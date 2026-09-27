@@ -1,5 +1,10 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Current next action
+
+Zola OS and the Telegram identity repair are live at 128ea3f775c0de725cbbcbe60b4c2603627b94bd; backend/UI release receipts and all nine readiness checks pass. Ask the paired owner to resend the deal-status request in @BlackspireZolaBot, then verify canonical capability execution and final delivery. Do not replay the historical failed task or completed release operators. Voice remains deferred. Preserve /var/lib/blackspire-operator/zola-os-release-retry-20260927 as the latest predecessor evidence.
+
+
 ## 2026-09-27 — Storage outage recovered
 
 Zola is restored and readiness passes all nine checks. Preserve the new storage-outage recovery evidence and use its generation state as the current predecessor for subsequent deployment. Root free space is approximately 1.1 GB; reclaim only verified disposable build/test/cache data or add capacity before large builds. Telegram is paired but not activated; complete the distinct feature-release transition and live private delivery verification.
