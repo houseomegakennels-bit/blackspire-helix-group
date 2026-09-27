@@ -1,5 +1,10 @@
 # Blackspire Next Actions
 
+## 2026-09-27 — Deal report release live
+
+The report upgrade is now LIVE at 98d45ec34c1d11d1bdb2dda9b476313542b47ac3. Exact-commit full CI 36337238839 passed. The guarded successor completed FEATURE_RELEASE_ACTIVE at /var/lib/blackspire-operator/zola-deal-report-release-20260927. Public readiness passes all nine checks at the new SHA; Telegram webhook identity matches, zero updates are pending and no delivery error is reported. Pairing release metadata was updated without changing credentials or owner binding. All 14 UI source files are byte-identical to the previous version, so the current static UI remains valid. A fresh owner report remains the final live message-format acceptance check. No deal rows changed.
+
+
 ## 2026-09-27 — Current next action
 
 Zola OS and the Telegram identity repair are live at 128ea3f775c0de725cbbcbe60b4c2603627b94bd; backend/UI release receipts and all nine readiness checks pass. Ask the paired owner to resend the deal-status request in @BlackspireZolaBot, then verify canonical capability execution and final delivery. Do not replay the historical failed task or completed release operators. Voice remains deferred. Preserve /var/lib/blackspire-operator/zola-os-release-retry-20260927 as the latest predecessor evidence.

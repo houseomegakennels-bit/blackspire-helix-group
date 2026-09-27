@@ -1,5 +1,10 @@
 # Blackspire Active Context
 
+## 2026-09-27 — Deal report release live
+
+The report upgrade is now LIVE at 98d45ec34c1d11d1bdb2dda9b476313542b47ac3. Exact-commit full CI 36337238839 passed. The guarded successor completed FEATURE_RELEASE_ACTIVE at /var/lib/blackspire-operator/zola-deal-report-release-20260927. Public readiness passes all nine checks at the new SHA; Telegram webhook identity matches, zero updates are pending and no delivery error is reported. Pairing release metadata was updated without changing credentials or owner binding. All 14 UI source files are byte-identical to the previous version, so the current static UI remains valid. A fresh owner report remains the final live message-format acceptance check. No deal rows changed.
+
+
 ## 2026-09-27 — Zola OS and Telegram identity repair live
 
 Production backend and UI are active at 128ea3f775c0de725cbbcbe60b4c2603627b94bd. Full exact-commit CI run 36302634902 passed. The native successor completed FEATURE_RELEASE_ACTIVE, and UI publication completed ZOLA_OS_UI_ACTIVE with 14 source files and 15 nginx aliases. Public HTML/CSS/JS/orb bytes match the sealed release. Local and public readiness pass all nine checks; API, worker, store and writer services are active.
