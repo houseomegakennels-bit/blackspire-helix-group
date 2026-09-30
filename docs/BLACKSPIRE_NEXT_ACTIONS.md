@@ -1,5 +1,10 @@
 # Blackspire Next Actions
 
+## 2026-09-30 — Approved Zola Telegram Mini App interface prepared
+
+Resumed the interrupted Mini App branch. Implemented the user-approved orb Home, conversational Chat and Work dashboard using the red/black/white artwork, four-tab navigation and real authorized task/workspace state. No fabricated deal photos or records. Projects lists connected workspaces and explicitly identifies the broader project overview as unfinished. Voice stays deferred. Telegram SDK is vendored from its official source (SHA256 3549138a7934039fe7dfd1291a4ee739bd2b705a614308053a8b08a87d85c451); unverified Telegram client data never grants authentication or privileges. Existing password sign-in, CSRF, workspace authorization, approvals and emergency controls remain intact. Browser navigation at 390x844 passes with no script errors or horizontal overflow. Sixty UI/API tests and lint/typecheck/build pass. The static UI successor operator binds the exact old UI, preserves backend deployment identity, verifies public asset bytes, and rolls back on verification failure. Deployment and Telegram menu registration remain pending. Native iPhone Telegram acceptance remains UNVERIFIED.
+
+
 ## 2026-09-27 — Bounded deal status reports live
 
 The report upgrade is now LIVE at 98d45ec34c1d11d1bdb2dda9b476313542b47ac3. Exact-commit full CI 36337238839 passed. The guarded successor completed FEATURE_RELEASE_ACTIVE at /var/lib/blackspire-operator/zola-deal-report-release-20260927. Public readiness passes all nine checks at the new SHA; Telegram webhook identity matches, zero updates are pending and no delivery error is reported. Pairing release metadata was updated without changing credentials or owner binding. All 14 UI source files are byte-identical to the previous version, so the current static UI remains valid. A fresh owner report remains the final live message-format acceptance check. No deal rows changed.

@@ -10,9 +10,9 @@
 <link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="/zola-icon-180.png">
 <title>Blackspire Zola</title>
-<link rel="stylesheet" href="/zola.css?v=20260927-os1">
+<link rel="stylesheet" href="/zola.css?v=20260927-mini1">
 </head>
-<body>
+<body class="zola-mini">
 <a class="skip" href="#main">Skip to content</a>
 <div id="app">
   <header class="top">
@@ -23,20 +23,22 @@
     <div class="rail" id="statusBar" role="status" aria-live="polite"></div>
   </header>
 
+  <button id="moreToggle" class="more-toggle" type="button" aria-label="More screens" aria-expanded="false">•••</button>
+  <div id="moreScreens" hidden>    <details class="nav-more"><summary aria-label="More screens"><span aria-hidden="true">•••</span>More</summary><div class="nav-more-menu">
+    <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
+    <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
+    <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
+    </div></details></div>
   <div id="offlineBar" role="status">Offline — showing last synced canonical state. Reconnecting…</div>
   <div id="deploymentBar" role="status" aria-live="polite">Environment and build identity are not reported by the control plane. Treat this client as unverified.</div>
   <div id="updateBar" role="status"><span>A new Zola version is ready.</span><button id="applyUpdate" type="button">Reload</button></div>
 
   <nav class="views" aria-label="Screens" id="viewNav">
-    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-18 12 12)"/><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>Home</a>
+    <a href="#/command"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/></svg>Home</a>
     <a href="#/conversation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
-    <a href="#/task"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Work</a>
+    <a href="#/work"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>Work</a>
     <a href="#/approvals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 12l2 2 3.5-4"/></svg>Review</a>
-    <details class="nav-more"><summary aria-label="More screens"><span aria-hidden="true">•••</span>More</summary><div class="nav-more-menu">
-    <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
-    <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
-    <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
-    </div></details>
+
   </nav>
 
   <main id="main">
@@ -63,29 +65,8 @@
     <!-- 1 · Command Center -->
     <section data-view="command" hidden>
       <div class="helix-card wide" data-core="dormant" id="helixCard">
-        <div class="helix-wrap" id="helixMount">
-          <svg class="helix" data-helix-fallback="svg" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
-            <defs>
-              <radialGradient id="halo"><stop offset="0%" stop-color="#F33449" stop-opacity=".5"/><stop offset="70%" stop-color="#F33449" stop-opacity=".08"/><stop offset="100%" stop-color="#F33449" stop-opacity="0"/></radialGradient>
-            </defs>
-            <circle class="listen-ring" cx="120" cy="120" r="104"/>
-            <g class="ga"><path class="arcv" d="M120 22 A98 98 0 0 1 218 120"/><path class="arcv" d="M120 218 A98 98 0 0 1 22 120"/></g>
-            <g class="g1">
-              <ellipse class="ring" cx="120" cy="120" rx="92" ry="30" transform="rotate(-18 120 120)"/>
-              <circle class="node" r="3.4" cx="207.5" cy="91.6"/>
-            </g>
-            <g class="g2">
-              <ellipse class="ring" cx="120" cy="120" rx="68" ry="50" transform="rotate(14 120 120)" opacity=".6"/>
-              <circle class="node" r="3" cx="186" cy="136.5"/>
-            </g>
-            <g class="g3">
-              <ellipse class="ring" cx="120" cy="120" rx="42" ry="72" transform="rotate(-6 120 120)" opacity=".5"/>
-              <circle class="node" r="2.6" cx="161.5" cy="115.6"/>
-            </g>
-            <g class="core-pulse"><circle class="nucleus-halo" cx="120" cy="120" r="34"/><circle class="nucleus" cx="120" cy="120" r="11"/><circle cx="120" cy="120" r="5" fill="#000000"/></g>
-          </svg>
-        </div>
-        <div class="stack gap-6">
+        <div class="helix-wrap" id="helixMount"><img class="hero-orb" src="/zola-icon-512.png?v=mini1" alt="Red, black and white Zola orb" width="512" height="512"></div>
+        <div class="stack gap-6 core-status">
           <p class="eyebrow ion">Zola Core</p>
           <p class="state" id="coreState" data-tone="ion"><span class="dot"></span><span id="coreStateLabel">Dormant</span></p>
           <p class="muted fs-13" id="coreDetail">Awaiting your command.</p>
@@ -93,11 +74,14 @@
         </div>
       </div>
 
-      <div class="panel wide">
-        <h2 id="composerHeading">What’s next?</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
+      <h2 class="home-greeting">Ready when you are,<br>Los.</h2>
+      <div class="quick-actions"><button type="button" data-open-chat><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H5l-3 3 1-7a8 8 0 1 1 17-4z"/></svg>Ask Zola</button><button type="button" data-deal-report><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h7"/></svg>Deal report</button></div>
+      <button type="button" id="homeFocus" class="focus-card"><span class="focus-label">Focus today</span><strong id="homeFocusTitle">Your next move</strong><span id="homeFocusDetail">Ask Zola to review your workspace.</span><span class="card-chevron" aria-hidden="true">›</span></button>
+      <div class="panel wide composer-panel">
+        <h2 id="composerHeading" class="sr-only">Message Zola</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
         <div class="stack">
           <label class="sr-only" for="cmd">Command for Zola</label>
-          <textarea id="cmd" placeholder="What are we working on?" enterkeyhint="send"></textarea>
+          <textarea id="cmd" placeholder="Message Zola…" enterkeyhint="send"></textarea>
           <details class="request-options"><summary>Request options</summary>
           <label class="sr-only" for="workspace">Workspace</label>
           <select id="workspace" aria-label="Workspace"></select>
@@ -109,7 +93,7 @@
           <p class="muted fs-12" id="executionIntentHint">Answer and research leaves files unchanged. Choose a workspace change when you want edits.</p>
           </details>
           <div class="row row-center">
-            <button class="primary" id="sendBtn" type="button">Send</button>
+            <button class="primary" id="sendBtn" type="button" aria-label="Send message">↑</button>
             <button class="mic ghost" id="micBtn" type="button" aria-describedby="micHint" aria-label="Dictate command" aria-pressed="false">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
             </button>
@@ -119,10 +103,10 @@
         </div>
       </div>
 
-      <div class="panel">
-        <h2>Current task</h2>
+      <details class="panel secondary-home">
+        <summary>Current task</summary>
         <div class="stack" id="currentTaskCard"><p class="empty">Your next request will appear here.</p></div>
-      </div>
+      </details>
 
       <details class="panel">
         <summary>Delivery details</summary>
@@ -138,7 +122,7 @@
     <!-- 2 · Conversation -->
     <section data-view="conversation" hidden>
       <div class="panel wide">
-        <h2 id="convTitle">Conversation</h2>
+        <div class="chat-brand"><img src="/zola-icon-180.png?v=mini1" alt="" width="48" height="48"><div><h2>Zola</h2><p class="muted">Your Blackspire workspace.</p></div></div><h2 id="convTitle" class="sr-only">Conversation</h2>
         <details class="conversation-details"><summary>Conversation details</summary><div class="facts">
           <div class="fact span2"><span class="label">Conversation ID</span><span class="value mono" id="convId">—</span><div class="row mt-8"><button class="copy ghost" data-copy="convId" type="button">Copy ID</button></div></div>
           <div class="fact"><span class="label">Workspace</span><span class="value mono" id="convWorkspace">—</span></div>
@@ -151,21 +135,33 @@
         <p class="empty" id="messagesEmpty">No messages yet. Your messages and Zola’s replies appear here.</p>
       </div>
       <div class="panel wide">
-        <h2>Reply</h2>
+        <h2 class="sr-only">Reply</h2>
         <div class="stack">
           <label class="sr-only" for="followCmd">Follow-up command</label>
-          <button class="primary" id="talkStartFollow" type="button">Talk to Zola</button><textarea id="followCmd" placeholder="Continue this conversation" enterkeyhint="send"></textarea>
-          <label for="followExecutionIntent">How should Zola help?</label>
+          <button class="primary" id="talkStartFollow" type="button">Talk to Zola</button><textarea id="followCmd" placeholder="Message Zola…" enterkeyhint="send"></textarea>
+          <details class="request-options"><summary>Request options</summary><label for="followExecutionIntent">How should Zola help?</label>
           <select id="followExecutionIntent">
             <option value="read_only">Answer and research</option>
             <option value="workspace_mutation">Propose a workspace change</option>
           </select>
-          <button class="mic ghost" id="followMicBtn" type="button" aria-pressed="false" aria-describedby="followMicHint">Dictate</button>
+          </details><button class="mic ghost" id="followMicBtn" type="button" aria-pressed="false" aria-describedby="followMicHint">Dictate</button>
 <p id="followMicHint" class="muted fs-12" role="status">Tap Dictate, then review your words before sending.</p>
-<button class="primary" id="followBtn" type="button">Send</button>
+<button class="primary" id="followBtn" type="button" aria-label="Send reply">↑</button>
           <p class="notice" id="followNotice" role="status" aria-live="polite"></p>
         </div>
       </div>
+    </section>
+
+    <section data-view="work" hidden>
+      <div class="workspace-title"><img src="/zola-icon-180.png?v=mini1" width="52" height="52" alt=""><div><h2>Your workspace</h2><p id="workDate" class="muted"></p></div></div>
+      <div class="workspace-tiles">
+        <button type="button" data-deal-report><span class="tile-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM15 3v5h4M9 12h7M9 16h7"/></svg></span>Deals<span class="card-chevron" aria-hidden="true">›</span></button>
+        <button type="button" id="showWorkTasks"><span class="tile-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/></svg></span>Tasks<span class="card-chevron" aria-hidden="true">›</span></button>
+        <button type="button" id="showWorkProjects"><span class="tile-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h7l2 3h9v12H3z"/></svg></span>Projects<span class="card-chevron" aria-hidden="true">›</span></button>
+        <a href="#/approvals"><span class="tile-symbol"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>Reviews<span class="card-chevron" aria-hidden="true">›</span></a>
+      </div>
+      <div class="work-list"><h2 id="workListTitle">Needs attention</h2><p id="workListHint" class="muted"></p><div id="workList" class="stack"></div></div>
+      <button type="button" data-open-chat class="primary ask-wide"><img src="/zola-icon-180.png?v=mini1" width="28" height="28" alt="">Ask Zola<span aria-hidden="true">›</span></button>
     </section>
 
     <!-- 3 · Task Detail -->
@@ -289,6 +285,7 @@
 <p id="talkTranscript"></p><p id="talkReply"></p>
 <div class="row"><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
 </dialog>
-<script src="/zola.js?v=20260927-os1"></script>
+<script src="/telegram-web-app.js"></script>
+<script src="/zola.js?v=20260927-mini1"></script>
 </body>
 </html>

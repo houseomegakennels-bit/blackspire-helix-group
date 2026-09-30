@@ -289,7 +289,7 @@ function restoreDangerousActionConfirmation(key, button, confirmLabel, defaultLa
 /* ---------- end dangerous-action confirmation ---------- */
 
 /* ---------- router (hash keeps refresh recovery credential-free) ---------- */
-const VIEWS = ['command', 'conversation', 'task', 'events', 'approvals', 'system', 'evidence'];
+const VIEWS = ['command', 'work', 'conversation', 'task', 'events', 'approvals', 'system', 'evidence'];
 function parseHash() {
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   const view = VIEWS.includes(parts[0]) ? parts[0] : 'command';
@@ -350,8 +350,8 @@ function badge(label, value, tone) {
 }
 function renderStatus(h) {
   const rail = byId('statusBar'); rail.replaceChildren();
-  rail.append(badge('Link: ', store.offline ? 'offline' : 'online', store.offline ? 'bad' : 'ok'));
-  if (h && !h.error) {
+  rail.append(badge('', store.offline ? 'Offline' : h?.ok ? 'Connected' : 'Checking connection', store.offline ? 'bad' : h?.ok ? 'ok' : 'warn'));
+  if (h && !h.error && (store.view === 'system' || h.emergencyStop)) {
     rail.append(badge('Emergency stop: ', h.emergencyStop ? 'ACTIVE' : 'inactive', h.emergencyStop ? 'bad' : 'ok'));
     rail.append(badge('Telegram: ', h.telegramMode || 'unknown', 'ion'));
   }
@@ -363,7 +363,7 @@ function renderNav() {
   byId('viewNav').hidden = !store.authed;
   for (const link of byId('viewNav').querySelectorAll('a')) {
     const target = link.getAttribute('href').slice(2);
-    if (target === store.view) link.setAttribute('aria-current', 'page');
+    if (target === store.view || (target === 'work' && store.view === 'task')) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
 }
@@ -448,7 +448,7 @@ function renderRecentConversations() {
   for (const [cid, task] of [...seen].slice(0, 6)) {
     const btn = el('button', 'ghost'); btn.type = 'button'; btn.style.textAlign = 'left';
     const line = el('span', null, (conversationText(task.request) || 'Conversation').slice(0, 90));
-    const meta = el('span', 'stamp mono', cid + ' · ' + fmtTime(task.created_at));
+    const meta = el('span', 'stamp', fmtTime(task.created_at));
     btn.append(line, document.createElement('br'), meta);
     btn.addEventListener('click', () => { store.taskId = task.id; selectedTaskId = task.id; go('conversation', cid); });
     wrap.append(btn);
@@ -585,8 +585,8 @@ function renderConversation() {
     for (const task of tasksByInput.get(m.id) || []) {
       const reply = el('li'); reply.style.setProperty('--i', String(Math.min(i + 1, 8))); reply.dataset.taskId = task.id;
       const zola = el('span', 'chip', 'ZOLA'); zola.dataset.ch = 'jarvis';
-      reply.append(zola, el('p', null, taskConversationResponse(task)), el('span', 'stamp mono', `task ${task.id} · ${fmtTime(task.updated_at)}`));
-      if (canonicalTaskStatus(task) === 'completed') addVoiceReply(reply, taskConversationResponse(task));
+      reply.append(zola, el('p', null, taskConversationResponse(task)), el('span', 'stamp', fmtTime(task.updated_at)));
+      // Voice is deferred; keep the conversation focused on text.
       list.append(reply);
     }
   });
@@ -794,7 +794,8 @@ function render() {
     : 'Canonical principal: not authenticated';
   renderNav(); renderViews(); renderCore(); renderStatus(store.health);
   if (!store.authed) return;
-  if (store.view === 'command') { renderCurrentTask(); renderAttribution(); renderRecentConversations(); }
+  if (store.view === 'command') { renderCurrentTask(); renderAttribution(); renderRecentConversations(); renderHomeFocus(); }
+  if (store.view === 'work') renderWorkDashboard();
   if (store.view === 'conversation') renderConversation();
   if (store.view === 'task') { renderTaskDetail(); loadApprovalHistory(); }
   if (store.view === 'events') renderEvents();
@@ -1065,7 +1066,7 @@ byId('applyUpdate').addEventListener('click', () => { if (store.swWaiting) { app
 
 /* ---------- optional Helix enhancement: never awaited by boot ---------- */
 function loadHelixEnhancement() {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (document.querySelector('.hero-orb') || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const start = () => {
     import('/helix-core.js?v=zola4').then(({ mountHelixCore }) => {
       store.helix = mountHelixCore({ container: byId('helixMount'), initialState: coreStateFor()[0] });
@@ -1135,3 +1136,86 @@ byId('talkInterrupt').addEventListener('click', () => {
 document.addEventListener('visibilitychange', () => { if (document.hidden) endTalk('Paused because Zola left the screen. Close and start again.'); });
 window.addEventListener('pagehide', () => endTalk());
 byId('logoutBtn').addEventListener('click', () => { endTalk(); byId('talkDialog').close(); });
+
+
+/* Approved Mini App workspace. No Telegram client identity grants access. */
+let workListMode = 'attention';
+function workspaceTasks() {
+  return store.tasks.filter(taskInActiveWorkspace).slice().sort((a, b) =>
+    String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+}
+function focusTask() {
+  const tasks = workspaceTasks();
+  return tasks.find(t => ['waiting_for_approval', 'waiting_for_manual_response', 'outcome_unknown', 'failed'].includes(canonicalTaskStatus(t))) || tasks.find(cancellable) || tasks[0];
+}
+function renderHomeFocus() {
+  const task = focusTask();
+  byId('homeFocusTitle').textContent = task ? conversationText(task.request) : 'Your next move';
+  byId('homeFocusDetail').textContent = task ? statusInfo(task).label + ' · Open task' : 'Ask Zola to review your workspace.';
+}
+function renderWorkDashboard() {
+  byId('workDate').textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
+  const list = byId('workList'); list.replaceChildren();
+  const projects = workListMode === 'projects';
+  byId('workListTitle').textContent = projects ? 'Connected workspaces' : workListMode === 'tasks' ? 'Recent tasks' : 'Needs attention';
+  byId('workListHint').textContent = projects ? 'Workspaces available to your signed-in account. A broader project overview is still being connected.' : 'From the tasks returned for the selected workspace.';
+  if (projects) {
+    for (const ws of store.workspaces) {
+      const card = el('button', 'work-item'); card.type = 'button';
+      card.append(el('strong', null, ws.name || ws.id), el('span', 'muted', 'Open workspace'));
+      card.addEventListener('click', () => {
+        byId('workspace').value = ws.id;
+        byId('workspace').dispatchEvent(new Event('change'));
+        go('command');
+      });
+      list.append(card);
+    }
+  } else {
+    const tasks = workspaceTasks().filter(t => workListMode === 'tasks' || ['waiting_for_approval', 'waiting_for_manual_response', 'outcome_unknown', 'failed'].includes(canonicalTaskStatus(t)));
+    for (const task of tasks.slice(0, 12)) {
+      const card = el('button', 'work-item'); card.type = 'button';
+      card.append(el('strong', null, conversationText(task.request) || 'Task'), el('span', 'muted', statusInfo(task).label));
+      card.addEventListener('click', () => go('task', task.id));
+      list.append(card);
+    }
+  }
+  if (!list.children.length) list.append(el('p', 'empty', projects ? 'No workspaces are available.' : 'Nothing to review in the returned tasks.'));
+}
+function openChat() { go('conversation', store.conversationId); byId('followCmd').focus({ preventScroll: true }); }
+document.querySelectorAll('[data-open-chat]').forEach(button => button.addEventListener('click', openChat));
+document.querySelectorAll('[data-deal-report]').forEach(button => button.addEventListener('click', () => {
+  if (!store.authed || store.inflight) return;
+  submitCommand('Give me a deal status report with next actions and missing information.', '', 'composerNotice', 'read_only');
+}));
+byId('homeFocus').addEventListener('click', () => { const task = focusTask(); if (task) go('task', task.id); else openChat(); });
+byId('showWorkTasks').addEventListener('click', () => { workListMode = 'tasks'; renderWorkDashboard(); });
+byId('showWorkProjects').addEventListener('click', () => { workListMode = 'projects'; renderWorkDashboard(); });
+byId('moreToggle').addEventListener('click', () => {
+  const box = byId('moreScreens'); box.hidden = !box.hidden;
+  byId('moreToggle').setAttribute('aria-expanded', String(!box.hidden));
+  box.querySelector('details').open = !box.hidden;
+});
+window.addEventListener('hashchange', () => { byId('moreScreens').hidden = true; byId('moreToggle').setAttribute('aria-expanded', 'false'); });
+function initializeTelegramShell() {
+  const app = window.Telegram?.WebApp;
+  if (!app?.initData) return;
+  document.body.classList.add('inside-telegram');
+  try {
+    app.ready(); app.expand();
+    app.setHeaderColor('#000000'); app.setBackgroundColor('#000000');
+    if (app.isVersionAtLeast?.('7.10')) app.setBottomBarColor('#000000');
+    const syncInsets = () => {
+      const inset = app.contentSafeAreaInset;
+      if (inset) {
+        document.documentElement.style.setProperty('--tg-content-top', Math.max(0, inset.top || 0) + 'px');
+        document.documentElement.style.setProperty('--tg-content-bottom', Math.max(0, inset.bottom || 0) + 'px');
+      }
+    };
+    syncInsets();
+    app.onEvent('contentSafeAreaChanged', syncInsets);
+    app.BackButton.onClick(() => go('command'));
+    const syncBack = () => store.view === 'command' ? app.BackButton.hide() : app.BackButton.show();
+    window.addEventListener('hashchange', syncBack); syncBack();
+  } catch { /* Existing browser sign-in and navigation remain available. */ }
+}
+initializeTelegramShell();

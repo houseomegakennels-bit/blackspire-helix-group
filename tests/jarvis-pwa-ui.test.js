@@ -144,8 +144,8 @@ test('index.html carries no inline style block or style attribute', () => {
 });
 
 test('both extracted assets are referenced by same-origin path', () => {
-  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260927-os1">/, '/jarvis.css is referenced');
-  assert.match(html, /<script\s+src="\/zola\.js\?v=20260927-os1"><\/script>/, '/jarvis.js is referenced');
+  assert.match(html, /<link\s+rel="stylesheet"\s+href="\/zola\.css\?v=20260927-mini1">/, '/jarvis.css is referenced');
+  assert.match(html, /<script\s+src="\/zola\.js\?v=20260927-mini1"><\/script>/, '/jarvis.js is referenced');
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.css'));
   assert.ok(fs.existsSync('apps/jarvis-pwa/public/jarvis.js'));
 });
@@ -316,7 +316,7 @@ test('Helix Core enhancement is a separate optional lazy chunk with a permanent 
   const module = fs.readFileSync(helixModulePath, 'utf8');
   assert.match(source, /import\('\/helix-core\.js\?v=zola4'\)/, 'module is dynamically imported');
   assert.match(source, /helix-enhancement/, 'enhancement has a separate non-blocking mount point');
-  assert.match(html, /data-helix-fallback="svg"/, 'the inert SVG survives in markup when the module never loads');
+  assert.match(html, /class="hero-orb"[^>]*src="\/zola-icon-512\.png/, 'approved raster orb works without WebGL');
   assert.match(appScript, /dataset\.helixFallback = 'svg'/, 'a failed import falls back to the SVG');
   assert.match(module, /export function mountHelixCore/);
   assert.match(module, /devicePixelRatio/);

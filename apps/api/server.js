@@ -64,6 +64,7 @@ const TEST_MODE = requireSafeTestMode();
 // pathname key only: no path segment from the request ever reaches the filesystem, so
 // traversal is not possible. Add an entry here to expose a new asset; nothing else.
 const PUBLIC_ASSETS = {
+  '/telegram-web-app.js': { file: 'apps/jarvis-pwa/public/telegram-web-app.js', type: 'text/javascript; charset=utf-8', immutable: false },
   '/zola.css': { file: 'apps/jarvis-pwa/public/jarvis.css', type: 'text/css; charset=utf-8', immutable: false },
   '/zola.js': { file: 'apps/jarvis-pwa/public/jarvis.js', type: 'text/javascript; charset=utf-8', immutable: false },
   '/zola-icon.svg': { file: 'apps/jarvis-pwa/public/zola-icon.svg', type: 'image/svg+xml', immutable: false },
