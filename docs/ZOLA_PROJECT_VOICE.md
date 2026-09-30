@@ -1,5 +1,9 @@
 # Zola project overview and real-time voice
 
+## Deployment result — September 30, 2026
+
+UI and gateway release 21262eab40ab8f3e82daccf15ff8cc8b92dcb498 deployed successfully. The installer verified the gateway's unauthenticated 401 boundary; the UI operator verified every published asset digest and unchanged ready backend identity. Voice remains inactive because its API credential is absent; no paid voice request was made. Protected UI evidence: /var/lib/blackspire-operator/zola-ui-21262eab40ab8f3e82daccf15ff8cc8b92dcb498. Commander timed out during the additional postdeployment recheck. This documentation reconciliation was saved through GitHub; the host worktree must fast-forward before further edits. The predeployment living-memory and security checks passed; a postdeployment rerun was unavailable. See docs/ZOLA_PROJECT_VOICE.md.
+
 ## Current scope
 
 The Mini App's Work > Projects view shows task-derived summaries for currently authorized workspaces and 14 dated business/platform checkpoints imported from Blackspire_Command_Center.md (September 27). Each checkpoint exposes its source date, recorded position, next step, and verification limits. It is not an account-wide live monitor. The September 30 operator confirmation supersedes the old unverified Zola Mini App note. Family-only workstreams were not imported.
