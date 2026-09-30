@@ -598,6 +598,16 @@ async function endTalk(message='Conversation ended.') {
 }
 function resumeTalk(){realtimeVoice?.resume();}
 function checkTalkReply() {}
+/* Voice read routing translates conversational lookup wording to the deployed read contract. */
+function voiceWorkspaceRequest(question) {
+  const text=String(question||'').trim();
+  const deal=/\bdeals?\b/i.test(text);
+  const update=/\b(?:an? |any |the |latest )?updates? (?:on|about|regarding)\b/i.test(text)
+    || /\b(?:how (?:are|is).*deals?.*(?:doing|going)|what(?:'s| is) (?:the )?latest.*deals?)\b/i.test(text);
+  const mutation=/\b(?:change|edit|delete|remove|archive|create|send|contact|email|text|call|assign|approve|execute|launch|write|save|set|mark|move)\b|\bupdate (?:the |our |my |this )?(?:deal|record|stage|status|price)\b/i.test(text);
+  return deal&&update&&!mutation ? 'Deal status report requested. Original question: '+text : text;
+}
+/* End voice read routing. */
 async function startTalk() {
   if(!store.authed)return;
   byId('talkDialog').showModal();
@@ -609,7 +619,7 @@ async function startTalk() {
     transcript:renderVoiceTranscript,
     ask:async(question,workspace)=>{
       if(workspace!==activeWorkspaceId()||!store.authed)throw Error('Workspace changed. Start a new voice session.');
-      const result=await submitCommand(question,store.conversationId,'followNotice','read_only');
+      const result=await submitCommand(voiceWorkspaceRequest(question),store.conversationId,'followNotice','read_only');
       if(!result?.taskId||result.denied||result.error)throw Error('Request was not accepted. Check the text workspace.');
       const deadline=Date.now()+120000;
       while(Date.now()<deadline&&talk.active){

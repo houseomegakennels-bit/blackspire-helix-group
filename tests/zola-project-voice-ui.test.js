@@ -56,3 +56,33 @@ test('ending during microphone permission request closes a late stream and never
  resolve({getTracks:()=>[{stop(){stopped=true;}}]});await started;
  assert.equal(stopped,true);assert.equal(h.requests.some(x=>x.path==='/api/voice/session'),false);
 });
+
+function readRouting() {
+ const context={blackspireCapabilityRegistry:{get:id=>({id})}};vm.createContext(context);
+ vm.runInContext(js.slice(js.indexOf('function voiceWorkspaceRequest('),js.indexOf('/* End voice read routing. */')),context);
+ const routing=fs.readFileSync('packages/capabilities/execute.js','utf8').split('export function selectCapabilityForTask')[1].split('\nfunction extractDealId')[0];
+ vm.runInContext('function selectCapabilityForTask'+routing,context);
+ return context;
+}
+test('spoken deal update reaches the deployed deal reader instead of a general provider',()=>{
+ const h=readRouting();
+ for(const text of ['Can you provide an update on any of the Blackspire real estate deals?','Give me an update on any of the Black Spire real estate deals that we have.','Any updates about our deals?','How are our deals doing?',"What’s the latest on our deals?".replace('’',"'")]){
+  const request=h.voiceWorkspaceRequest(text);
+  assert.ok(request.includes(text));
+  assert.equal(h.selectCapabilityForTask({request})?.id,'deal.records.search',text);
+ }
+});
+test('voice normalization does not reinterpret mutations, other topics, or specific analysis',()=>{
+ const h=readRouting();
+ for(const text of ['Update the deal stage to closed','Give me an update on deals and send the seller an email','Delete our deals','Any updates on projects?','Show underwriting for deal DE-1931'])assert.equal(h.voiceWorkspaceRequest(text),text);
+ assert.equal(h.selectCapabilityForTask({request:h.voiceWorkspaceRequest('Show underwriting for deal DE-1931')})?.id,'deal.analysis.get');
+});
+test('voice callback submits the normalized read through unified input and returns canonical results',async()=>{
+ const h=readRouting();let options;const sent=[];
+ Object.assign(h,{store:{authed:true,conversationId:'conv'},window:{RTCPeerConnection:true},navigator:{mediaDevices:{getUserMedia:true}},byId:()=>({showModal(){}}),endTalk:async()=>{},talk:{active:false},voiceRequest(){},activeWorkspaceId:()=> 'workspace-a',talkStatus(){},renderVoiceTranscript(){},submitCommand:async(...args)=>{sent.push(args);return {taskId:'t1'};},api:{task:async()=>({response:{ok:true},body:{task:{status:'completed',canonicalResult:'Deal status — 4 retrieved'}}})},canonicalTaskStatus:t=>t.status,taskConversationResponse:t=>t.canonicalResult,ZolaRealtimeVoice:class {constructor(o){options=o;}async start(){}},Date,setTimeout});
+ vm.runInContext('let realtimeVoice;\n'+js.slice(js.indexOf('async function startTalk()'),js.indexOf('async function loadVoiceHistory()')),h);
+ await h.startTalk();
+ const answer=await options.ask('Can you provide an update on any of the Blackspire real estate deals?','workspace-a');
+ assert.equal(h.selectCapabilityForTask({request:sent[0][0]})?.id,'deal.records.search');assert.equal(sent[0][3],'read_only');assert.equal(answer,'Deal status — 4 retrieved');
+ await assert.rejects(options.ask('Any updates on deals?','workspace-b'),/Workspace changed/);assert.equal(sent.length,1);
+});

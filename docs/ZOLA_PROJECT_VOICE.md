@@ -1,5 +1,9 @@
 # Zola project overview and real-time voice
 
+## Voice acceptance and deal lookup correction
+
+Los confirmed live voice works inside the iPhone Telegram Mini App. Its deal-update lookup failed: the recorded read-only task missed the deployed deal selector because it used “update on” and then reached a temporarily unavailable general production provider. Added a narrow voice read adapter that preserves the original question and supplies the deployed deal-status vocabulary for conversational update requests. Mutation wording and other topics remain unchanged; unified input, read-only intent, current workspace binding and all server authorization remain enforced. The current worker doctor passes authentication and provider/websocket reachability. Sixty-two targeted tests pass, including the exact owner wording, real deployed selector, voice callback/canonical answer and cross-workspace denial. Cache version advances to voice2/v8. Deployment pending; a fresh owner deal voice response remains UNVERIFIED.
+
 ## Deployment result — September 30, 2026
 
 UI and gateway release 21262eab40ab8f3e82daccf15ff8cc8b92dcb498 deployed successfully. The installer verified the gateway's unauthenticated 401 boundary; the UI operator verified every published asset digest and unchanged ready backend identity. Voice remains inactive because its API credential is absent; no paid voice request was made. Protected UI evidence: /var/lib/blackspire-operator/zola-ui-21262eab40ab8f3e82daccf15ff8cc8b92dcb498. Commander timed out during the additional postdeployment recheck. This documentation reconciliation was saved through GitHub; the host worktree must fast-forward before further edits. The predeployment living-memory and security checks passed; a postdeployment rerun was unavailable. See docs/ZOLA_PROJECT_VOICE.md.
