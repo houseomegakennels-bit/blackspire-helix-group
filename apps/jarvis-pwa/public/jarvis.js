@@ -173,7 +173,7 @@ const canonicalSyncStale = (lastSync, pollMs, currentTime = Date.now()) =>
 const store = {
   authed: false, csrfToken: '', principalId: '', sessionExpiresAt: null,
   view: 'command', conversationId: '', taskId: '',
-  conversation: null, tasks: [], workspaces: [],
+  conversation: null, tasks: [], workspaces: [], projects: null,
   health: null, ready: null, testMode: null,
   offline: false, lastSync: null, pollMs: 2500, inflight: false,
   idemKey: '', announcedState: '', swWaiting: null, loading: false,
@@ -456,6 +456,101 @@ function renderRecentConversations() {
 }
 
 
+/* Realtime voice controller. No browser speech synthesis or dictation fallback. */
+class ZolaRealtimeVoice {
+  constructor({request, workspace, ask, status, transcript, media = navigator.mediaDevices, Peer = RTCPeerConnection, AudioClass = Audio}) {
+    Object.assign(this,{request,workspace,ask,status,transcript,media,Peer,AudioClass});
+    this.generation=0;this.turns=[];this.seen=new Set();this.calls=new Set();this.session=null;
+  }
+  send(event){if(this.channel?.readyState==='open')this.channel.send(JSON.stringify(event));}
+  async start() {
+    await this.stop();
+    const generation=++this.generation;
+    this.turns=[];this.seen.clear();this.calls.clear();this.transcript(this.turns);
+    this.status('connecting','Checking voice access…');
+    try {
+      const availability=await this.request('/api/voice/status?workspaceId='+encodeURIComponent(this.workspace));
+      if(generation!==this.generation)return;
+      if(!availability.enabled)throw Error(availability.reason||'Voice is not configured.');
+      this.status('connecting','Allow microphone access to start.');
+      const stream=await this.media.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+      if(generation!==this.generation){stream.getTracks().forEach(t=>t.stop());return;}
+      this.stream=stream;this.peer=new this.Peer();this.audio=new this.AudioClass();this.audio.autoplay=true;
+      this.audio.setAttribute('playsinline','');
+      this.peer.ontrack=e=>{this.audio.srcObject=e.streams[0];this.audio.play().catch(()=>this.status('paused','Tap Resume audio to hear Zola.'));};
+      stream.getTracks().forEach(track=>this.peer.addTrack(track,stream));
+      this.channel=this.peer.createDataChannel('oai-events');
+      this.channel.onmessage=e=>{if(generation===this.generation){try{this.event(JSON.parse(e.data));}catch{this.status('error','An invalid voice event was ignored.');}}};
+      this.channel.onopen=()=>{if(generation===this.generation)this.status('listening','Listening — speak naturally.');};
+      this.channel.onclose=()=>{if(generation===this.generation)this.stop('Voice connection ended.');};
+      this.peer.onconnectionstatechange=()=>{if(generation===this.generation&&['failed','disconnected'].includes(this.peer?.connectionState))this.stop('Voice connection lost. Start again when connected.');};
+      const offer=await this.peer.createOffer();await this.peer.setLocalDescription(offer);
+      if(generation!==this.generation)return;
+      const result=await this.request('/api/voice/session',{workspaceId:this.workspace,sdp:offer.sdp});
+      if(generation!==this.generation){await this.request('/api/voice/end',{workspaceId:this.workspace,id:result.id});return;}
+      this.session=result.id;
+      await this.peer.setRemoteDescription({type:'answer',sdp:result.sdp});
+      this.timer=setTimeout(()=>this.stop('Five-minute voice session ended.'),Math.max(0,result.expiresAt-Date.now()));
+    } catch(e) {
+      if(generation!==this.generation)return;
+      await this.stop(e.name==='NotAllowedError'?'Microphone access was denied. Allow it in your browser settings.':e.message||'Unable to start voice.');
+    }
+  }
+  addTurn(role,text,id) {
+    if(!text||this.seen.has(id))return;
+    this.seen.add(id);this.turns.push({role,text:String(text).slice(0,6000)});
+    if(this.turns.length>200)this.turns.shift();
+    while(JSON.stringify(this.turns).length>80000)this.turns.shift();
+    this.transcript(this.turns);this.save();
+  }
+  async save() {
+    if(!this.session)return;
+    try{await this.request('/api/voice/transcript',{workspaceId:this.workspace,id:this.session,turns:this.turns});}
+    catch{this.status('warning','Transcript could not be saved. Keep this window open.');}
+  }
+  event(e) {
+    if(e.type==='input_audio_buffer.speech_started'){this.status('listening','Listening…');}
+    if(e.type==='input_audio_buffer.speech_stopped'){this.status('thinking','Zola is thinking…');}
+    if(e.type==='output_audio_buffer.started')this.status('speaking','Zola is speaking. You can interrupt naturally.');
+    if(e.type==='output_audio_buffer.stopped')this.status('listening','Listening — speak naturally.');
+    if(e.type==='conversation.item.input_audio_transcription.completed')this.addTurn('user',e.transcript,'u:'+e.item_id);
+    if(e.type==='response.output_audio_transcript.done')this.addTurn('assistant',e.transcript,'a:'+e.item_id);
+    if(e.type==='response.function_call_arguments.done')this.tool(e);
+    if(e.type==='error')this.status('error','Voice reported an error. End the session and try again.');
+  }
+  async tool(e) {
+    if(this.calls.has(e.call_id))return;this.calls.add(e.call_id);
+    const generation=this.generation;
+    let output;
+    try {
+      const args=JSON.parse(e.arguments);
+      if(e.name!=='ask_workspace'||typeof args.question!=='string'||!args.question.trim()||args.question.length>1800)throw Error('Unsupported workspace request.');
+      this.status('thinking','Checking your workspace…');
+      output=await this.ask(args.question,this.workspace);
+    } catch(err){output='Workspace request could not complete: '+(err.message||'Try the text workspace.');}
+    if(generation!==this.generation)return;
+    this.send({type:'conversation.item.create',item:{type:'function_call_output',call_id:e.call_id,output:String(output).slice(0,14000)}});
+    this.send({type:'response.create'});
+  }
+  interrupt(){this.send({type:'response.cancel'});this.send({type:'output_audio_buffer.clear'});this.status('listening','Go ahead — I’m listening.');}
+  mute(){if(!this.stream)return;const enabled=this.stream.getAudioTracks().some(t=>t.enabled);this.stream.getAudioTracks().forEach(t=>{t.enabled=!enabled;});return enabled;}
+  async resume(){try{await this.audio?.play();this.status('listening','Listening — speak naturally.');}catch{this.status('paused','Audio is blocked. Try opening Zola in Safari.');}}
+  async stop(message='Conversation ended.') {
+    ++this.generation;clearTimeout(this.timer);
+    const session=this.session;this.session=null;
+    this.stream?.getTracks().forEach(t=>t.stop());this.stream=null;
+    this.channel?.close();this.channel=null;this.peer?.close();this.peer=null;
+    if(this.audio){this.audio.pause();this.audio.srcObject=null;this.audio=null;}
+    if(session) {
+      try {
+        await this.request('/api/voice/transcript',{workspaceId:this.workspace,id:session,turns:this.turns});
+      }catch{message+=' Transcript save failed.';}
+      try{const result=await this.request('/api/voice/end',{workspaceId:this.workspace,id:session});if(!result.closed)message+=' Server is confirming closure.';}catch{message+=' Server closure is unconfirmed.';}
+    }
+    this.status('idle',message);
+  }
+}
+/* End realtime voice controller. */
 /* Explicit voice conversation session. All submissions retain server policy. */
 const talk = { active: false, phase: 'idle', recognition: null, pending: null, token: 0, timer: null };
 const TALK_PREFIX = 'Zola conversation input\n';
@@ -486,76 +581,61 @@ function talkStatus(phase, message) {
   byId('talkStatus').textContent = message;
   byId('talkDialog').dataset.phase = phase;
 }
-function endTalk(message = 'Conversation ended.') {
-  talk.active = false; talk.token++; clearTimeout(talk.timer);
-  talk.recognition?.abort(); talk.recognition = null;
-  stopVoice(); talk.pending = null;
-  talkStatus('idle', message);
-  byId('talkResume').hidden = true;
+let realtimeVoice = null;
+async function voiceRequest(path, payload) {
+  const {response, body} = await api.request(path, payload ? {method:'POST',body:JSON.stringify(payload)} : {});
+  if(!response.ok) throw Error(response.status===404 ? 'Voice service is not connected yet.' : body.error || 'Voice service unavailable.');
+  return body;
 }
-function resumeTalk() {
-  if (!talk.active || document.hidden) return;
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) { endTalk('This browser does not support voice conversations. Open Zola in Safari.'); return; }
-  const token = talk.token;
-  const r = new Recognition(); talk.recognition = r;
-  r.lang = navigator.language || 'en-US'; r.continuous = false; r.interimResults = true;
-  let words = ''; let failed = false;
-  r.onstart = () => talkStatus('listening', 'Listening — speak naturally.');
-  r.onresult = e => {
-    words = Array.from(e.results).map(v => v[0].transcript).join(' ').trim();
-    byId('talkTranscript').textContent = words;
-  };
-  r.onerror = e => {
-    if (!talk.active || token !== talk.token) return;
-    failed = true;
-    if (e.error === 'aborted') return;
-    talkStatus('paused', e.error === 'not-allowed' ? 'Allow microphone access in Safari, then try again.' : 'Listening paused. Tap Resume to continue.');
-    byId('talkResume').hidden = false;
-  };
-  r.onend = async () => {
-    if (!talk.active || token !== talk.token || failed) return;
-    talk.recognition = null;
-    if (!words) { talkStatus('paused', 'No speech heard. Tap Resume when ready.'); byId('talkResume').hidden = false; return; }
-    if (words.length > 1800) { talkStatus('paused', 'That turn was too long. Tap Resume and try a shorter message.'); byId('talkResume').hidden = false; return; }
-    talkStatus('thinking', 'Zola is thinking…');
-    const result = await submitCommand(conversationRequest(words), store.conversationId, 'followNotice', 'read_only');
-    if (!talk.active || token !== talk.token) return;
-    if (!result?.taskId || result.denied || result.error) {
-      talkStatus('paused', byId('followNotice').textContent || 'Unable to send. Check your connection.');
-      byId('talkResume').hidden = false; return;
-    }
-    talk.pending = result.taskId; talk.started = Date.now(); checkTalkReply();
-  };
-  try { r.start(); } catch { talkStatus('paused', 'Tap Resume to enable listening.'); byId('talkResume').hidden = false; }
+function renderVoiceTranscript(turns) {
+  const list=byId('voiceTurns');list.replaceChildren();
+  for(const turn of turns){const item=el('p',turn.role==='user'?'voice-user':'voice-zola');item.append(el('strong',null,turn.role==='user'?'You: ':'Zola: '),document.createTextNode(turn.text));list.append(item);}
 }
-function checkTalkReply() {
-  if (!talk.active || !talk.pending) return;
-  const task = (store.conversation?.tasks || []).find(t => t.id === talk.pending) || (store.tasks || []).find(t => t.id === talk.pending);
-  if (!task || !['completed', 'failed', 'cancelled', 'outcome_unknown', 'waiting_for_approval'].includes(canonicalTaskStatus(task))) {
-    if (Date.now() - talk.started > 120000) { talk.pending = null; talkStatus('paused', 'Still waiting. Check the task before sending again.'); byId('talkResume').hidden = false; }
-    return;
-  }
-  talk.pending = null;
-  const text = taskConversationResponse(task); byId('talkReply').textContent = text;
-  if (canonicalTaskStatus(task) !== 'completed') { talkStatus('paused', 'The task needs attention. See the reply below.'); byId('talkResume').hidden = false; return; }
-  const token = talk.token;
-  const utterance = new SpeechSynthesisUtterance(text);
-  const voices = speechSynthesis.getVoices();
-  utterance.voice = voices.find(v => /Samantha|Siri/i.test(v.name) && /^en/.test(v.lang)) || voices.find(v => v.lang === navigator.language) || null;
-  talkStatus('speaking', 'Zola is speaking. Tap Interrupt to reply.');
-  utterance.onend = () => { if (talk.active && token === talk.token) talk.timer = setTimeout(resumeTalk, 350); };
-  utterance.onerror = () => { if (talk.active && token === talk.token) { talkStatus('paused', 'Audio paused. Tap Resume to continue.'); byId('talkResume').hidden = false; } };
-  speechSynthesis.speak(utterance);
+async function endTalk(message='Conversation ended.') {
+  talk.active=false;talk.pending=null;
+  if(realtimeVoice)await realtimeVoice.stop(message);
+  else talkStatus('idle',message);
 }
-function startTalk() {
+function resumeTalk(){realtimeVoice?.resume();}
+function checkTalkReply() {}
+async function startTalk() {
+  if(!store.authed)return;
   byId('talkDialog').showModal();
-  if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) { talkStatus('paused', 'Spoken replies are unavailable in this browser. Open Safari.'); return; }
-  endTalk(); talk.active = true;
-  // Explicit tap primes audio on browsers that require a playback gesture.
-  const prime = new SpeechSynthesisUtterance(''); speechSynthesis.speak(prime);
-  byId('talkReply').textContent = ''; byId('talkTranscript').textContent = '';
-  resumeTalk();
+  if(!window.RTCPeerConnection||!navigator.mediaDevices?.getUserMedia){talkStatus('error','Live voice needs microphone access in a supported browser. Open Zola in Safari.');return;}
+  await endTalk();talk.active=true;
+  realtimeVoice=new ZolaRealtimeVoice({
+    request:voiceRequest,workspace:activeWorkspaceId(),
+    status:(phase,message)=>{talkStatus(phase,message);byId('talkResume').hidden=phase!=='paused';},
+    transcript:renderVoiceTranscript,
+    ask:async(question,workspace)=>{
+      if(workspace!==activeWorkspaceId()||!store.authed)throw Error('Workspace changed. Start a new voice session.');
+      const result=await submitCommand(question,store.conversationId,'followNotice','read_only');
+      if(!result?.taskId||result.denied||result.error)throw Error('Request was not accepted. Check the text workspace.');
+      const deadline=Date.now()+120000;
+      while(Date.now()<deadline&&talk.active){
+        const {response,body}=await api.task(result.taskId);
+        if(!response.ok)throw Error('Workspace access is unavailable.');
+        const task=body.task||body;
+        if(['completed','failed','cancelled','outcome_unknown','waiting_for_approval','waiting_for_manual_response'].includes(canonicalTaskStatus(task)))return taskConversationResponse(task);
+        await new Promise(resolve=>setTimeout(resolve,1500));
+      }
+      return 'The task is still pending. Check its status in Work; no completion is confirmed.';
+    }
+  });
+  byId('talkMute').textContent='Mute';
+  await realtimeVoice.start();
+}
+async function loadVoiceHistory() {
+  try{
+    const data=await voiceRequest('/api/voice/transcripts?workspaceId='+encodeURIComponent(activeWorkspaceId()));
+    const box=byId('voiceHistory');box.replaceChildren();
+    for(const session of data.transcripts||[]){
+      const details=el('details');details.append(el('summary',null,new Date(session.created).toLocaleString()));
+      for(const turn of session.transcript){details.append(el('p',null,(turn.role==='user'?'You: ':'Zola: ')+turn.text));}
+      box.append(details);
+    }
+    if(!box.children.length)box.append(el('p','muted','No saved voice conversations in this workspace.'));
+  }catch(e){byId('voiceHistory').textContent=e.message;}
 }
 
 function renderConversation() {
@@ -833,7 +913,8 @@ async function refreshAll() {
     const { body: health } = await api.health(signal);
     store.health = health; store.offline = false;
     if (store.authed) {
-      const [tasksRes, wsRes] = await Promise.all([api.tasks(signal), store.workspaces.length ? Promise.resolve(null) : api.workspaces(signal)]);
+      const [tasksRes, wsRes] = await Promise.all([api.tasks(signal), api.workspaces(signal)]);
+      if (!tasksRes.response.ok || !wsRes.response.ok) { store.tasks = []; store.workspaces = []; throw new Error('Workspace access could not be refreshed'); }
       if (tasksRes.body.tasks) store.tasks = tasksRes.body.tasks;
       if (!store.conversationId && store.taskId) {
         const known = store.tasks.find((t) => t.id === store.taskId);
@@ -847,6 +928,10 @@ async function refreshAll() {
           alignWorkspaceToCanonical(body.conversation?.workspace_id);
         }
         else if (response.status === 404) { store.conversation = null; }
+      }
+      if (store.view === 'work' && workListMode === 'projects') {
+        const result = await api.request('/api/zola/projects?workspaceId='+encodeURIComponent(activeWorkspaceId()),{signal});
+        store.projects = result.response.ok ? result.body : null;
       }
       if (store.view === 'system') { const { body } = await api.ready(signal); store.ready = body; }
     }
@@ -981,7 +1066,7 @@ async function login() {
 }
 async function logout() {
   await api.logout();
-  store.authed = false; store.csrfToken = ''; store.principalId = ''; store.sessionExpiresAt = null; store.conversation = null; store.tasks = [];
+  store.authed = false; store.csrfToken = ''; store.principalId = ''; store.sessionExpiresAt = null; store.conversation = null; store.tasks = []; store.projects = null;
   setNotice('sessionNotice', 'Signed out.');
   render();
 }
@@ -1097,6 +1182,8 @@ byId('stopResetBtn').addEventListener('click', emergencyStopReset);
 byId('exportJsonBtn').addEventListener('click', () => downloadExport('json'));
 byId('exportMdBtn').addEventListener('click', () => downloadExport('md'));
 byId('workspace').addEventListener('change', () => {
+  endTalk('Workspace changed. Start a new voice session.');
+  byId('voiceHistory').replaceChildren(); store.projects = null;
   store.workspaceTouched = true;
   const conversationWorkspace = store.conversation?.conversation?.workspace_id;
   if (conversationWorkspace && conversationWorkspace !== activeWorkspaceId()) {
@@ -1128,14 +1215,14 @@ byId('talkStart').addEventListener('click', startTalk);
 byId('talkStartFollow').addEventListener('click', startTalk);
 byId('talkEnd').addEventListener('click', () => { endTalk(); byId('talkDialog').close(); });
 byId('talkDialog').addEventListener('cancel', () => endTalk());
-byId('talkResume').addEventListener('click', () => { byId('talkResume').hidden = true; talk.token++; talk.recognition?.abort(); speechSynthesis.cancel(); resumeTalk(); });
-byId('talkInterrupt').addEventListener('click', () => {
-  if (talk.phase === 'thinking') { talkStatus('thinking', 'Waiting for the current task. End conversation to leave voice mode.'); return; }
-  talk.token++; talk.recognition?.abort(); speechSynthesis.cancel(); resumeTalk();
-});
+byId('talkResume').addEventListener('click', resumeTalk);
+byId('talkInterrupt').addEventListener('click', () => realtimeVoice?.interrupt());
+byId('talkMute').addEventListener('click', () => { byId('talkMute').textContent=realtimeVoice?.mute()?'Unmute':'Mute'; });
+byId('voiceHistoryButton').addEventListener('click',loadVoiceHistory);
+
 document.addEventListener('visibilitychange', () => { if (document.hidden) endTalk('Paused because Zola left the screen. Close and start again.'); });
 window.addEventListener('pagehide', () => endTalk());
-byId('logoutBtn').addEventListener('click', () => { endTalk(); byId('talkDialog').close(); });
+byId('logoutBtn').addEventListener('click', () => { endTalk(); byId('talkDialog').close(); byId('voiceHistory').replaceChildren(); byId('voiceTurns').replaceChildren(); });
 
 
 /* Approved Mini App workspace. No Telegram client identity grants access. */
@@ -1153,23 +1240,72 @@ function renderHomeFocus() {
   byId('homeFocusTitle').textContent = task ? conversationText(task.request) : 'Your next move';
   byId('homeFocusDetail').textContent = task ? statusInfo(task).label + ' · Open task' : 'Ask Zola to review your workspace.';
 }
+/* Project summaries are derived only from currently authorized records. */
+function summarizeProjects(workspaces, tasks) {
+  const blocked = ['failed', 'waiting_for_approval', 'waiting_for_manual_response', 'outcome_unknown'];
+  const active = ['queued', 'planning', 'running', 'validating'];
+  return workspaces.map(ws => {
+    const rows = tasks.filter(t => t.workspace_id === ws.id).slice().sort((a, b) =>
+      String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+    const needs = rows.filter(t => blocked.includes(canonicalTaskStatus(t)));
+    const running = rows.filter(t => active.includes(canonicalTaskStatus(t)));
+    const nextTask = needs[0] || running[0];
+    const title = t => String(conversationText(t.request) || 'Untitled task').slice(0, 180);
+    const next = !nextTask ? 'No open next action recorded. Ask Zola to review this workspace.' :
+      canonicalTaskStatus(nextTask) === 'waiting_for_approval' ? 'Review approval: ' + title(nextTask) :
+      canonicalTaskStatus(nextTask) === 'outcome_unknown' ? 'Verify outcome before retrying: ' + title(nextTask) :
+      canonicalTaskStatus(nextTask) === 'waiting_for_manual_response' ? 'Provide the requested response: ' + title(nextTask) :
+      canonicalTaskStatus(nextTask) === 'failed' ? 'Inspect the failed task: ' + title(nextTask) : 'Track progress: ' + title(nextTask);
+    const latest = rows[0];
+    const activityDate = latest ? new Date(latest.updated_at || latest.created_at) : null;
+    const activityTime = activityDate && Number.isFinite(activityDate.getTime()) ? activityDate.toLocaleString() : 'Time not recorded';
+    return { id: ws.id, name: ws.name || ws.id, description: ws.description || 'No project description recorded.',
+      status: needs.length ? 'Needs attention' : running.length ? 'In progress' : rows.length ? 'No active tasks returned' : 'No activity available',
+      next, blockers: needs.length ? needs.slice(0, 3).map(t => statusInfo(t).label + ': ' + title(t)).join(' • ') + (needs.length > 3 ? ' • +' + (needs.length - 3) + ' more' : '') : 'None in the returned tasks; project completeness is not verified.',
+      latest: latest ? title(latest) + ' · ' + statusInfo(latest).label + ' · ' + activityTime : 'No recorded activity available.',
+      counts: rows.length + ' total · ' + running.length + ' active · ' + needs.length + ' need attention' };
+  });
+}
+/* End project summaries. */
 function renderWorkDashboard() {
   byId('workDate').textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
   const list = byId('workList'); list.replaceChildren();
   const projects = workListMode === 'projects';
-  byId('workListTitle').textContent = projects ? 'Connected workspaces' : workListMode === 'tasks' ? 'Recent tasks' : 'Needs attention';
-  byId('workListHint').textContent = projects ? 'Workspaces available to your signed-in account. A broader project overview is still being connected.' : 'From the tasks returned for the selected workspace.';
+  byId('workListTitle').textContent = projects ? 'Project overview' : workListMode === 'tasks' ? 'Recent tasks' : 'Needs attention';
+  byId('workListHint').textContent = projects ? 'Connected workspaces only. Status is based on returned authorized tasks, not a full project inventory. ' + (store.refreshError ? 'Refresh failed; data may be stale.' : store.lastSync ? 'Updated ' + fmtTime(store.lastSync) : 'Waiting for a fresh snapshot.') : 'From the tasks returned for the selected workspace.';
   if (projects) {
-    for (const ws of store.workspaces) {
-      const card = el('button', 'work-item'); card.type = 'button';
-      card.append(el('strong', null, ws.name || ws.id), el('span', 'muted', 'Open workspace'));
-      card.addEventListener('click', () => {
-        byId('workspace').value = ws.id;
+    for (const project of summarizeProjects(store.workspaces, store.tasks)) {
+      const card = el('article', 'work-item project-card');
+      card.append(el('strong', null, project.name), el('span', 'chip', project.status));
+      card.append(el('p', 'muted', project.description));
+      const details = el('dl', 'project-details');
+      for (const [label, value] of [['Next step', project.next], ['Blockers', project.blockers], ['Latest activity', project.latest], ['Returned tasks', project.counts]]) {
+        details.append(el('dt', null, label), el('dd', null, value));
+      }
+      card.append(details);
+      const open = el('button', 'ghost', 'Open workspace'); open.type = 'button';
+      open.addEventListener('click', () => {
+        byId('workspace').value = project.id;
         byId('workspace').dispatchEvent(new Event('change'));
         go('command');
       });
-      list.append(card);
+      card.append(open); list.append(card);
     }
+    if (store.projects?.projects?.length) {
+      list.append(el('h3',null,'Project checkpoints'));
+      list.append(el('p','muted','Saved coordination notes. Each date identifies the last documented checkpoint; these are not live project health checks.'));
+      for (const project of store.projects.projects) {
+        const card=el('details','work-item project-card');
+        const summary=el('summary');summary.append(el('strong',null,project.name),el('span','muted',project.status+' · '+project.asOf));card.append(summary);
+        for(const [label,text] of [['Recorded position',project.recorded],['Next step',project.next],['Blockers',project.blockers],['Source',project.evidence+' · '+store.projects.source]]) {
+          card.append(el('h4',null,label),el('p',null,text));
+        }
+        list.append(card);
+      }
+    } else {
+      list.append(el('p','muted','Project checkpoint source is not connected for this workspace. The live task summaries above remain available.'));
+    }
+
   } else {
     const tasks = workspaceTasks().filter(t => workListMode === 'tasks' || ['waiting_for_approval', 'waiting_for_manual_response', 'outcome_unknown', 'failed'].includes(canonicalTaskStatus(t)));
     for (const task of tasks.slice(0, 12)) {
@@ -1190,7 +1326,7 @@ document.querySelectorAll('[data-deal-report]').forEach(button => button.addEven
 }));
 byId('homeFocus').addEventListener('click', () => { const task = focusTask(); if (task) go('task', task.id); else openChat(); });
 byId('showWorkTasks').addEventListener('click', () => { workListMode = 'tasks'; renderWorkDashboard(); });
-byId('showWorkProjects').addEventListener('click', () => { workListMode = 'projects'; renderWorkDashboard(); });
+byId('showWorkProjects').addEventListener('click', () => { workListMode = 'projects'; renderWorkDashboard(); refreshAll(); });
 byId('moreToggle').addEventListener('click', () => {
   const box = byId('moreScreens'); box.hidden = !box.hidden;
   byId('moreToggle').setAttribute('aria-expanded', String(!box.hidden));

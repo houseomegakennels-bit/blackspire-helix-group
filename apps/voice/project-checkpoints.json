@@ -1,0 +1,162 @@
+{
+  "source": "Blackspire_Command_Center.md",
+  "sourceDate": "2026-09-27T08:22:35.655Z",
+  "importedAt": "2026-09-30",
+  "scope": "Dated coordination notes, not a live account-wide monitor. Family workstreams are not included in this business overview.",
+  "projects": [
+    {
+      "id": "PL-01",
+      "name": "Platform website",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Changes approved; release not verified.",
+      "next": "Verify the deployed change and mobile navigation.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "PL-02",
+      "name": "Forge",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Saved task board had review work and a quote task blocked by invocation slots.",
+      "next": "Reconcile current PRs and execution evidence before starting another run.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "PL-03",
+      "name": "Zola OS",
+      "workspaceId": "blackspire-command",
+      "status": "App verified; upgrade in progress",
+      "recorded": "Mini App verified by Los on September 30. Project overview and real-time voice upgrade in progress.",
+      "next": "Complete this release; configure the voice API credential and run the first phone audio test.",
+      "blockers": "Voice API credential is not configured.",
+      "asOf": "2026-09-30",
+      "evidence": "Operator confirmation and current repository inspection"
+    },
+    {
+      "id": "RE-01",
+      "name": "Real estate leads",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Buyer-first sourcing and outreach recorded; current replies not checked here.",
+      "next": "Check the owning outreach session and reconcile sent messages before more outreach.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "RE-02",
+      "name": "Real estate expansion",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "VA/SC/TN planning baseline exists; implementation was requested but completion was not verified.",
+      "next": "Obtain the implementation checkpoint and verify state-aware matching.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "CL-01",
+      "name": "Yvonne client project",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Preview upgrades and follow-up recorded; latest reply unknown.",
+      "next": "Verify the latest reply and next delivery commitment in the client session.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "CL-02",
+      "name": "Peggy client project",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Access changes and separate workspace were requested.",
+      "next": "Verify actual permissions and delivery status.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "CL-03",
+      "name": "Client prospecting",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Applications, verification issues, and Kailah outreach recorded.",
+      "next": "Reconcile application and outreach outcomes.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "ME-01",
+      "name": "Media content",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "AI influencer format and content direction were being selected at the saved checkpoint.",
+      "next": "Read the current media handoff before selecting or generating the next deliverable.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "ME-02",
+      "name": "Geminara",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "YouTube upload requested; upload outcome not verified in this source.",
+      "next": "Verify source asset, correct channel, and upload result.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "ME-03",
+      "name": "Personal duet",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "References and clip supplied; generation approved.",
+      "next": "Check the existing generation before spending more credits.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "SA-01",
+      "name": "Sarion’s World",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Saved integration checkpoint reported focused tests passing; final preview and audio synchronization still needed verification.",
+      "next": "Read the current video integration handoff and verify audio on the phone.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "PF-01",
+      "name": "Pearson Facility Services",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "Saved business checkpoint recorded qualification and partner inquiries; replies and filing approval needed verification then.",
+      "next": "Read the current PFS operations record and verify replies, formation, and bid readiness.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    },
+    {
+      "id": "LE-01",
+      "name": "Legacy OS",
+      "workspaceId": "blackspire-command",
+      "status": "Needs current checkpoint",
+      "recorded": "USB dependency recorded; independent work was authorized; exact current blocker unknown.",
+      "next": "Obtain the latest checkpoint and separate USB-dependent work from independent tasks.",
+      "blockers": "Current blockers not verified; inspect the owning project checkpoint.",
+      "asOf": "2026-09-27",
+      "evidence": "Dated Command Center record"
+    }
+  ]
+}

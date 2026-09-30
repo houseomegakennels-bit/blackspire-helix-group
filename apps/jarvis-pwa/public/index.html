@@ -10,7 +10,7 @@
 <link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="/zola-icon-180.png">
 <title>Blackspire Zola</title>
-<link rel="stylesheet" href="/zola.css?v=20260927-mini1">
+<link rel="stylesheet" href="/zola.css?v=20260930-voice1">
 </head>
 <body class="zola-mini">
 <a class="skip" href="#main">Skip to content</a>
@@ -281,11 +281,11 @@
 <dialog id="talkDialog" aria-labelledby="talkTitle">
 <h2 id="talkTitle">Talk to Zola</h2><div class="zola-orb" aria-hidden="true"></div>
 <p id="talkStatus" role="status" aria-live="polite">Ready</p>
-<p class="muted">Speak, pause, and Zola will reply aloud. Your turns send automatically while this screen is open. Voice mode uses read-only tasks.</p>
-<p id="talkTranscript"></p><p id="talkReply"></p>
-<div class="row"><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
+<p class="muted">Speak, pause, and Zola will reply aloud. Your turns send automatically while this screen is open. Live AI-generated voice. Workspace requests are read-only. Five minutes per session; six sessions per day. Transcript history stays within your signed-in workspace.</p>
+<p id="talkTranscript" hidden></p><p id="talkReply" hidden></p><div id="voiceTurns" aria-live="polite"></div><button id="voiceHistoryButton" type="button" class="ghost">Saved conversations</button><div id="voiceHistory"></div>
+<div class="row"><button id="talkMute" type="button" class="ghost">Mute</button><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume audio</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
 </dialog>
 <script src="/telegram-web-app.js"></script>
-<script src="/zola.js?v=20260927-mini1"></script>
+<script src="/zola.js?v=20260930-voice1"></script>
 </body>
 </html>

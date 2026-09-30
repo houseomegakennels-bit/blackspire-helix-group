@@ -186,7 +186,7 @@ body.zola-mini{background:#000;color:#f7f7f7}
 .zola-mini #cmd,.zola-mini #followCmd{height:52px;min-height:52px;max-height:150px;resize:vertical;border-radius:28px;background:linear-gradient(#242526,#171819);padding:13px 58px 10px 16px;border-color:#ffffff25;font-size:16px}
 .zola-mini .composer-panel .row-center{position:absolute;top:4px;right:4px}
 .zola-mini #sendBtn,.zola-mini #followBtn{width:44px;height:44px;min-height:44px;min-width:44px;padding:0;flex:none;border-radius:50%;background:#e5102d;color:#fff;font-size:29px;font-weight:400}
-.zola-mini #micBtn,.zola-mini #followMicBtn,.zola-mini #talkStart,.zola-mini #talkStartFollow,.zola-mini #micHint,.zola-mini #followMicHint{display:none!important}
+.zola-mini #micBtn,.zola-mini #followMicBtn,.zola-mini #micHint,.zola-mini #followMicHint{display:none!important}
 .zola-mini .request-options{width:100%;order:3;font-size:12px}.zola-mini .request-options>summary{font-size:11px;color:#aaa;padding:3px 0}
 .zola-mini .notice:empty{display:none}.zola-mini #composerNotice{order:4}
 .zola-mini .secondary-home{order:6}.zola-mini section[data-view=command]>details.panel{order:7}.zola-mini section[data-view=command]>.panel:last-child{order:8}
@@ -225,3 +225,9 @@ body.zola-mini{background:#000;color:#f7f7f7}
 .zola-mini #app{align-content:start}.zola-mini #main{margin:0 auto;width:100%}.zola-mini section[data-view=conversation]:not([hidden]){display:flex;flex-direction:column;min-height:calc(100dvh - 140px)}.zola-mini section[data-view=conversation]>.panel:nth-child(2){flex:1}
 
 body.zola-mini[data-screen=conversation] #main{margin:0 auto}
+
+.project-card{cursor:default!important;align-items:stretch!important}.project-details{margin:4px 0;display:grid;gap:4px}.project-details dt{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#c7babc;margin-top:8px}.project-details dd{margin:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.project-card>button{align-self:flex-start}
+
+.zola-mini #talkStart,.zola-mini #talkStartFollow{display:inline-flex;align-self:flex-start;background:#250c12;border:1px solid #b11c32;color:white;order:3;margin:6px 0}.voice-user,.voice-zola{padding:12px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.voice-user{background:#320d16}.voice-zola{background:#181818}#voiceHistory details{padding:12px 0;border-top:1px solid #ffffff22}#voiceHistory p{white-space:pre-wrap;overflow-wrap:anywhere}
+
+.project-card summary{cursor:pointer;display:grid;gap:6px}.project-card h4{margin:14px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#c7babc}.project-card p{font-size:14px;line-height:1.5}.project-card summary .muted{font-size:12px}
