@@ -1185,7 +1185,8 @@ function openChat() { go('conversation', store.conversationId); byId('followCmd'
 document.querySelectorAll('[data-open-chat]').forEach(button => button.addEventListener('click', openChat));
 document.querySelectorAll('[data-deal-report]').forEach(button => button.addEventListener('click', () => {
   if (!store.authed || store.inflight) return;
-  submitCommand('Give me a deal status report with next actions and missing information.', '', 'composerNotice', 'read_only');
+  go('conversation');
+  submitCommand('Give me a deal status report with next actions and missing information.', '', 'followNotice', 'read_only');
 }));
 byId('homeFocus').addEventListener('click', () => { const task = focusTask(); if (task) go('task', task.id); else openChat(); });
 byId('showWorkTasks').addEventListener('click', () => { workListMode = 'tasks'; renderWorkDashboard(); });

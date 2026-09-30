@@ -14,7 +14,7 @@ const config=fs.realpathSync('/etc/nginx/sites-enabled/command.conf');
 const previous=fs.readFileSync(config),stat=fs.statSync(config);
 if(stat.uid!==0||(stat.mode&0o022)!==0)throw Error('Unsafe nginx configuration');
 if(!previous.includes('BEGIN ZOLA BRAND UI'))throw Error('Existing UI deployment required for upgrade');
-if((previous.toString().match(/\/var\/www\/zola-ui\/128ea3f775c0de725cbbcbe60b4c2603627b94bd\//g)||[]).length!==15)throw Error('Unexpected UI predecessor');
+if((previous.toString().match(/\/var\/www\/zola-ui\/d5b1ea061fe6a310533d9524c6f2009138633711\//g)||[]).length!==16)throw Error('Unexpected UI predecessor');
 const files={'/telegram-web-app.js':'telegram-web-app.js','/zola':'index.html','/zola.css':'jarvis.css','/zola.js':'jarvis.js','/jarvis.css':'jarvis.css','/jarvis.js':'jarvis.js','/helix-core.js':'helix-core.js','/manifest.webmanifest':'manifest.webmanifest','/sw.js':'sw.js','/zola-icon.svg':'zola-icon.svg','/zola-icon-180.png':'zola-icon-180.png','/zola-icon-192.png':'zola-icon-192.png','/zola-icon-512.png':'zola-icon-512.png','/hermes-runtime':'hermes-runtime.html','/hermes-runtime.css':'hermes-runtime.css','/hermes-runtime.js':'hermes-runtime.js'};
 const types={html:'text/html',css:'text/css',js:'text/javascript',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 const csp="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors https://web.telegram.org";
