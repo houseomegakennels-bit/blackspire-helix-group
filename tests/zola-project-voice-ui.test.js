@@ -59,7 +59,7 @@ test('ending during microphone permission request closes a late stream and never
 
 function readRouting() {
  const context={blackspireCapabilityRegistry:{get:id=>({id})}};vm.createContext(context);
- vm.runInContext(js.slice(js.indexOf('function voiceWorkspaceRequest('),js.indexOf('/* End voice read routing. */')),context);
+ vm.runInContext(js.slice(js.indexOf('function personalReadKind('),js.indexOf('/* End voice read routing. */')),context);
  const routing=fs.readFileSync('packages/capabilities/execute.js','utf8').split('export function selectCapabilityForTask')[1].split('\nfunction extractDealId')[0];
  vm.runInContext('function selectCapabilityForTask'+routing,context);
  return context;

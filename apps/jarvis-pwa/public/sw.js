@@ -4,7 +4,7 @@
    control plane, and no privileged action can be replayed from cache. */
 'use strict';
 
-const CACHE_NAME = 'zola-shell-v8';
+const CACHE_NAME = 'zola-shell-v9';
 const SHELL = ['/zola', '/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

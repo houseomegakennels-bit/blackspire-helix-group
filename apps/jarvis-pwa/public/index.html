@@ -10,7 +10,7 @@
 <link rel="icon" href="/zola-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="/zola-icon-180.png">
 <title>Blackspire Zola</title>
-<link rel="stylesheet" href="/zola.css?v=20260930-voice2">
+<link rel="stylesheet" href="/zola.css?v=20261001-everyday1">
 </head>
 <body class="zola-mini">
 <a class="skip" href="#main">Skip to content</a>
@@ -25,6 +25,7 @@
 
   <button id="moreToggle" class="more-toggle" type="button" aria-label="More screens" aria-expanded="false">•••</button>
   <div id="moreScreens" hidden>    <details class="nav-more"><summary aria-label="More screens"><span aria-hidden="true">•••</span>More</summary><div class="nav-more-menu">
+    <a href="#/today">Today</a>
     <a href="#/events"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M5 4v16M5 7h9M5 12h13M5 17h7"/></svg>Events</a>
     <a href="#/system"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0M12 14l3.5-4"/><path d="M4 19h16"/></svg>System</a>
     <a href="#/evidence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 13h5M10 17h5"/></svg>Evidence</a>
@@ -42,6 +43,34 @@
   </nav>
 
   <main id="main">
+    <section data-view="today" hidden>
+      <div class="panel wide everyday">
+        <p class="muted" id="personalDate"></p>
+        <h2>Your day, a little clearer.</h2>
+        <p>Keep the things you need to remember in one place.</p>
+        <p id="personalNotice" role="status" aria-live="polite"></p>
+        <button id="personalRetry" type="button" hidden>Retry unconfirmed save</button>
+        <div id="personalBriefing"></div>
+        <p class="muted">Reminders appear here when you open Zola. Telegram alerts and calendar sync are not connected yet.</p>
+        <label for="personalFilter">Show</label>
+        <select id="personalFilter"><option value="all">Everything</option><option value="reminder">Reminders</option><option value="memory">Memory</option><option value="list">Lists</option><option value="bill">Bills</option><option value="appointment">Appointments</option><option value="note">Notes</option></select>
+        <div id="personalRows" class="personal-rows"></div>
+        <details id="personalEditor"><summary>Add something to remember</summary>
+          <form id="personalForm" class="stack">
+            <label for="personalKind">Type</label>
+            <select id="personalKind"><option value="reminder">Reminder</option><option value="memory">Memory</option><option value="list">List item</option><option value="bill">Bill reminder</option><option value="appointment">Appointment</option><option value="note">Note</option></select>
+            <label for="personalTitle">What should Zola remember?</label><input id="personalTitle" required maxlength="240" placeholder="Call Mom">
+            <label for="personalDetail">Details (optional)</label><textarea id="personalDetail" maxlength="4000" placeholder="Anything that will help later"></textarea>
+            <div id="personalDueField"><label for="personalDue">Date and time on this device</label><input id="personalDue" type="datetime-local"></div>
+            <div id="personalListField" hidden><label for="personalList">List name</label><input id="personalList" maxlength="80" placeholder="Groceries"></div>
+            <div id="personalAmountField" hidden><label for="personalAmount">Amount in USD (optional)</label><input id="personalAmount" inputmode="decimal" type="number" min="0" max="1000000" step="0.01"></div>
+            <div class="row"><button type="submit" id="personalSave" class="primary">Save</button><button type="button" id="personalCancel">Cancel</button></div>
+          </form>
+        </details>
+        <p class="muted">Private to your account in this workspace. Saved memories are your notes; they do not grant Zola permission to act.</p>
+      </div>
+    </section>
+
 
     <!-- Sign in -->
     <section data-view="signin" hidden>
@@ -79,6 +108,7 @@
       <button type="button" id="homeFocus" class="focus-card"><span class="focus-label">Focus today</span><strong id="homeFocusTitle">Your next move</strong><span id="homeFocusDetail">Ask Zola to review your workspace.</span><span class="card-chevron" aria-hidden="true">›</span></button>
       <div class="panel wide composer-panel">
         <h2 id="composerHeading" class="sr-only">Message Zola</h2><button class="primary" id="talkStart" type="button">Talk to Zola</button>
+<a class="personal-open" href="#/today">Open Today, lists &amp; memory</a>
         <div class="stack">
           <label class="sr-only" for="cmd">Command for Zola</label>
           <textarea id="cmd" placeholder="Message Zola…" enterkeyhint="send"></textarea>
@@ -286,6 +316,6 @@
 <div class="row"><button id="talkMute" type="button" class="ghost">Mute</button><button id="talkInterrupt" type="button" class="ghost">Interrupt</button><button id="talkResume" type="button" class="primary" hidden>Resume audio</button><button id="talkEnd" type="button" class="ghost">End conversation</button></div>
 </dialog>
 <script src="/telegram-web-app.js"></script>
-<script src="/zola.js?v=20260930-voice2"></script>
+<script src="/zola.js?v=20261001-everyday1"></script>
 </body>
 </html>
