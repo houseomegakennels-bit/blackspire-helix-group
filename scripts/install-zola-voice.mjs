@@ -10,7 +10,7 @@ if(fs.existsSync(unitPath))throw Error('Voice service already exists; use a revi
 const root='/opt/blackspire-voice/releases/'+sha;
 fs.mkdirSync(root,{recursive:true,mode:0o755});
 fs.writeFileSync(root+'/package.json',JSON.stringify({type:'module'}),{flag:'wx',mode:0o644});
-for(const file of ['gateway.js','configure-key.py','project-checkpoints.json'])fs.copyFileSync('apps/voice/'+file,root+'/'+file,fs.constants.COPYFILE_EXCL);
+for(const file of ['gateway.js','personal.js','configure-key.py','project-checkpoints.json'])fs.copyFileSync('apps/voice/'+file,root+'/'+file,fs.constants.COPYFILE_EXCL);
 try{run('/usr/bin/id',['blackspire-voice']);}catch{run('/usr/sbin/useradd',['--system','--no-create-home','--home-dir','/var/lib/blackspire-voice','--shell','/usr/sbin/nologin','blackspire-voice']);}
 const unit='[Unit]\nDescription=Zola isolated realtime voice gateway\nAfter=network-online.target blackspire-command.service\nWants=network-online.target\n\n[Service]\nType=simple\nUser=blackspire-voice\nGroup=blackspire-voice\nStateDirectory=blackspire-voice\nStateDirectoryMode=0700\nUMask=0077\nEnvironmentFile=-/etc/blackspire/voice.env\nEnvironment=ZOLA_VOICE_DATA_DIR=/var/lib/blackspire-voice\nExecStart=/opt/nodejs/node-v22.23.1-linux-x64/bin/node '+root+'/gateway.js\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=20\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectKernelModules=true\nProtectControlGroups=true\nRestrictSUIDSGID=true\nCapabilityBoundingSet=\nRestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX\nMemoryMax=192M\nTasksMax=32\n\n[Install]\nWantedBy=multi-user.target\n';
 fs.writeFileSync(unitPath,unit,{flag:'wx',mode:0o644});
