@@ -100,7 +100,7 @@ test('packager excludes unrelated secrets and produces runnable standalone confi
  const source=path.join(parent,'source');fs.mkdirSync(source);const actual=path.resolve(new URL('..',import.meta.url).pathname);
  for(const file of CUSTOMER_FILES){const dst=path.join(source,file);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(path.join(actual,file),dst);}
  fs.writeFileSync(path.join(source,'.env'),'DO_NOT_DISTRIBUTE');fs.writeFileSync(path.join(source,'customer-data.sqlite'),'DO_NOT_DISTRIBUTE');
- const out=path.join(parent,'bundle');const packaged=packageCustomer(source,out);assert.equal(packaged.files,14);
+ const out=path.join(parent,'bundle');const packaged=packageCustomer(source,out);assert.equal(packaged.files,15);
  assert.equal(fs.existsSync(path.join(out,'.env')),false);assert.equal(fs.existsSync(path.join(out,'customer-data.sqlite')),false);
  const manifest=JSON.parse(fs.readFileSync(path.join(out,'bundle-manifest.json')));assert.equal(manifest.fullZolaOs,false);
  const {spawnSync}=await import('node:child_process');const install=path.join(parent,'installed');

@@ -40,7 +40,7 @@ Pricing must be checked for the exact model and expires after at most seven days
 Timeouts, invalid/incomplete responses, redirects, errors and missing usage retain the reservation and block further calls pending review. Prior-month pending work blocks month rollover. There is intentionally no automatic ledger reset or reconciliation override. Paid-request review, recovery tooling and invoice reconciliation remain to implement. Do not delete the ledger to unblock a request.
 
 ## Packaging
-The packaging command copies only fourteen approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
+The packaging command copies only fifteen approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
 
 ## Not yet production-ready
 Live provider acceptance has not been run. Full customer onboarding UI, web authentication, workspace/tool authorization integration, production admission, service/HTTPS installation, post-restore billing reconciliation/re-enablement, signed updates, automatic pricing refresh and customer support recovery remain required. The full system must not be marketed as plug-and-play based on this CLI preview.
@@ -65,3 +65,12 @@ python3 -c 'import getpass,json; print(json.dumps({"passphrase":getpass.getpass(
 The archive uses scrypt-derived AES-256-GCM encryption and contains the installation identity, both enrolled provider vaults, their master key, paused policy and a consistent SQLite spending/answer snapshot. Treat the archive and passphrase together as full credential access. Files and directories are restored privately. Other files are excluded by a fixed allowlist. Existing destinations are never overwritten; interrupted restorations may leave a held partial destination that must be reviewed, not reused blindly.
 
 **A restore is deliberately not an activation.** It retains the original identity and receipts, disables paid execution, and creates a durable recovery hold. Neither chat nor normal configuration can bypass that hold. Restored history may be older than actual provider charges: retiring the original installation and reconciling later receipts/charges are required before admission can resume. Automated reconciliation and hold release are not implemented in this preview. Do not delete the hold or ledger to enable a restored copy. Archive creation leaves the original installation paused but does not permanently retire it. Store a verified backup off the original host; automatic upload and retention are not included.
+
+
+## Reviewing status and recovery
+
+```sh
+node scripts/customer-ai.mjs status --directory /your/private/restored-zola
+```
+
+Status works with a recovery hold or expired pricing. It reports the configured provider/model, effective enabled flag, pricing freshness, hold timestamps, monthly reserved/observed amounts and up to 100 unresolved request IDs. It never decrypts keys, calls providers, returns prompts/answers or creates a missing ledger. The ledger is opened read-only and checked for identity/integrity. Review shares the maintenance lock, so wait for active requests to finish. A missing ledger is labeled `not_created`; amounts are local estimates, not reconciled provider invoices. `admissionVerified` remains false: this inspection is not a connectivity or permission test. Recovery guidance requires original-instance retirement and post-snapshot charge/receipt reconciliation; the report cannot clear the hold.

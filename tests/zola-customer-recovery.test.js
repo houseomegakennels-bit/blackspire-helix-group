@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {reviewCustomerRecovery} from '../packages/customer/recovery-review.mjs';
 import {backupCustomer,restoreCustomer} from '../packages/customer/backup.mjs';
 import {initializeCustomer} from '../scripts/init-zola-customer.mjs';
 import {configureCustomer,loadPolicy,pauseCustomer,requestReservation} from '../packages/customer/policy.mjs';
@@ -56,4 +57,26 @@ test('in-flight dispatch holds maintenance lock until its receipt is recorded',a
 test('stale lock and symlinked recovery hold fail closed',async t=>{
  const {root}=fixture(t);fs.mkdirSync(path.join(root,'.configuration-lock'));await assert.rejects(runCustomerChat(root,request(),opts(async()=>response())));fs.rmdirSync(path.join(root,'.configuration-lock'));
  fs.symlinkSync('/nonexistent',path.join(root,'recovery-hold.json'));await assert.rejects(runCustomerChat(root,request(),opts(async()=>response())),/RECOVERY_RECONCILIATION_REQUIRED/);
+});
+
+test('recovery review exposes required steps without secrets or receipt mutation',async t=>{
+ const {root,parent}=fixture(t);await runCustomerChat(root,request(),opts(async()=>response()));pauseCustomer(root);
+ const backup=path.join(parent,'review.enc');backupCustomer(root,backup,passphrase);const out=path.join(parent,'review');restoreCustomer(backup,out,passphrase);
+ const db=path.join(out,'data/customer-ai.sqlite'),before=fs.readFileSync(db);const report=reviewCustomerRecovery(out,NOW+10*86400000);
+ assert.equal(report.enabled,false);assert.equal(report.pricingCurrent,false);assert.ok(report.blockers.includes('recovery_hold'));assert.equal(report.budget.totalRequests,1);assert.equal(report.budget.months[0].reservedMicroUsd,4301);assert.equal(report.admissionVerified,false);
+ assert.ok(report.nextSteps.some(x=>x.includes('Retire')));assert.deepEqual(fs.readFileSync(db),before);
+ const text=JSON.stringify(report);for(const secret of ['test-only-openai-key','Hello from Zola','fingerprint','master.key'])assert.ok(!text.includes(secret));
+});
+test('status review does not create a missing ledger or claim provider verification',t=>{
+ const {root}=fixture(t);const file=path.join(root,'data/customer-ai.sqlite');assert.ok(!fs.existsSync(file));
+ const report=reviewCustomerRecovery(root,NOW);assert.equal(report.budget.state,'not_created');assert.equal(report.admissionVerified,false);assert.ok(!fs.existsSync(file));
+});
+test('review lists unresolved receipts without their answer or fingerprint',async t=>{
+ const {root}=fixture(t);const req=request();await assert.rejects(runCustomerChat(root,req,opts(async()=>{throw Error('test failure');})));
+ const report=reviewCustomerRecovery(root,NOW);assert.equal(report.budget.unresolvedCount,1);assert.equal(report.budget.unresolved[0].requestId,req.requestId);assert.equal(report.budget.unresolved[0].state,'unknown');assert.ok(report.blockers.includes('unresolved_requests'));
+});
+test('review rejects identity mismatch, unsafe ledger and invalid hold',t=>{
+ const {root,installationId}=fixture(t);const ledger=openLedger(root,installationId);ledger.close();const file=path.join(root,'data/customer-ai.sqlite');
+ fs.chmodSync(file,0o644);assert.throws(()=>reviewCustomerRecovery(root,NOW));fs.chmodSync(file,0o600);
+ fs.writeFileSync(path.join(root,'recovery-hold.json'),JSON.stringify({schemaVersion:1,installationId:'wrong'}),{mode:0o600});assert.throws(()=>reviewCustomerRecovery(root,NOW),/RECOVERY_HOLD_INVALID/);
 });

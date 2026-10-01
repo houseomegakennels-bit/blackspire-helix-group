@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-01 — Customer recovery review report
+
+The customer CLI status command now inspects restored/paused installations even when pricing has expired. It reads SQLite without creating a missing ledger, validates identity/integrity and reports monthly reserved/observed amounts plus up to 100 unresolved request IDs. Credentials are not decrypted; prompts, answers and fingerprints are excluded. Hold timestamps and retirement/reconciliation steps are explicit. Status does not verify provider authentication, reconcile invoices, release a hold or grant spend authority. The shared maintenance lock protects review from concurrent dispatch. The bundle now contains fifteen allowlisted files plus its manifest.
+
+Verification: 45 customer tests pass locally and on Commander on Node 22.23.1; new coverage checks held/expired review, unchanged ledger bytes, absent-ledger noncreation, unresolved request reporting, private permissions and malformed hold refusal. Lint, explicit syntax/typecheck and build pass. No provider request, live credential enrollment, production change or deployment occurred. Recovery activation and full customer OS onboarding/integration remain unfinished.
+
+
 ## 2026-10-01 — Encrypted customer backup and held recovery
 
 Added encrypted backup/restore for the separate customer text CLI preview. A fixed allowlist preserves installation identity, enrolled vaults and master key, paused policy, and a consistent SQLite receipt/spending snapshot. Archives use scrypt-derived AES-256-GCM, private files and fresh destinations; wrong passphrases or altered ciphertext are rejected. Backup requires paused execution with no unresolved charges. A shared lock prevents configuration or backup during provider dispatch; crashes leave a fail-closed stale lock. Restore disables execution and installs a durable recovery hold before transferring other files. Chat and setup reject held installations. Original-instance retirement and post-snapshot billing/receipt reconciliation remain required; automatic hold release is not implemented. This is not full OS recovery or service installation.
