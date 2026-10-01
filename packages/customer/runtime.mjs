@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import {loadPolicy,requestReservation,estimatedCost} from './policy.mjs';
 import {getCredential} from './vault.mjs';
 import {openLedger} from './ledger.mjs';
-import {fail} from './private-files.mjs';
+import {fail,exclusiveAsync} from './private-files.mjs';
 const SYSTEM='You are Zola, a helpful personal assistant. Answer the user naturally. You have no tools or access to external accounts in this text session; do not claim to have performed actions or read workspace data.';
 const ENDPOINTS={openai:'https://api.openai.com/v1/responses',anthropic:'https://api.anthropic.com/v1/messages'};
 async function limitedJson(response){
@@ -28,7 +28,8 @@ function decode(body,provider,apiKey){
  if(provider==='anthropic'&&(Number(body.usage.cache_creation_input_tokens||0)!==0||Number(body.usage.cache_read_input_tokens||0)!==0))fail('UNEXPECTED_BILLING_DIMENSION');
  return {answer,inputTokens:input,outputTokens:output};
 }
-export async function runCustomerChat(root,{requestId,prompt},{fetchImpl=fetch,clock=Date.now,signal}={}){
+export async function runCustomerChat(root,request,options={}){return exclusiveAsync(root,()=>dispatch(root,request,options));}
+async function dispatch(root,{requestId,prompt},{fetchImpl=fetch,clock=Date.now,signal}={}){
  if(typeof requestId!=='string'||!/^[a-zA-Z0-9_-]{16,100}$/.test(requestId)||typeof prompt!=='string')fail('REQUEST_INVALID');
  const {manifest,policy}=loadPolicy(root,clock());if(!policy.enabled)fail('CUSTOMER_AI_PAUSED');
  const {apiKey,keyId}=getCredential(root,manifest.installationId,policy.provider);

@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-01 — Encrypted customer backup and held recovery
+
+Added encrypted backup/restore for the separate customer text CLI preview. A fixed allowlist preserves installation identity, enrolled vaults and master key, paused policy, and a consistent SQLite receipt/spending snapshot. Archives use scrypt-derived AES-256-GCM, private files and fresh destinations; wrong passphrases or altered ciphertext are rejected. Backup requires paused execution with no unresolved charges. A shared lock prevents configuration or backup during provider dispatch; crashes leave a fail-closed stale lock. Restore disables execution and installs a durable recovery hold before transferring other files. Chat and setup reject held installations. Original-instance retirement and post-snapshot billing/receipt reconciliation remain required; automatic hold release is not implemented. This is not full OS recovery or service installation.
+
+Verification: all 41 customer tests pass locally and on Commander using Node 22.23.1, including receipt/key preservation, zero dispatch after restore, tamper/wrong-password rejection, collision refusal, unresolved-charge refusal and in-flight lock exclusion. Lint, syntax/typecheck, build and secret scan pass. The distributable allowlist now contains fourteen files plus its manifest. No real provider call, customer credential enrollment, production modification or deployment occurred. Full UI/workspace integration, live customer acceptance, reconciliation, signed updates and service/HTTPS installation remain unfinished.
+
+
 ## 2026-10-01 — Customer-owned text runtime preview
 
 Implemented a separate local customer text runtime for OpenAI Responses and Anthropic Messages, with canonical endpoints, redirect refusal, bounded input/output, timeout/cancellation and generic errors. Customer keys are AES-256-GCM encrypted with installation/provider binding and a private same-host master key; no environment or personal CLI credential fallback. Interactive hidden-key setup, pause/status/chat commands and a fixed twelve-file distributable bundle are included. SQLite reserves conservative request amounts transactionally, preserves cumulative monthly reservations across provider changes, replays only completed identical requests, and blocks uncertain outcomes or observed overruns for review. Pricing is operator-supplied, expires within seven days and does not guarantee provider invoices. No automatic refill/refund or uncertain retry.

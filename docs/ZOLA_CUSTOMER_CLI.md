@@ -40,11 +40,28 @@ Pricing must be checked for the exact model and expires after at most seven days
 Timeouts, invalid/incomplete responses, redirects, errors and missing usage retain the reservation and block further calls pending review. Prior-month pending work blocks month rollover. There is intentionally no automatic ledger reset or reconciliation override. Paid-request review, recovery tooling and invoice reconciliation remain to implement. Do not delete the ledger to unblock a request.
 
 ## Packaging
-The packaging command copies only twelve approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
+The packaging command copies only fourteen approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
 
 ## Not yet production-ready
-Live provider acceptance has not been run. Full customer onboarding UI, web authentication, workspace/tool authorization integration, production admission, service/HTTPS installation, backup/restore, signed updates, automatic pricing refresh and customer support recovery remain required. The full system must not be marketed as plug-and-play based on this CLI preview.
+Live provider acceptance has not been run. Full customer onboarding UI, web authentication, workspace/tool authorization integration, production admission, service/HTTPS installation, post-restore billing reconciliation/re-enablement, signed updates, automatic pricing refresh and customer support recovery remain required. The full system must not be marketed as plug-and-play based on this CLI preview.
 
 API references checked 2026-10-01:
 - https://developers.openai.com/api/docs/guides/text
 - https://platform.claude.com/docs/en/api/messages/create
+
+
+## Encrypted backup and held recovery
+
+This backs up only the customer text CLI installation, not the complete Zola OS or remote provider accounts. Pause the installation first. Backup refuses enabled installations, unresolved reservations, in-flight requests and an existing output file. Configuration, requests and backups share an exclusive lock. Pause cannot interrupt a running request; wait for its receipt and retry pause. A crashed process leaves the lock in place: do not remove it until the process is confirmed stopped and its ledger outcome reviewed.
+
+Use absolute paths in a private directory (mode 0700, owned by your account). These commands prompt for a passphrase without echoing it or placing it in shell history or process arguments. Python 3 is used only for the hidden prompt; the backup implementation runs in Node. Choose a unique passphrase of at least 16 characters and keep it separately. There is no password recovery.
+
+```sh
+node scripts/customer-ai.mjs pause --directory /your/private/new-zola
+python3 -c 'import getpass,json; print(json.dumps({"passphrase":getpass.getpass("Backup passphrase: ")}))' | node scripts/customer-backup.mjs backup /your/private/new-zola /your/private/zola-backup.enc
+python3 -c 'import getpass,json; print(json.dumps({"passphrase":getpass.getpass("Backup passphrase: ")}))' | node scripts/customer-backup.mjs restore /your/private/zola-backup.enc /your/private/restored-zola
+```
+
+The archive uses scrypt-derived AES-256-GCM encryption and contains the installation identity, both enrolled provider vaults, their master key, paused policy and a consistent SQLite spending/answer snapshot. Treat the archive and passphrase together as full credential access. Files and directories are restored privately. Other files are excluded by a fixed allowlist. Existing destinations are never overwritten; interrupted restorations may leave a held partial destination that must be reviewed, not reused blindly.
+
+**A restore is deliberately not an activation.** It retains the original identity and receipts, disables paid execution, and creates a durable recovery hold. Neither chat nor normal configuration can bypass that hold. Restored history may be older than actual provider charges: retiring the original installation and reconciling later receipts/charges are required before admission can resume. Automated reconciliation and hold release are not implemented in this preview. Do not delete the hold or ledger to enable a restored copy. Archive creation leaves the original installation paused but does not permanently retire it. Store a verified backup off the original host; automatic upload and retention are not included.

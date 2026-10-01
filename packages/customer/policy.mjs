@@ -1,6 +1,6 @@
 import path from 'node:path';
 import {loadCustomerInstallation,selectCustomerProvider} from '../shared/customer-installation.js';
-import {readPrivate,atomicPrivate,exclusive,privateDirectory,fail} from './private-files.mjs';
+import {readPrivate,atomicPrivate,exclusive,privateDirectory,fail,assertNoRecoveryHold} from './private-files.mjs';
 import {putCredential} from './vault.mjs';
 const integer=(n,min,max)=>Number.isSafeInteger(n)&&n>=min&&n<=max;
 export function validatePolicy(p,id,now=Date.now()){
@@ -15,13 +15,14 @@ export function validatePolicy(p,id,now=Date.now()){
  return p;
 }
 export function loadPolicy(root,now=Date.now()){
+ assertNoRecoveryHold(root);
  const {manifest}=loadCustomerInstallation(root);privateDirectory(path.join(root,'data'));
  const policy=validatePolicy(JSON.parse(readPrivate(path.join(root,'customer-ai.json'))),manifest.installationId,now);
  if(manifest.ai.provider!==policy.provider)fail('PROVIDER_SELECTION_MISMATCH');
  return {manifest,policy};
 }
 export function configureCustomer(root,input,now=Date.now()){
- return exclusive(root,()=>{const {manifest}=loadCustomerInstallation(root);
+ return exclusive(root,()=>{assertNoRecoveryHold(root);const {manifest}=loadCustomerInstallation(root);
  const policy=validatePolicy({...input.policy,installationId:manifest.installationId},manifest.installationId,now);
  // Save disabled policy first. Any interruption or failed credential write leaves execution off.
  atomicPrivate(path.join(root,'customer-ai.json'),JSON.stringify({...policy,enabled:false},null,2)+'\n');
