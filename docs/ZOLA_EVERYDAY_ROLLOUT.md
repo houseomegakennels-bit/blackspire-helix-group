@@ -2,7 +2,7 @@
 
 ## October 1, 2026 checkpoint
 
-Los authorized all ten proposed everyday feature areas. This branch starts that rollout; it is not a claim that all ten integrations are finished. Live Zola is unchanged. Commander is now online; full-checkout validation and browser preview pass. Deployment and native phone acceptance remain pending.
+Los authorized all ten proposed everyday feature areas. This branch starts that rollout; it is not a claim that all ten integrations are finished. The organizer and private social draft foundation are deployed. Full-checkout validation and browser preview pass; native phone acceptance remains pending.
 
 ## Implemented candidate
 
@@ -36,7 +36,7 @@ Los authorized all ten proposed everyday feature areas. This branch starts that 
 
 Retain the approved orb and black #000000, white #ffffff, red #e32b47 palette, with #333333 separators and #ff8498 overdue text. Keep existing typography and navigation; introduce Today through Home/More first. Use readable rows and explicit field labels, 44px actions, no fake sample records, no automatic motion. Move to a dedicated Talk/Today/Lists/Memory navigation only after mobile acceptance; Work and Review stay available.
 
-## Deployment requirements (prepared, not executed)
+## Deployment procedure (completed; do not replay)
 
 1. Reconnect Commander and inspect current source, branch, runtime and protected release evidence. Preserve the local 75722ff1 branch history from the previous connector publication.
 2. Fetch this candidate into a separate clean checkout; run deterministic npm ci, repository tests, normal build/lint/typecheck, secret scan and living-memory check on Node 22.23.1.
@@ -48,4 +48,4 @@ Retain the approved orb and black #000000, white #ffffff, red #e32b47 palette, w
 
 ## Verification checkpoint
 
-Commander reconnected and the candidate is now validated in a full checkout on Node 22.23.1 with deterministic npm ci. Added private social drafts with intended platform, brand label, caption, optional target date and archive/reopen; publishing remains disconnected. Seventy-one targeted tests pass, including real organizer HTTP authorization and gateway successor success, active-call deferral and rollback simulations. Lint, typecheck and build pass. Mobile browser preview at 390x844 saves notes and social drafts without horizontal overflow or script errors. Prepared a gateway successor bound to installed 21262eab with temporary voice-session admission pause, idle check, private database backup, unchanged unit hardening/credentials, backend identity verification and rollback. UI successor binds current 9fff5151. Deployment remains pending. No paid call, social post or Telegram message was sent. See docs/ZOLA_EVERYDAY_ROLLOUT.md and docs/ZOLA_SOCIAL_CONTROLS.md. Real account integrations and native Telegram acceptance remain UNVERIFIED.
+LIVE: gateway and UI release 8b0ef1f4875802bed73cbaf0344577ebcb38b873 deployed on October 1, 2026. The guarded voice successor paused new session admission, confirmed idle reservations, checkpointed and privately backed up SQLite, preserved credentials and unit restrictions, and restored admission after authorization/backend checks. The UI successor verified public asset digests. Public /zola returns HTTP 200 with the exact new revision and Today/social-draft markup. All nine public readiness checks pass at unchanged main backend 98d45ec34c1d11d1bdb2dda9b476313542b47ac3; voice/API/worker services are active. Public unauthenticated personal/status/transcript endpoints return 401. All three expected private database tables exist. Evidence: /var/lib/blackspire-operator/zola-voice-8b0ef1f4875802bed73cbaf0344577ebcb38b873 and /var/lib/blackspire-operator/zola-ui-8b0ef1f4875802bed73cbaf0344577ebcb38b873. Do not replay completed operators. Seventy-one targeted tests and mobile preview passed before deployment. Owner acceptance in the native Telegram Mini App and a fresh voice organizer read remain UNVERIFIED. Notifications, connected social accounts, scheduled publishing, analytics and other external integrations remain unfinished; target dates are planning only. No paid voice request, external social post or Telegram message was sent during deployment.

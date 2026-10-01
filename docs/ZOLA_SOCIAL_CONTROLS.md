@@ -1,6 +1,6 @@
 # Zola social controls
 ## October 1, 2026
-Requested by Carlos while the everyday assistant rollout was in progress.
+Requested by Carlos while the everyday assistant rollout was in progress. The private draft foundation is now deployed in release 8b0ef1f4875802bed73cbaf0344577ebcb38b873; external social controls remain pending.
 
 ## First implementation
 Private social drafts are part of Today. Select Social draft when adding an item; select Social drafts to view the plan ordered by target date. Each draft stores a title, caption, intended platform, optional brand/account label and optional target date. Edit, archive, reopen and delete are available. The same authenticated principal/workspace isolation, CSRF/origin checks, revision checks and retry receipts apply.
