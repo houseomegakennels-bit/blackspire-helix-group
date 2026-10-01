@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-01 — Customer configuration boundary verified
+
+Added a customer-only configuration reader and redacted status command. It checks installation identity, same-user ownership, private modes, size and regular-file/symlink/hardlink boundaries; malformed data produces generic errors. No environment credential fallback is performed. Pure provider selection disables cloud execution and preserves separate voice settings. Sixteen focused tests pass on Node 22.23.1. Runtime/provider dispatch, paid authentication tests, secret encryption, budgets and actual service installation remain unfinished; configured key presence is explicitly not verified connectivity. Existing production API refusal and deployment are unchanged.
+
+
+## 2026-10-01 — Customer-owned setup foundation
+
+Prepared a separate customer initializer with unique identity, private directories/files, no environment credential import, collision/symlink refusal and disabled optional integrations. Supports explicit OpenAI, Anthropic/Claude or Skip selection with no fallback. Six focused tests and lint/typecheck/build pass. This is prepared_not_runnable configuration, not a service installer or runtime isolation proof. Provider execution adapters, encrypted credential enrollment, HTTPS/services, backup/restore, budgets and clean-host acceptance remain unfinished. Production unchanged. See docs/ZOLA_CUSTOMER_DISTRIBUTION.md.
+
+
 
 ## 2026-10-01 — Everyday organizer and social drafts deployed
 
