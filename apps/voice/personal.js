@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 
 const fail=(status,message)=>Object.assign(new Error(message),{status});
-const kinds=new Set(['reminder','memory','list','bill','appointment','note']);
+const kinds=new Set(['reminder','memory','list','bill','appointment','note','social_draft']);
 const clean=(value,max,required=false)=>{
   if(typeof value!=='string'||value.length>max||(required&&!value.trim()))throw fail(400,'Check the text and try again.');
   return value.trim();
@@ -20,6 +20,10 @@ function validate(input) {
     item.amountCents=input.amountCents;
   }
   if(item.kind==='list'&&!item.list)item.list='My list';
+  if(item.kind==='social_draft'){
+    if(!['undecided','instagram','facebook','tiktok','youtube','linkedin','x'].includes(input.platform))throw fail(400,'Choose an intended platform.');
+    item.platform=input.platform;item.brand=clean(input.brand??'',100);item.publication='not-connected';
+  }
   return item;
 }
 
@@ -62,6 +66,7 @@ export function createPersonalStore(db,{clock=Date.now}={}) {
           db.prepare('DELETE FROM personal_items WHERE id=?').run(row.id);result={deleted:true,id:row.id};
         }else if(request.action==='update'){
           const payload=validate(request.item);
+          if(payload.kind!==JSON.parse(row.payload).kind)throw fail(400,'Create a new item to change its type.');
           db.prepare('UPDATE personal_items SET payload=?,updated=?,revision=revision+1 WHERE id=?').run(JSON.stringify(payload),clock(),row.id);
           result={saved:true,id:row.id,revision:row.revision+1};
         }else if(['complete','reopen'].includes(request.action)){

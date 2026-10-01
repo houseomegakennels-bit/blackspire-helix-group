@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {createPersonalStore} from '../apps/voice/personal.js';
+test('social drafts remain private planning data with no publication authority',()=>{
+ const db=new DatabaseSync(':memory:'),store=createPersonalStore(db);
+ const item={kind:'social_draft',title:'Campaign idea',detail:'Draft caption',platform:'instagram',brand:'Test brand',due:'2026-10-05T15:00:00Z',publication:'published'};
+ const request={action:'create',requestId:crypto.randomUUID(),item};
+ const saved=store.mutate('owner','work',request);
+ assert.deepEqual(store.mutate('owner','work',request),saved);
+ const row=store.list('owner','work')[0];
+ assert.equal(row.publication,'not-connected');assert.equal(row.brand,'Test brand');assert.equal(row.platform,'instagram');
+ assert.deepEqual(store.list('other','work'),[]);assert.deepEqual(store.list('owner','other'),[]);
+ assert.throws(()=>store.mutate('owner','work',{action:'publish',requestId:crypto.randomUUID(),id:saved.id,revision:1}),{status:400});
+ store.mutate('owner','work',{action:'complete',requestId:crypto.randomUUID(),id:saved.id,revision:1});
+ assert.equal(store.list('owner','work')[0].publication,'not-connected');
+ assert.equal(store.list('owner','work')[0].state,'done');
+ assert.throws(()=>store.mutate('owner','work',{action:'create',requestId:crypto.randomUUID(),item:{...item,platform:'unsupported'}}),{status:400});
+ assert.equal(store.list('owner','work').length,1);db.close();
+});

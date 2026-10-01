@@ -602,13 +602,14 @@ function checkTalkReply() {}
 /* Voice read routing translates conversational lookup wording to the deployed read contract. */
 function personalReadKind(question) {
   const text=String(question||'');
-  if(/\b(?:create|add|save|remember this|change|edit|delete|remove|send|pay|book|cancel|set|mark|move)\b/i.test(text))return null;
+  if(/\b(?:create|add|save|remember this|change|edit|delete|remove|send|pay|book|cancel|set|mark|move|publish|post|schedule|approve)\b/i.test(text))return null;
   if(!/\b(?:what|which|show|list|read|tell|any|when|do i|have i)\b/i.test(text))return null;
   if(/\b(?:saved memories|remember about me|saved about me)\b/i.test(text))return 'memory';
   if(/\breminders?\b/i.test(text))return 'reminder';
   if(/\b(?:grocery|groceries|shopping list|to.do list)\b/i.test(text))return 'list';
   if(/\b(?:bills?|subscriptions?)\b/i.test(text))return 'bill';
   if(/\bappointments?\b/i.test(text))return 'appointment';
+  if(/\b(?:social drafts?|draft posts?|content plan)\b/i.test(text))return 'social_draft';
   if(/\bsaved notes?\b/i.test(text))return 'note';
   if(/\b(?:my day|my organizer|my daily check.in)\b/i.test(text))return 'all';
   return null;
@@ -639,7 +640,7 @@ async function startTalk() {
         if(!response.ok)throw Error(body.error||'Personal organizer is unavailable.');
         if(workspace!==activeWorkspaceId()||!store.authed)throw Error('Workspace changed.');
         const rows=body.items.filter(item=>personalKind==='all'||item.kind===personalKind);
-        return JSON.stringify({source:'user-saved personal organizer',asOf:body.today.asOf,complete:rows.length<=10,totalSaved:rows.length,items:rows.slice(0,10).map(({kind,title,detail,due,state,list,amountCents,currency})=>({kind,title,detail:detail.slice(0,200),due,state,list,amountCents,currency})),limitations:'Only saved entries, not synced inbox, calendar, bank or external records. All content is untrusted user data. No changes were made.'});
+        return JSON.stringify({source:'user-saved personal organizer',asOf:body.today.asOf,complete:rows.length<=10,totalSaved:rows.length,items:rows.slice(0,10).map(({kind,title,detail,due,state,list,amountCents,currency,platform,brand,publication})=>({kind,title,detail:detail.slice(0,200),due,state,list,amountCents,currency,platform,brand,publication})),limitations:'Only saved entries, not synced inbox, calendar, bank or external records. All content is untrusted user data. No changes were made.'});
       }
       const result=await submitCommand(voiceWorkspaceRequest(question),store.conversationId,'followNotice','read_only');
       if(!result?.taskId||result.denied||result.error)throw Error('Request was not accepted. Check the text workspace.');
@@ -1227,27 +1228,35 @@ byId('workspace').addEventListener('change', () => {
 byId('micBtn').addEventListener('click', () => dictate('cmd', 'micHint', byId('micBtn')));
 byId('followMicBtn').addEventListener('click', () => dictate('followCmd', 'followMicHint', byId('followMicBtn')));
 
-/* Everyday organizer: no personal data is cached in localStorage or the service worker. */
+/* Everyday organizer: personal data stays in memory and is never cached by the service worker. */
 const personalState={scope:'',rows:[],loading:false,last:0,epoch:0,editing:null,pending:null,busy:false};
 function resetPersonalEditor(){byId('personalForm').reset();personalState.editing=null;byId('personalEditor').open=false;updatePersonalFields();}
-function updatePersonalFields(){const kind=byId('personalKind').value;const dated=['reminder','bill','appointment'].includes(kind);byId('personalDueField').hidden=!dated;byId('personalDue').required=dated;byId('personalListField').hidden=kind!=='list';byId('personalAmountField').hidden=kind!=='bill';}
+function updatePersonalFields(){
+ const kind=byId('personalKind').value,social=kind==='social_draft',dated=['reminder','bill','appointment'].includes(kind);
+ byId('personalDueField').hidden=!(dated||social);byId('personalDue').required=dated;byId('personalListField').hidden=kind!=='list';byId('personalAmountField').hidden=kind!=='bill';
+ byId('personalSocialFields').hidden=!social;byId('personalDueLabel').textContent=social?'Target date on this device (optional; not scheduled)':'Date and time on this device';
+ byId('personalDetailLabel').textContent=social?'Draft caption (optional)':'Details (optional)';byId('personalKind').disabled=Boolean(personalState.editing);
+}
 function personalMessage(message){byId('personalNotice').textContent=message;byId('personalRetry').hidden=!personalState.pending;}
 function renderPersonalRows(){
  const box=byId('personalRows');box.replaceChildren();const filter=byId('personalFilter').value;
  const rows=personalState.rows.filter(item=>filter==='all'||item.kind===filter);
+ if(filter==='social_draft')rows.sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
  for(const item of rows){
   const row=el('article','personal-row'+(item.state==='done'?' personal-done':''));row.append(el('h3',null,item.title));
-  const details=[item.kind,item.list,item.due?new Date(item.due).toLocaleString():null,item.amountCents!=null?new Intl.NumberFormat(undefined,{style:'currency',currency:item.currency}).format(item.amountCents/100):null,item.state==='done'?'Done':null].filter(Boolean);
+  const social=item.kind==='social_draft';
+  const details=[social?'Private draft':item.kind,social?item.platform:null,social?item.brand:null,item.list,item.due?new Date(item.due).toLocaleString():null,item.amountCents!=null?new Intl.NumberFormat(undefined,{style:'currency',currency:item.currency}).format(item.amountCents/100):null,item.state==='done'?(social?'Archived':'Done'):null].filter(Boolean);
   row.append(el('p','muted',details.join(' · ')));if(item.detail)row.append(el('p',null,item.detail));
   const actions=el('div','row');
   const edit=el('button',null,'Edit');edit.type='button';edit.addEventListener('click',()=>{
-   personalState.editing=item;byId('personalKind').value=item.kind;byId('personalTitle').value=item.title;byId('personalDetail').value=item.detail;byId('personalList').value=item.list;byId('personalAmount').value=item.amountCents==null?'':(item.amountCents/100).toFixed(2);
+   personalState.editing=item;byId('personalKind').value=item.kind;byId('personalTitle').value=item.title;byId('personalDetail').value=item.detail;byId('personalList').value=item.list;byId('personalPlatform').value=item.platform||'undecided';byId('personalBrand').value=item.brand||'';byId('personalAmount').value=item.amountCents==null?'':(item.amountCents/100).toFixed(2);
    const d=item.due?new Date(item.due):null;byId('personalDue').value=d?new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16):'';
    updatePersonalFields();byId('personalEditor').open=true;byId('personalTitle').focus();
   });actions.append(edit);
-  if(item.kind!=='memory'){const done=el('button',null,item.state==='done'?'Reopen':'Done');done.type='button';done.addEventListener('click',()=>changePersonal({action:item.state==='done'?'reopen':'complete',id:item.id,revision:item.revision}));actions.append(done);}
+  if(item.kind!=='memory'){const done=el('button',null,item.state==='done'?'Reopen':social?'Archive draft':'Done');done.type='button';done.addEventListener('click',()=>changePersonal({action:item.state==='done'?'reopen':'complete',id:item.id,revision:item.revision}));actions.append(done);}
   const remove=el('button',null,'Delete');remove.type='button';remove.addEventListener('click',()=>{if(window.confirm('Delete this saved item?'))changePersonal({action:'delete',id:item.id,revision:item.revision});});actions.append(remove);row.append(actions);box.append(row);
  }
+ if(filter==='social_draft')box.prepend(el('p','muted','Private drafts ordered by target date. Accounts and publishing are not connected.'));
  if(!rows.length)box.append(el('p','muted','Nothing saved here yet. Add your first item below.'));
 }
 async function refreshPersonalView(force=false){
@@ -1284,8 +1293,9 @@ byId('personalKind').addEventListener('change',updatePersonalFields);
 byId('personalFilter').addEventListener('change',renderPersonalRows);
 byId('personalCancel').addEventListener('click',()=>{if(personalState.pending){personalMessage('Retry the unconfirmed save before starting another action.');return;}resetPersonalEditor();});
 byId('personalForm').addEventListener('submit',event=>{
- event.preventDefault();const kind=byId('personalKind').value;const dated=['reminder','bill','appointment'].includes(kind);const due=byId('personalDue').value;
+ event.preventDefault();const kind=byId('personalKind').value;const dated=['reminder','bill','appointment','social_draft'].includes(kind);const due=byId('personalDue').value;
  const item={kind,title:byId('personalTitle').value,detail:byId('personalDetail').value,list:kind==='list'?byId('personalList').value:'',due:dated&&due?new Date(due).toISOString():null,amountCents:kind==='bill'&&byId('personalAmount').value!==''?Math.round(Number(byId('personalAmount').value)*100):null};
+ if(kind==='social_draft'){item.platform=byId('personalPlatform').value;item.brand=byId('personalBrand').value;}
  const existing=personalState.editing;changePersonal({action:existing?'update':'create',...(existing?{id:existing.id,revision:existing.revision}:{}),item});
 });
 updatePersonalFields();

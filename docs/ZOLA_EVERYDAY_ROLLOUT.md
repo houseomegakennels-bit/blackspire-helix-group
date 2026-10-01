@@ -2,7 +2,7 @@
 
 ## October 1, 2026 checkpoint
 
-Los authorized all ten proposed everyday feature areas. This branch starts that rollout; it is not a claim that all ten integrations are finished. Live Zola is unchanged. Commander was offline, so production unit state, migration, deployment, and phone acceptance could not be checked.
+Los authorized all ten proposed everyday feature areas. This branch starts that rollout; it is not a claim that all ten integrations are finished. Live Zola is unchanged. Commander is now online; full-checkout validation and browser preview pass. Deployment and native phone acceptance remain pending.
 
 ## Implemented candidate
 
@@ -36,7 +36,7 @@ Los authorized all ten proposed everyday feature areas. This branch starts that 
 
 Retain the approved orb and black #000000, white #ffffff, red #e32b47 palette, with #333333 separators and #ff8498 overdue text. Keep existing typography and navigation; introduce Today through Home/More first. Use readable rows and explicit field labels, 44px actions, no fake sample records, no automatic motion. Move to a dedicated Talk/Today/Lists/Memory navigation only after mobile acceptance; Work and Review stay available.
 
-## Deployment requirements (not executed)
+## Deployment requirements (prepared, not executed)
 
 1. Reconnect Commander and inspect current source, branch, runtime and protected release evidence. Preserve the local 75722ff1 branch history from the previous connector publication.
 2. Fetch this candidate into a separate clean checkout; run deterministic npm ci, repository tests, normal build/lint/typecheck, secret scan and living-memory check on Node 22.23.1.
@@ -46,8 +46,6 @@ Retain the approved orb and black #000000, white #ffffff, red #e32b47 palette, w
 6. Complete browser and native Telegram acceptance: save/edit/delete, account/workspace isolation, timezone display, retry with dropped response, voice saved-item read, logout clearing and no horizontal overflow.
 7. Only then enable notification delivery or additional integrations in subsequent reviewed milestones.
 
-## Verification limits
+## Verification checkpoint
 
-The credential-free local fixture exercises the actual organizer SQLite code and gateway HTTP boundary on pinned Node 22.23.1. Existing voice tests are included. No real message, paid voice request, calendar booking, API credential, or business-record change is involved. Browser verification was attempted twice but the agent-browser daemon exited during startup; no visual/mobile pass is claimed. The larger PWA/API test suite cannot start in the partial source snapshot because its full-repository database helper dependencies are absent. Full repository gates and live deployment remain blocked until a complete checkout/Commander is available.
-
-Validation result: 18 focused tests pass on Node 22.23.1; changed JavaScript syntax and the repository lint command pass; candidate secret scan passes. Full build/typecheck cannot complete with the omitted base-repository files. Living-memory verification fails because the reconstructed snapshot lacks the trusted origin and main history; this gate was not weakened. All three must pass in the full checkout before merge/deployment.
+Commander reconnected and the candidate is now validated in a full checkout on Node 22.23.1 with deterministic npm ci. Added private social drafts with intended platform, brand label, caption, optional target date and archive/reopen; publishing remains disconnected. Seventy-one targeted tests pass, including real organizer HTTP authorization and gateway successor success, active-call deferral and rollback simulations. Lint, typecheck and build pass. Mobile browser preview at 390x844 saves notes and social drafts without horizontal overflow or script errors. Prepared a gateway successor bound to installed 21262eab with temporary voice-session admission pause, idle check, private database backup, unchanged unit hardening/credentials, backend identity verification and rollback. UI successor binds current 9fff5151. Deployment remains pending. No paid call, social post or Telegram message was sent. See docs/ZOLA_EVERYDAY_ROLLOUT.md and docs/ZOLA_SOCIAL_CONTROLS.md. Real account integrations and native Telegram acceptance remain UNVERIFIED.
