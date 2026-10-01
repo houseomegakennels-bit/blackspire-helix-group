@@ -34,3 +34,6 @@ Setup accepts openai (ChatGPT model family), anthropic (Claude) or none (skip). 
 
 ## Configuration reader
 Run `node scripts/customer-status.mjs --directory /customer-installation` to inspect safe setup status. The reader rejects mismatched installation IDs, unsafe permissions/ownership, and symlink or hardlink credential files. It never searches environment variables. Configured credentials are unverified and runtimeReady stays false. Provider selection is currently a pure configuration operation; a persisted settings UI and runtime adapter remain pending. Sixteen focused tests pass; no paid provider calls were made.
+
+## 2026-10-01 text CLI milestone
+A separate customer-owned text runtime, encrypted vault, persistent conservative spend ledger, private terminal setup and allowlisted distributable now exist. See docs/ZOLA_CUSTOMER_CLI.md for commands, boundaries and pricing assumptions. The base installation status remains prepared_not_runnable for the complete OS. The CLI can be explicitly enabled independently; web/Telegram/workspace execution and complete service installation remain unfinished. No live paid validation has been performed. Thirty-six customer tests plus twenty production-profile tests pass.
