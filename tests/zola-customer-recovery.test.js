@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
+import {customerOnboarding,selectCustomerModule} from '../packages/customer/onboarding.mjs';
 import {reviewCustomerRecovery} from '../packages/customer/recovery-review.mjs';
 import {backupCustomer,restoreCustomer} from '../packages/customer/backup.mjs';
 import {initializeCustomer} from '../scripts/init-zola-customer.mjs';
@@ -79,4 +80,24 @@ test('review rejects identity mismatch, unsafe ledger and invalid hold',t=>{
  const {root,installationId}=fixture(t);const ledger=openLedger(root,installationId);ledger.close();const file=path.join(root,'data/customer-ai.sqlite');
  fs.chmodSync(file,0o644);assert.throws(()=>reviewCustomerRecovery(root,NOW));fs.chmodSync(file,0o600);
  fs.writeFileSync(path.join(root,'recovery-hold.json'),JSON.stringify({schemaVersion:1,installationId:'wrong'}),{mode:0o600});assert.throws(()=>reviewCustomerRecovery(root,NOW),/RECOVERY_HOLD_INVALID/);
+});
+
+test('onboarding choices never enable modules or modify spending and credentials',t=>{
+ const {root}=fixture(t);const files=['installation.json','customer-ai.json','secrets/openai.encrypted.json'];const before=files.map(n=>fs.readFileSync(path.join(root,n)));
+ for(const choice of ['create','connect','skip'])selectCustomerModule(root,{module:'social',choice});
+ const status=customerOnboarding(root);assert.equal(status.modules.find(x=>x.id==='social').choice,'skip');assert.equal(status.fullOsReady,false);assert.equal(status.costs.fullImplementationTotal,null);assert.equal(status.usesBlackspireAccounts,false);
+ files.forEach((n,i)=>assert.deepEqual(fs.readFileSync(path.join(root,n)),before[i]));
+});
+test('fresh customer can skip all optional accounts without credentials',t=>{
+ const parent=fs.mkdtempSync(path.join(os.tmpdir(),'zola-checklist-'));t.after(()=>fs.rmSync(parent,{recursive:true,force:true}));const root=path.join(parent,'new');initializeCustomer({directory:root,origin:'https://customer.example'});
+ for(const module of ['cloudAi','voice','telegram','social'])selectCustomerModule(root,{module,choice:'skip'});
+ const result=customerOnboarding(root);assert.ok(result.modules.every(x=>x.choice==='skip'));assert.equal(result.aiProvider,'none');assert.ok(!fs.existsSync(path.join(root,'customer-ai.json')));
+});
+test('onboarding refuses unsupported modules, extra credential fields and cross-installation preferences',t=>{
+ const {root}=fixture(t);assert.throws(()=>selectCustomerModule(root,{module:'unknown',choice:'create'}));assert.throws(()=>selectCustomerModule(root,{module:'social',choice:'connect',apiKey:'do-not-store'}));
+ fs.writeFileSync(path.join(root,'onboarding.json'),JSON.stringify({schemaVersion:1,installationId:'wrong',choices:{}}),{mode:0o600});assert.throws(()=>customerOnboarding(root),/ONBOARDING_INVALID/);
+});
+test('onboarding preferences survive encrypted backup without enabling recovered execution',t=>{
+ const {root,parent}=fixture(t);selectCustomerModule(root,{module:'telegram',choice:'create'});pauseCustomer(root);const backup=path.join(parent,'onboarding.enc');backupCustomer(root,backup,passphrase);const out=path.join(parent,'restored-onboarding');restoreCustomer(backup,out,passphrase);
+ assert.equal(customerOnboarding(out).modules.find(x=>x.id==='telegram').choice,'create');assert.ok(reviewCustomerRecovery(out,NOW).recoveryHold);
 });

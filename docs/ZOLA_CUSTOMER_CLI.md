@@ -40,7 +40,7 @@ Pricing must be checked for the exact model and expires after at most seven days
 Timeouts, invalid/incomplete responses, redirects, errors and missing usage retain the reservation and block further calls pending review. Prior-month pending work blocks month rollover. There is intentionally no automatic ledger reset or reconciliation override. Paid-request review, recovery tooling and invoice reconciliation remain to implement. Do not delete the ledger to unblock a request.
 
 ## Packaging
-The packaging command copies only fifteen approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
+The packaging command copies only seventeen approved code/document/package files and emits content digests. It never copies `.env` files, production configuration, provider sessions, project checkpoints, repository history or customer databases. A checksum manifest detects accidental changes; it is not a cryptographic release signature. Preserve the bundle's provenance.
 
 ## Not yet production-ready
 Live provider acceptance has not been run. Full customer onboarding UI, web authentication, workspace/tool authorization integration, production admission, service/HTTPS installation, post-restore billing reconciliation/re-enablement, signed updates, automatic pricing refresh and customer support recovery remain required. The full system must not be marketed as plug-and-play based on this CLI preview.
@@ -74,3 +74,15 @@ node scripts/customer-ai.mjs status --directory /your/private/restored-zola
 ```
 
 Status works with a recovery hold or expired pricing. It reports the configured provider/model, effective enabled flag, pricing freshness, hold timestamps, monthly reserved/observed amounts and up to 100 unresolved request IDs. It never decrypts keys, calls providers, returns prompts/answers or creates a missing ledger. The ledger is opened read-only and checked for identity/integrity. Review shares the maintenance lock, so wait for active requests to finish. A missing ledger is labeled `not_created`; amounts are local estimates, not reconciled provider invoices. `admissionVerified` remains false: this inspection is not a connectivity or permission test. Recovery guidance requires original-instance retirement and post-snapshot charge/receipt reconciliation; the report cannot clear the hold.
+
+
+## Customer-owned account checklist
+
+```sh
+node scripts/customer-onboarding.mjs status --directory /your/private/new-zola
+printf '%s' '{"module":"social","choice":"skip"}' | node scripts/customer-onboarding.mjs choose --directory /your/private/new-zola
+```
+
+Supported modules: `cloudAi`, `voice`, `telegram`, `social`. Choices: `connect`, `create`, `skip`. These are saved preferences only, not account creation, OAuth consent, purchases or runtime controls. Skipping does not revoke or pause an already-configured integration. Optional accounts may all be skipped. AI provider selection remains in the separate provider setup. The checklist never accepts API keys, imports Blackspire accounts or changes spending policy. Preferences persist in encrypted customer backups.
+
+The report separates planned local core requirements from optional module accounts and identifies unfinished customer integrations. Core/selected/full cost totals remain `null` with `quote_required` until actual customer service choices and verified prices are available; unknown is not free. This is a CLI checklist ready for later UI integration, not a finished mobile onboarding wizard.

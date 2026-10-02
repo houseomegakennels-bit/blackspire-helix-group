@@ -1,5 +1,12 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-02 — Customer-owned onboarding checklist preview
+
+Added a separate CLI checklist with persistent Connect/Create/Skip preferences for cloud AI, voice, Telegram and social modules. All optional accounts can be skipped. Choices never create accounts, enroll credentials, purchase services or enable/disable existing runtimes; the output says so explicitly. Account and billing ownership remain customer-only. Core, selected-module and full cost totals are unknown/quote-required rather than fabricated zero prices. Customer integration readiness is explicitly unfinished. Onboarding preferences are allowlisted into encrypted backups. The customer bundle now contains seventeen files plus its manifest.
+
+Verification: 49 customer tests pass locally and on Commander on Node 22.23.1, including optional skipping without credentials, unchanged policy/vault/manifest, unsupported input and cross-installation refusal, and backup preservation. Lint, explicit syntax/typecheck and build pass. No live account, provider request, production change or deployment occurred. Mobile/web onboarding, actual connector enrollment, verified pricing quotes, recovery activation and full customer OS installation remain unfinished.
+
+
 ## 2026-10-01 — Customer recovery review report
 
 The customer CLI status command now inspects restored/paused installations even when pricing has expired. It reads SQLite without creating a missing ledger, validates identity/integrity and reports monthly reserved/observed amounts plus up to 100 unresolved request IDs. Credentials are not decrypted; prompts, answers and fingerprints are excluded. Hold timestamps and retirement/reconciliation steps are explicit. Status does not verify provider authentication, reconcile invoices, release a hold or grant spend authority. The shared maintenance lock protects review from concurrent dispatch. The bundle now contains fifteen allowlisted files plus its manifest.

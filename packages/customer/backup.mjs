@@ -7,7 +7,7 @@ import {openLedger} from './ledger.mjs';
 import {getCredential} from './vault.mjs';
 import {exclusive,privateDirectory,readPrivate,atomicPrivate,fail,assertNoRecoveryHold} from './private-files.mjs';
 const REQUIRED=['installation.json','customer-ai.json','secrets/providers.json','secrets/master.key','data/customer-ai.sqlite'];
-const OPTIONAL=['secrets/openai.encrypted.json','secrets/anthropic.encrypted.json'];
+const OPTIONAL=['onboarding.json','secrets/openai.encrypted.json','secrets/anthropic.encrypted.json'];
 const MAX=100*1024*1024;
 const AAD=Buffer.from('zola-customer-backup-v1');
 function key(passphrase,salt){if(typeof passphrase!=='string'||passphrase.length<16||Buffer.byteLength(passphrase)>1024)fail('BACKUP_PASSPHRASE_REQUIRED');return scryptSync(passphrase,salt,32,{N:32768,r:8,p:1,maxmem:64*1024*1024});}

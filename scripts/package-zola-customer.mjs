@@ -7,6 +7,7 @@ export const CUSTOMER_FILES=[
  'scripts/init-zola-customer.mjs','scripts/customer-status.mjs','scripts/customer-ai.mjs','scripts/configure-customer-ai.mjs',
  'packages/shared/customer-installation.js','packages/customer/private-files.mjs','packages/customer/vault.mjs','packages/customer/policy.mjs','packages/customer/ledger.mjs','packages/customer/runtime.mjs',
  'packages/customer/recovery-review.mjs','packages/customer/backup.mjs','scripts/customer-backup.mjs',
+ 'packages/customer/onboarding.mjs','scripts/customer-onboarding.mjs',
  'docs/ZOLA_CUSTOMER_CLI.md'
 ];
 export function packageCustomer(sourceRoot,destination){
