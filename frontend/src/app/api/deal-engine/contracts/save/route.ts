@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result.ok) return NextResponse.json(result, { status: 500 });
-    return NextResponse.json({ ok: true, message: "Contract draft saved." });
+    return NextResponse.json({ ok: true, draftId: result.draftId, message: "Contract draft saved." });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Contract draft save failed." },

@@ -2987,6 +2987,13 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
   return { ok: true as const, dealId, created: true as const };
 }
 
+function savedContractOfferWindow(payload: Record<string, unknown> | null | undefined) {
+  const low = parseInvestmentAmount(payload?.offerLow);
+  const high = parseInvestmentAmount(payload?.offerHigh);
+  if (low === null || high === null || low < 0 || high < low) return "Not entered";
+  return `${formatCurrency(low)} to ${formatCurrency(high)}`;
+}
+
 export async function saveDealContractTerms(input: SaveDealContractInput) {
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -3007,25 +3014,16 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
     return { ok: false as const, error: contractSeed.error.message };
   }
 
-  const purchaseTarget = Math.round((input.offerLow + input.offerHigh) / 2);
   const offerMade = input.offerHigh > 0;
   const complianceSummary = buildWholesalingComplianceSnapshot(input.contractType);
 
-  const [contractUpdate, analysisUpdate, conversationUpdate, logInsert] = await Promise.all([
+  const [contractUpdate, conversationUpdate, logInsert] = await Promise.all([
     supabase
       .from("contracts")
       .update({
         offer_made: offerMade,
         earnest_money_deposit: input.earnestMoney,
         assignment_status: input.contractType,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("lead_id", input.dealId),
-    supabase
-      .from("deal_analysis")
-      .update({
-        purchase_price_target: purchaseTarget,
-        maximum_allowable_offer: input.offerHigh,
         updated_at: new Date().toISOString(),
       })
       .eq("lead_id", input.dealId),
@@ -3053,7 +3051,6 @@ export async function saveDealContractTerms(input: SaveDealContractInput) {
 
   const error =
     contractUpdate.error?.message
-    || analysisUpdate.error?.message
     || conversationUpdate.error?.message
     || logInsert.error?.message;
   if (error) {
@@ -4325,6 +4322,11 @@ export async function getDealEngineDealDetail(
     if (!persistScaffold && dispositionError) throw new Error("Deal capability unavailable");
     if (dispositionData?.length) {
       const logs = dispositionData as DispositionLogRow[];
+      const latestContract = logs.find((log) => log.action_type === "contract_update");
+      if (contractDraft && latestContract) {
+        contractDraft = { ...contractDraft, offerWindow: savedContractOfferWindow(latestContract.payload) };
+        sellerOutreach = buildSellerOutreach(lead, sellerSignal, sellerContact, contractDraft);
+      }
       sellerDrafts = parseSellerDrafts(logs);
       outreachExecutions = parseOutreachExecutions(logs);
       uploadedDocuments = parseUploadedDocuments(logs);
@@ -5494,7 +5496,7 @@ export async function saveGeneratedContractDraft(input: {
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("deal_contract_drafts").upsert(payload, { onConflict: "deal_id,draft_type" });
+  const { data: savedDraft, error } = await supabase.from("deal_contract_drafts").upsert(payload, { onConflict: "deal_id,draft_type" }).select("id").single();
   if (error) return { ok: false as const, error: error.message };
 
   await writeContractAuditLog({
@@ -5508,7 +5510,7 @@ export async function saveGeneratedContractDraft(input: {
     },
   });
 
-  return { ok: true as const };
+  return { ok: true as const, draftId: savedDraft.id as string };
 }
 
 function wrapPdfText(text: string, maxChars = 92) {
@@ -5672,20 +5674,22 @@ export async function saveDealContractDraft(input: {
       payload: { draftType: input.draftType, title: input.title, updatedAt: new Date().toISOString() },
     });
   }
-  return { ok: true as const };
+  return result;
 }
 
 export async function prepareDealSignaturePacket(input: {
   dealId: string;
+  draftId: string;
   signatureProvider?: string;
   signerEmail?: string;
   signerRole?: string;
 }) {
+  if (!input.draftId?.trim()) return { ok: false as const, error: "Select a saved contract draft before signature preparation." };
   const supabase = getSupabaseAdmin();
   if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
   const { data: draft, error: draftError } = await supabase.from("deal_contract_drafts")
-    .select("template_id,template_type,metadata,legal_disclaimer_acknowledged,generated_body,body")
-    .eq("deal_id", input.dealId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+    .select("id,template_id,template_type,metadata,legal_disclaimer_acknowledged,generated_body,body,editable_payload")
+    .eq("deal_id", input.dealId).eq("id", input.draftId.trim()).maybeSingle();
   if (draftError) return { ok: false as const, error: draftError.message };
   if (!draft?.template_id || !draft.template_type || !(draft.generated_body || draft.body)?.trim()) {
     return { ok: false as const, error: "Save a reviewed contract draft with a registered template before preparing a signature packet." };
@@ -5695,18 +5699,21 @@ export async function prepareDealSignaturePacket(input: {
   if (!validation || validation.template.id !== draft.template_id || !validation.purposeValid || !validation.canGenerate || validation.template.approvalStatus === "reference_only") {
     return { ok: false as const, error: validation?.blockingError || "The saved draft template is not eligible for signature preparation." };
   }
+  const savedBody = (draft.body || draft.generated_body || "").trim();
   const unresolvedFields = validation.template.requiredFields.filter((field) => {
     const value = validation.availableFields[field]?.trim() || "";
-    return !value || /^(?:TBD|Not entered|Unknown(?: .*)?|.*\{\{.*)$/i.test(value);
+    const savedValue = draft.editable_payload?.[field];
+    return !value || /^(?:TBD|Not entered|Unknown(?: .*)?|.*\{\{.*)$/i.test(value)
+      || typeof savedValue !== "string" || savedValue.trim() !== value || !savedBody.includes(value);
   });
   if (validation.missingFields.length || unresolvedFields.length) {
-    return { ok: false as const, error: `Complete and verify required fields before signature preparation: ${[...new Set([...validation.missingFields, ...unresolvedFields])].join(", ")}.` };
+    return { ok: false as const, error: `Regenerate and save the selected draft with current required fields before signature preparation: ${[...new Set([...validation.missingFields, ...unresolvedFields])].join(", ")}.` };
   }
   if (validation.disclaimerRequired && !draft.legal_disclaimer_acknowledged) {
     return { ok: false as const, error: "Acknowledge the draft review disclaimer before signature preparation." };
   }
   const provider = input.signatureProvider?.trim() || "DocuSign";
-  const packetUrl = `provider-placeholder://${sanitizeDraftType(provider)}/${encodeURIComponent(input.dealId)}`;
+  const packetUrl = `provider-placeholder://${sanitizeDraftType(provider)}/${encodeURIComponent(input.dealId)}/${encodeURIComponent(input.draftId.trim())}`;
   const { error } = await supabase.from("deal_signature_packets").upsert({
     deal_id: input.dealId,
     signature_status: "prepared",

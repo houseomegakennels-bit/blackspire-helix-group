@@ -214,7 +214,7 @@ export function DealTransactionCommand({
         body: JSON.stringify({
           dealId,
           templateId: contractDraft.templateId,
-          templateKey: selectedTemplate.templateKey,
+          templateKey: snapshot.contractTemplates.find((template) => template.id === contractDraft.templateId)?.templateKey ?? selectedTemplate.templateKey,
           draftType: contractDraft.draftType,
           title: contractDraft.title,
           body: contractDraft.body,
@@ -227,9 +227,11 @@ export function DealTransactionCommand({
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Contract save failed.");
+      const savedDraft = { ...contractDraft, id: payload.draftId };
+      setContractDraft(savedDraft);
       setSnapshot((current) => ({
         ...current,
-        contracts: [contractDraft, ...current.contracts.filter((item) => item.id !== contractDraft.id)],
+        contracts: [savedDraft, ...current.contracts.filter((item) => item.id !== contractDraft.id && item.id !== savedDraft.id)],
       }));
       setStatus("Contract draft saved.");
     } catch (error) {
@@ -299,6 +301,10 @@ export function DealTransactionCommand({
   }
 
   async function updateSignaturePacket(payload: Partial<DealSignaturePacketRecord>, prepare = false) {
+    if (prepare && !contractDraft?.id) {
+      setStatus("Select a saved contract draft before signature preparation.");
+      return;
+    }
     if (!prepare && payload.signatureStatus && !window.confirm("Have you checked the actual signature packet and confirmed this send or signature? This only records status; it does not send or sign a document.")) return;
     setWorking("signature");
     setStatus(null);
@@ -310,6 +316,7 @@ export function DealTransactionCommand({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             dealId,
+            draftId: prepare ? contractDraft?.id : undefined,
             signatureProvider: payload.signatureProvider ?? signaturePacket.signatureProvider,
             signerEmail: payload.signerEmail ?? signaturePacket.signerEmail,
             signerRole: payload.signerRole ?? signaturePacket.signerRole,

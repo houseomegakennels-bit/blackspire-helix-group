@@ -139,17 +139,37 @@ test('complete rental saves cash-flow next actions and strategy-specific require
  const log=writes.find(x=>x.table==='disposition_logs'&&x.payload.action_type==='analysis_update').payload.payload;
  assert.ok(!log.complianceChecklist.some(x=>/assignment|equitable-interest/i.test(x)));
 });
-test('signature preparation revalidates required facts and approval before writing',async()=>{
- let writes=0;
- const draft={template_id:'template1',template_type:'assignment_agreement',metadata:{templateKey:'approved'},legal_disclaimer_acknowledged:true,body:'Reviewed draft'};
- const db={from(){const q={select(){return q},eq(){return q},order(){return q},limit(){return q},maybeSingle:async()=>({data:draft,error:null}),upsert(){writes++;return Promise.resolve({error:null})}};return q}};
+test('signature preparation validates the selected saved draft against current required facts',async()=>{
+ let writes=0; const filters=[];
+ const draft={id:'selected',template_id:'template1',template_type:'assignment_agreement',metadata:{templateKey:'approved'},legal_disclaimer_acknowledged:true,body:'Purchase price $0.00',editable_payload:{purchase_price:'$0.00'}};
+ const db={from(){const q={select(){return q},eq(key,value){filters.push([key,value]);return q},maybeSingle:async()=>({data:draft,error:null}),upsert(){writes++;return Promise.resolve({error:null})}};return q}};
  let validation={template:{id:'template1',approvalStatus:'attorney_reviewed',requiredFields:['purchase_price']},purposeValid:true,canGenerate:true,missingFields:['purchase_price'],availableFields:{purchase_price:''},disclaimerRequired:true};
  const {prepareDealSignaturePacket}=load(['prepareDealSignaturePacket','sanitizeDraftType'],{getSupabaseAdmin:()=>db,validateDealFieldsForTemplate:async()=>validation});
- assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
- validation={...validation,missingFields:[],availableFields:{purchase_price:'TBD'}}; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
- validation={...validation,availableFields:{purchase_price:'$0.00'},template:{...validation.template,approvalStatus:'reference_only'}}; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
- validation={...validation,template:{...validation.template,approvalStatus:'attorney_reviewed'}}; draft.legal_disclaimer_acknowledged=false; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
- draft.legal_disclaimer_acknowledged=true; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,true); assert.equal(writes,1);
+ const input={dealId:'x',draftId:'selected'};
+ assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(filters.length,0);
+ assert.equal((await prepareDealSignaturePacket(input)).ok,false); assert.equal(writes,0);
+ validation={...validation,missingFields:[],availableFields:{purchase_price:'TBD'}}; assert.equal((await prepareDealSignaturePacket(input)).ok,false);
+ validation={...validation,availableFields:{purchase_price:'$0.00'},template:{...validation.template,approvalStatus:'reference_only'}}; assert.equal((await prepareDealSignaturePacket(input)).ok,false);
+ validation={...validation,template:{...validation.template,approvalStatus:'attorney_reviewed'}}; draft.legal_disclaimer_acknowledged=false; assert.equal((await prepareDealSignaturePacket(input)).ok,false);
+ draft.legal_disclaimer_acknowledged=true; draft.editable_payload.purchase_price=''; assert.equal((await prepareDealSignaturePacket(input)).ok,false);
+ draft.editable_payload.purchase_price='$1.00'; assert.equal((await prepareDealSignaturePacket(input)).ok,false);
+ draft.editable_payload.purchase_price='$0.00'; draft.body='Purchase price {{purchase_price}}'; assert.equal((await prepareDealSignaturePacket(input)).ok,false); assert.equal(writes,0);
+ draft.body='Purchase price $0.00'; const result=await prepareDealSignaturePacket(input); assert.equal(result.ok,true); assert.equal(writes,1); assert.match(result.packetUrl,/x\/selected$/);
+ assert.ok(filters.some(([key,value])=>key==='id'&&value==='selected')); assert.ok(filters.some(([key,value])=>key==='deal_id'&&value==='x'));
+});
+test('proposed contract terms persist separately from calculated underwriting and reload from the saved log',async()=>{
+ const {db,writes}=dbMock(); const {saveDealContractTerms,savedContractOfferWindow}=load(['saveDealContractTerms','savedContractOfferWindow','formatCurrency','buildWholesalingComplianceSnapshot','isDuplicateInsertError'],{getSupabaseAdmin:()=>db});
+ assert.equal((await saveDealContractTerms({dealId:'x',contractType:'Assignment',offerLow:90000,offerHigh:95000,earnestMoney:0})).ok,true);
+ assert.ok(!writes.some(x=>x.table==='deal_analysis'));
+ const saved=writes.find(x=>x.table==='disposition_logs').payload.payload;
+ assert.equal(savedContractOfferWindow(saved),'$90,000.00 to $95,000.00'); assert.equal(savedContractOfferWindow({offerLow:0,offerHigh:0}),'$0.00 to $0.00'); assert.equal(savedContractOfferWindow({}),'Not entered');
+});
+test('signature API requires and forwards the selected saved draft after authorization',async()=>{
+ const route=stripTypeScriptTypes(fs.readFileSync('frontend/src/app/api/deal-engine/signature/prepare/route.ts','utf8').replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'')); const received=[];
+ const ctx={NextResponse:{json:(body,options)=>({body,status:options?.status??200})},guardAdminApi:async()=>null,prepareDealSignaturePacket:async input=>{received.push(input);return {ok:true,packetUrl:'test'}}};
+ const {POST}=vm.runInNewContext(route+'\n({POST})',ctx);
+ assert.equal((await POST({json:async()=>({dealId:'x'})})).status,400); assert.equal(received.length,0);
+ assert.equal((await POST({json:async()=>({dealId:'x',draftId:' selected '})})).status,200); assert.equal(received[0].draftId,'selected');
 });
 
 test('completed rental workflow reports cash flow rather than an absent offer ceiling',()=>{
@@ -158,4 +178,11 @@ test('completed rental workflow reports cash flow rather than an absent offer ce
  const detail={underwriting,sellerContact:{ownerPhone:'Not captured'},buyerSignals:[],coordination:{},packet:{investorSummary:'',buyerEmailBlast:''},lead:{id:'rental'},uploadedDocuments:[]};
  const item=buildDealAutomationWorkflow(detail).find(row=>row.id==='rental-workflow-underwrite');
  assert.equal(item.status,'ready');assert.match(item.detail,/Monthly cash flow is \$400/);assert.doesNotMatch(item.detail,/MAO|Not entered/);
+});
+
+test('saving a generated draft returns its database identity for subsequent selection',async()=>{
+ let selected='';const db={from(){const q={upsert(){return q},select(fields){selected=fields;return q},single:async()=>({data:{id:'stored-uuid'},error:null})};return q}};
+ const {saveGeneratedContractDraft}=load(['saveGeneratedContractDraft','sanitizeDraftType'],{getSupabaseAdmin:()=>db,writeContractAuditLog:async()=>{}});
+ const result=await saveGeneratedContractDraft({dealId:'x',templateType:'assignment_agreement',title:'Reviewed draft',body:'Purchase price $0.00'});
+ assert.equal(result.draftId,'stored-uuid');assert.equal(selected,'id');
 });

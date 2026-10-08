@@ -11,17 +11,19 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       dealId?: string;
+      draftId?: string;
       signatureProvider?: string;
       signerEmail?: string;
       signerRole?: string;
     };
 
-    if (!body.dealId?.trim()) {
-      return NextResponse.json({ ok: false, error: "dealId is required." }, { status: 400 });
+    if (!body.dealId?.trim() || !body.draftId?.trim()) {
+      return NextResponse.json({ ok: false, error: "dealId and draftId are required." }, { status: 400 });
     }
 
     const result = await prepareDealSignaturePacket({
       dealId: body.dealId.trim(),
+      draftId: body.draftId.trim(),
       signatureProvider: body.signatureProvider?.trim(),
       signerEmail: body.signerEmail?.trim(),
       signerRole: body.signerRole?.trim(),
