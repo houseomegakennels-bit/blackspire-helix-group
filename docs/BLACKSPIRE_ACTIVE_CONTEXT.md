@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-08 — Peggy publication approved; review checkpoint retained
+
+The user explicitly approved pushing Peggy’s completed changes for review and publishing after release gates clear. Implementation commit `0707035839f1c35fa309bfa6fbf1249420568747` is pushed on `feat/real-estate-usability-finish-20261008`, and [PR #163](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/163) is ready for review. Its frontend Vercel preview build passed; the VPS-owned root build was correctly ignored. GitHub CI run `37842698429` and the configured independent Codex review are in progress at this checkpoint, not recorded as passed.
+
+Production remains unchanged. The inherited living-memory failure against anchor `3019785f108f3da78720da265bb5ccc6e17ae2d4` still blocks release; current-main implementation beyond that anchor requires legitimate reviewed evidence before reconciliation. The latest prior PR #160 has unresolved independent review findings, so its review is not treated as a clean review of current main. No gate or anchor was altered. User publication authority is now established and must not be requested again for this scope; required release checks remain mandatory. No production credential load, migration, paid lookup, outreach or signing occurred.
+
 ## 2026-10-08 — Peggy usability completion on current main
 
 The saved candidate `0d58882baec1b6c559752e8d2298b1510b97476a` was reconciled onto freshly fetched main `ab390b899cc83d72d1c80f5af15c790994f5aa9c` in `feat/real-estate-usability-finish-20261008` at `/mnt/blackspire-builds/real-estate-usability-finish-20261008`. The earlier worktree remains intact. Newer Buyer dispatch authority, owned-store fallback refusal, admin guards and observed read-client behavior are preserved.
