@@ -1,3 +1,5 @@
+import "./deal-workspace.css";
+
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -27,14 +29,14 @@ const navItems = [
 export function DealEngineShell({ children }: { children: ReactNode }) {
   return (
     <main
-      className="theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_-2%,hsl(190_92%_56%/.22),transparent_44%),radial-gradient(circle_at_88%_8%,hsl(44_82%_60%/.15),transparent_38%),radial-gradient(circle_at_50%_122%,hsl(196_80%_38%/.16),transparent_54%),linear-gradient(180deg,hsl(206_30%_5%)_0%,hsl(208_28%_3%)_46%,hsl(210_26%_4%)_100%)] text-foreground"
+      className="deal-workspace theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_-2%,hsl(190_92%_56%/.22),transparent_44%),radial-gradient(circle_at_88%_8%,hsl(44_82%_60%/.15),transparent_38%),radial-gradient(circle_at_50%_122%,hsl(196_80%_38%/.16),transparent_54%),linear-gradient(180deg,hsl(206_30%_5%)_0%,hsl(208_28%_3%)_46%,hsl(210_26%_4%)_100%)] text-foreground"
     >
       <DivisionWatermark logoSrc={brandAssets.dealEngine.logo} />
-      <div className="relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
-        <aside className="brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-3">
+      <div className="workspace-layout relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
+        <aside className="workspace-sidebar brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-3">
           <div className="pointer-events-none absolute inset-x-8 top-0 h-36 rounded-b-[42px] bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.14),transparent_74%)]" />
-          <div className="relative border-b border-[var(--line)] pb-5">
-            <div className="mb-4 overflow-hidden rounded-[24px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(0_0%_2%/.96))] px-3 py-4">
+          <div className="workspace-brand relative border-b border-[var(--line)] pb-5">
+            <div className="workspace-logo mb-4 overflow-hidden rounded-[24px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(0_0%_2%/.96))] px-3 py-4">
               <div className="relative mx-auto h-[110px] w-full max-w-[140px] sm:h-[172px] sm:max-w-[218px]">
                 <Image
                   src={brandAssets.dealEngine.logo}
@@ -56,12 +58,12 @@ export function DealEngineShell({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          <nav className="mt-5 hidden space-y-2 lg:block">
+          <nav className="workspace-nav mt-5 lg:space-y-2">
             {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="block rounded-[16px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(214_20%_9%/.92))] px-4 py-3 text-sm uppercase tracking-[0.18em] text-[var(--copy-soft)] transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] hover:text-white hover:shadow-[0_16px_30px_hsl(0_0%_0%/.28)]"
+                className="block rounded-[16px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(214_20%_9%/.92))] px-4 py-3 text-sm text-[var(--copy-soft)] transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] hover:text-white hover:shadow-[0_16px_30px_hsl(0_0%_0%/.28)]"
               >
                 {item.label}
               </Link>

@@ -685,7 +685,7 @@ export function DealTransactionCommand({
                 ) : null}
               </div>
             ) : (
-              <div className="brand-card p-5 text-sm text-[var(--copy-soft)]">No contract draft generated yet.</div>
+              <div className="brand-card p-5 text-sm text-[var(--copy-soft)]">No contract draft yet. Choose a template and review the purchase terms above to create one.</div>
             )}
           </div>
         </div>
@@ -864,7 +864,7 @@ export function DealTransactionCommand({
                 {document.notes ? <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{document.notes}</div> : null}
                 <div className="mt-2 text-xs text-[var(--copy-muted)]">{new Date(document.uploadedAt).toLocaleString()}</div>
               </div>
-            )) : <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">No deal documents uploaded yet.</div>}
+            )) : <div className="brand-card p-4 text-sm text-[var(--copy-soft)]">No documents yet. Use the upload form to attach property or closing files.</div>}
           </div>
         </div>
       ) : null}
@@ -902,7 +902,7 @@ export function DealTransactionCommand({
       ) : null}
 
       {status ? (
-        <div role="status" aria-live="polite" className="mt-5 rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+        <div role="status" aria-live="polite" className="workspace-feedback mt-5 text-sm">
           {status}
         </div>
       ) : null}
