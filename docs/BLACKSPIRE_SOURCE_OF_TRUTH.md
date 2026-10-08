@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-08 — Peggy independent review verified
+
+Configured independent Codex review completed at 22:42 UTC on implementation `097b585a07ce668ac8f17288e1831f6dc530710c` with no findings and a fresh positive reaction. All eight earlier PR #163 findings have verified fixes and resolved threads. The latest frontend preview `dpl_6vmkBuvCjRmpkzzYQLq4ZRuPuiFn` is READY for that exact code. Read-only live schema observation confirms nullable purchase deposits and the stored draft identity/payload/body fields; no migration or data mutation is needed.
+
+The last verified implementation anchor now records this genuinely independently reviewed implementation. The checker itself is unchanged. Before merging, that branch anchor is not yet an ancestor of trusted origin/main; after an ancestry-preserving merge, its net delta must contain only canonical memory. Exact-head full CI is still running at this checkpoint and must pass before merge/publication. This is review evidence for the Peggy change and the bounded known inherited repairs, not a claim of comprehensive review of every older main change. Production authentication/data acceptance remains UNVERIFIED. User publication approval remains in force.
+
 ## 2026-10-08 — Peggy release-check repairs
 
 PR #163 independent review identified a rejected formula-settings projection, coerced non-boolean analysis flags and a rental workflow MAO headline. All three are repaired; the analysis regression now exercises the real closed scoped reader through the actual internal route, with no network or production credentials. Arbitrary projections and write methods still refuse. Main analysis tests no longer depend on uninstalled frontend node_modules inside the sealed test snapshot. The six-read offline fixture uses the actual shared calculator and complete fictional cost inputs; all 28 previously failing offline/collector tests now pass. The focused combined suite passes 133 tests with zero failures or skips. Root build/lint/typecheck, frontend lint/production build, secret scan and whitespace checks pass.
@@ -1152,7 +1158,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `3019785f108f3da78720da265bb5ccc6e17ae2d4`
+- Last verified implementation commit: `097b585a07ce668ac8f17288e1831f6dc530710c`
 
 ## 2026-09-04 — Activation recovery delta
 

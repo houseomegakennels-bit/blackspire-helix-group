@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-08 — Peggy independent review verified
+
+Configured independent Codex review completed at 22:42 UTC on implementation `097b585a07ce668ac8f17288e1831f6dc530710c` with no findings and a fresh positive reaction. All eight earlier PR #163 findings have verified fixes and resolved threads. The latest frontend preview `dpl_6vmkBuvCjRmpkzzYQLq4ZRuPuiFn` is READY for that exact code. Read-only live schema observation confirms nullable purchase deposits and the stored draft identity/payload/body fields; no migration or data mutation is needed.
+
+The last verified implementation anchor now records this genuinely independently reviewed implementation. The checker itself is unchanged. Before merging, that branch anchor is not yet an ancestor of trusted origin/main; after an ancestry-preserving merge, its net delta must contain only canonical memory. Exact-head full CI is still running at this checkpoint and must pass before merge/publication. This is review evidence for the Peggy change and the bounded known inherited repairs, not a claim of comprehensive review of every older main change. Production authentication/data acceptance remains UNVERIFIED. User publication approval remains in force.
+
 ## 2026-10-08 — Peggy release-check repairs
 
 PR #163 independent review identified a rejected formula-settings projection, coerced non-boolean analysis flags and a rental workflow MAO headline. All three are repaired; the analysis regression now exercises the real closed scoped reader through the actual internal route, with no network or production credentials. Arbitrary projections and write methods still refuse. Main analysis tests no longer depend on uninstalled frontend node_modules inside the sealed test snapshot. The six-read offline fixture uses the actual shared calculator and complete fictional cost inputs; all 28 previously failing offline/collector tests now pass. The focused combined suite passes 133 tests with zero failures or skips. Root build/lint/typecheck, frontend lint/production build, secret scan and whitespace checks pass.
