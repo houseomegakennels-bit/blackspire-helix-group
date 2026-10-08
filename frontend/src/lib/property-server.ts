@@ -53,6 +53,7 @@ export type PropertyCommandView = {
   seller: { id: string; status: string; motivationScore: number; recommendedAction: string | null } | null;
   deal: SentinelDeal | null;
   buyers: BuyerForPropertyResult;
+  buyerMatchError: string | null;
   scores: {
     opportunity: OpportunityScoreResult;
     dealReadiness: number | null;
@@ -86,29 +87,14 @@ function deriveNextBestAction(view: {
   buyerDemand: number;
   propertyId: string;
 }): { label: string; href: string; reason: string } {
-  const { deal, propertyId } = view;
-  if (!view.sellerExists) {
-    return { label: "Promote to Seller Engine", href: "/workspace/harvester", reason: "No seller lead exists for this property yet." };
-  }
-  if (!view.sellerEngaged) {
-    return { label: "Run Skip Trace", href: "/workspace/nexus", reason: "Seller identified but contact is not yet resolved." };
-  }
-  if (!deal) {
-    return { label: "Create Deal", href: "/workspace/deal-engine", reason: "Motivated seller is ready — open a deal lane." };
-  }
-  if (view.buyerDemand < 40) {
-    return { label: "Find Buyers", href: `/workspace/property/${propertyId}`, reason: "Validate buyer demand before further acquisition effort." };
-  }
-  if (!deal.contractSigned) {
-    return { label: "Send Offer / Get Signature", href: `/workspace/deal-engine/${deal.dealId}`, reason: "Buyers exist — lock the contract." };
-  }
-  if (!deal.emdReceived) {
-    return { label: "Collect EMD", href: `/workspace/deal-engine/${deal.dealId}`, reason: "Contract signed — secure earnest money." };
-  }
-  if (!deal.titleCompanyAssigned) {
-    return { label: "Open Title", href: `/workspace/deal-engine/${deal.dealId}`, reason: "Move the signed deal into title." };
-  }
-  return { label: "Coordinate Closing", href: `/workspace/deal-engine/${deal.dealId}`, reason: "Drive the remaining closing checklist to done." };
+  const { deal } = view;
+  if (!view.sellerExists) return { label: "Review the property source", href: "/workspace/harvester", reason: "Link a seller or wholesaler record before proceeding." };
+  if (!view.sellerEngaged) return { label: "Review contact and signing authority", href: "/workspace/nexus", reason: "Use known contact details first; contact identity does not confirm authority to sell." };
+  if (!deal) return { label: "Open the deal workspace", href: "/workspace/deal-engine", reason: "Review the property and seller details before creating a linked deal." };
+  if (!deal.contractSigned) return { label: "Review numbers, evidence and proposed terms", href: "/workspace/deal-engine/" + deal.dealId, reason: "Buyer activity alone does not establish a viable purchase or an executed contract." };
+  if (!deal.emdReceived) return { label: "Review purchase deposit status", href: "/workspace/deal-engine/" + deal.dealId, reason: "Check the signed agreement's deposit requirements and receipt evidence." };
+  if (!deal.titleCompanyAssigned) return { label: "Review title coordination", href: "/workspace/deal-engine/" + deal.dealId, reason: "Confirm who is handling title and the outstanding research." };
+  return { label: "Review closing checklist", href: "/workspace/deal-engine/" + deal.dealId, reason: "Confirm remaining deadlines, documents and completion evidence." };
 }
 
 export async function getPropertyCommandView(propertyId: string): Promise<PropertyCommandView | null> {
@@ -136,15 +122,23 @@ export async function getPropertyCommandView(propertyId: string): Promise<Proper
     deals.find((d) => d.propertyAddress?.toLowerCase() === (property.property_address ?? "").toLowerCase()) ??
     null;
 
+  const { data: priceRecord } = deal?.dealId
+    ? await supabase.from("deal_analysis").select("seller_asking_price").eq("lead_id", deal.dealId).maybeSingle()
+    : { data: null };
+  // Assessed value is not the asking price and must not silently constrain buyer fit.
+  let buyerMatchError: string | null = null;
   const buyers = await matchBuyersForProperty({
     county: property.county,
     state: property.state ?? "NC",
     city: property.city,
     zip: property.zip_code,
     propertyType: property.property_type,
-    askingPrice: property.assessed_value,
+    askingPrice: priceRecord?.seller_asking_price ?? null,
     limit: 8,
-  }).catch(() => ({ matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low" as const, county: property.county }));
+  }).catch(() => {
+    buyerMatchError = "Buyer matching could not be checked. An empty result does not confirm there are no buyers.";
+    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low" as const, county: property.county };
+  });
 
   // Timeline from existing event sources (no new timeline table).
   const [{ data: statusHistory }, { data: notes }, { data: closingEvents }, { data: alerts }] = await Promise.all([
@@ -245,6 +239,7 @@ export async function getPropertyCommandView(propertyId: string): Promise<Proper
       : null,
     deal,
     buyers,
+    buyerMatchError,
     scores: {
       opportunity,
       dealReadiness: deal?.readiness.score ?? null,

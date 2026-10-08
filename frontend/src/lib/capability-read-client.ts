@@ -8,7 +8,7 @@ const projections: Record<string, string[]> = {
   BuyerProfile: ["id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score", "id"],
   buyer_group_registry: ["id,canonical_name,group_type,aliases,states,counties,website,notes,active,created_at,updated_at"],
   deal_leads: ["property_address,county,city,property_type", "seller_lead_id,owner_name,property_address", "id,owner_name,property_address,county,status,motivation_score,recommended_next_action,deal_analysis(maximum_allowable_offer,assignment_fee_target),seller_conversations(next_action),buyer_matches(exit_strategy)"],
-  deal_analysis: ["estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating"],
+  deal_analysis: ["estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating,formula_settings"],
   nexus_contacts: ["id,seller_lead_id,owner_name,property_address,primary_phone,contact_confidence_score,provider,status,updated_at"],
 };
 const columns: Record<string, string[]> = {

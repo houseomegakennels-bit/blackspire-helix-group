@@ -4415,4 +4415,4 @@ body::after {
 .book-viewer video{aspect-ratio:16/9;object-fit:contain}
 .public-book-about{margin-top:28px;border-top:1px solid var(--line);padding-top:20px;font-size:1rem;line-height:1.8;color:#dedbd5}
 .public-book-about summary{cursor:pointer;color:#e7cfa0;min-height:44px}
-@media(min-width:1024px){.book-player-layout{grid-template-columns:minmax(260px,.32fr) minmax(0,.68fr);grid-template-areas:"chapters viewer";align-items:start}.book-chapter-list{max-height:760px;overflow-y:auto}}
+@media(min-width:1024px){.book-player-layout{grid-template-columns:minmax(0,.68fr) minmax(260px,.32fr);grid-template-areas:"viewer chapters";align-items:start}.book-chapter-list{max-height:760px;overflow-y:auto}}

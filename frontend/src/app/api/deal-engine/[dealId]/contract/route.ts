@@ -163,16 +163,7 @@ function deriveOfferWindow(detail: DealEngineDealDetail) {
   const explicit = detail.contractDraft?.offerWindow?.trim();
   if (explicit && !/\$0\s*-\s*\$0/.test(explicit)) return explicit;
 
-  const high = detail.underwriting.maximumAllowableOffer;
-  if (high > 0) {
-    const low = Math.max(
-      high - Math.max(detail.underwriting.assignmentFeeTarget / 2, 5000),
-      0,
-    );
-    return `$${low.toLocaleString()} - $${high.toLocaleString()}`;
-  }
-
-  return detail.lead.mao !== "$0" ? `${detail.lead.mao} target` : "Set underwriting before sending";
+  return "Enter and review proposed purchase terms before sending";
 }
 
 function contractHeadline(detail: DealEngineDealDetail, dealId: string) {
@@ -181,7 +172,7 @@ function contractHeadline(detail: DealEngineDealDetail, dealId: string) {
       ? detail.contractDraft.earnestMoney
       : detail.coordination.earnestMoneyStatus || "To be confirmed";
   const closingDate = detail.coordination.closingDate || "To be set by operator";
-  const inspectionPeriod = detail.coordination.inspectionEndsOn || "14 days or per agreed terms";
+  const inspectionPeriod = detail.coordination.inspectionEndsOn || "To be confirmed with the parties";
   const contractType =
     detail.contractDraft?.contractType
     ?? detail.coordination.buyerAssignmentStatus

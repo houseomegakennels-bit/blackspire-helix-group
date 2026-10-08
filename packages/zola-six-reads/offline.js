@@ -56,7 +56,7 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     BuyerProfile: [{ id: 'buyer-1', buyer_name: 'Synthetic buyer', county: 'Forsyth', state: 'NC', is_cash_buyer: true, purchase_count: 3, score: 80 }],
     buyer_group_registry: [],
     deal_leads: [{ ...lead, motivation_score: 90, deal_analysis: { maximum_allowable_offer: 150000, assignment_fee_target: 10000 }, buyer_matches: { exit_strategy: 'Assignment' }, property_address: lead.propertyAddress, county: 'Forsyth', seller_lead_id: 'seller-1', owner_name: 'Synthetic owner' }],
-    deal_analysis: [{ lead_id: 'DE-0001', estimated_arv: 230000, repair_estimate: 20000, seller_asking_price: 170000, maximum_allowable_offer: 150000, assignment_fee_target: 10000 }],
+    deal_analysis: [{ lead_id: 'DE-0001', estimated_arv: 230000, repair_estimate: 20000, seller_asking_price: 170000, closing_costs: 0, holding_costs: 0, buyer_profit_target: 50000, formula_settings: { strategy: "assignment" }, maximum_allowable_offer: 150000, assignment_fee_target: 10000 }],
     nexus_contacts: [{ id: 'contact-1', seller_lead_id: 'seller-1', owner_name: 'Synthetic owner', property_address: lead.propertyAddress, primary_phone: null, contact_confidence_score: 80, status: 'Stored', provider: 'fixture', updated_at: '2026-09-07T00:00:00.000Z' }],
   };
   const reject = (kind) => { events.push({ kind }); throw new Error('offline forbidden operation'); };
@@ -117,6 +117,7 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     listSellerLeads: () => reject('fallback_attempt'), toDealLeadFromSellerHandoff: () => reject('fallback_attempt'), toLead: (row) => row,
 
   };
+  Object.assign(dependencies, load('({ analyzeInvestment, parseInvestmentAmount })', read('lib/investment-analysis.ts'), {}));
   const dealSource = read('lib/deal-engine-server.ts');
   const pureSource = dealSource.slice(dealSource.indexOf('function asNumber('), dealSource.indexOf('function buildMetrics('))
     + dealSource.slice(dealSource.indexOf('function buildUnderwritingSnapshot('), dealSource.indexOf('function buildDealAutomationWorkflow('));

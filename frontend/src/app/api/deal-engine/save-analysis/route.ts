@@ -1,6 +1,8 @@
 import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
+
 import { saveDealAnalysis } from "@/lib/deal-engine-server";
 
 export const dynamic = "force-dynamic";
@@ -11,15 +13,18 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       dealId?: string;
-      estimatedArv?: number;
-      sellerAskingPrice?: number;
-      repairEstimate?: number;
-      closingCosts?: number;
-      holdingCosts?: number;
-      buyerProfitTarget?: number;
-      assignmentFeeTarget?: number;
-      rentalEstimate?: number;
-      flipEstimate?: number;
+      strategy?: InvestmentStrategy;
+      monthlyExpenses?: number | string | null;
+      monthlyDebtService?: number | string | null;
+      estimatedArv?: number | string | null;
+      sellerAskingPrice?: number | string | null;
+      repairEstimate?: number | string | null;
+      closingCosts?: number | string | null;
+      holdingCosts?: number | string | null;
+      buyerProfitTarget?: number | string | null;
+      assignmentFeeTarget?: number | string | null;
+      rentalEstimate?: number | string | null;
+      flipEstimate?: number | string | null;
     };
 
     if (!body.dealId?.trim()) {
@@ -28,15 +33,18 @@ export async function POST(request: NextRequest) {
 
     const result = await saveDealAnalysis({
       dealId: body.dealId.trim(),
-      estimatedArv: Number(body.estimatedArv ?? 0),
-      sellerAskingPrice: Number(body.sellerAskingPrice ?? 0),
-      repairEstimate: Number(body.repairEstimate ?? 0),
-      closingCosts: Number(body.closingCosts ?? 0),
-      holdingCosts: Number(body.holdingCosts ?? 0),
-      buyerProfitTarget: Number(body.buyerProfitTarget ?? 0),
-      assignmentFeeTarget: Number(body.assignmentFeeTarget ?? 0),
-      rentalEstimate: Number(body.rentalEstimate ?? 0),
-      flipEstimate: Number(body.flipEstimate ?? 0),
+      strategy: body.strategy,
+      monthlyExpenses: body.monthlyExpenses === undefined ? undefined : parseInvestmentAmount(body.monthlyExpenses),
+      monthlyDebtService: body.monthlyDebtService === undefined ? undefined : parseInvestmentAmount(body.monthlyDebtService),
+      estimatedArv: parseInvestmentAmount(body.estimatedArv),
+      sellerAskingPrice: parseInvestmentAmount(body.sellerAskingPrice),
+      repairEstimate: parseInvestmentAmount(body.repairEstimate),
+      closingCosts: parseInvestmentAmount(body.closingCosts),
+      holdingCosts: parseInvestmentAmount(body.holdingCosts),
+      buyerProfitTarget: parseInvestmentAmount(body.buyerProfitTarget),
+      assignmentFeeTarget: parseInvestmentAmount(body.assignmentFeeTarget),
+      rentalEstimate: parseInvestmentAmount(body.rentalEstimate),
+      flipEstimate: parseInvestmentAmount(body.flipEstimate),
     });
 
     if (!result.ok) {
@@ -51,7 +59,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Underwriting save failed." },
-      { status: 500 },
+      { status: 400 },
     );
   }
 }

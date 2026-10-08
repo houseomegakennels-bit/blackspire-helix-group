@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { InvestmentAmountField } from "@/components/investment-amount-field";
+import { parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
+
 import { Metric, Panel, StatusPill } from "@/components/buyer-shell";
 import { DealCommanderPanel } from "@/components/deal-commander-panel";
 import { DealTransactionCommand } from "@/components/deal-transaction-command";
@@ -13,6 +16,16 @@ import { dealReadinessFromCoordination, readinessColor } from "@/lib/sentinel-di
 
 type ChecklistItem = DealEngineDealDetail["coordination"]["closingChecklist"][number];
 type ClosingDocument = DealEngineDealDetail["coordination"]["closingDocuments"][number];
+
+function draftMoneyInput(value: string | undefined) {
+  if (!value || !/\d/.test(value)) return "";
+  return value.replace(/[$,\s]/g, "");
+}
+
+function draftOfferInputs(value: string | undefined): [string, string] {
+  const parts = value?.split(/\s+(?:to|-)\s+/) ?? [];
+  return [draftMoneyInput(parts[0]), draftMoneyInput(parts[1])];
+}
 
 function statusTone(status: string) {
   if (status === "Negotiating") return "warn";
@@ -49,23 +62,27 @@ export function DealEngineDealDetailView({
   const [contractType, setContractType] = useState(
     detail.contractDraft?.contractType ?? "Assignable purchase agreement",
   );
-  const [estimatedArv, setEstimatedArv] = useState(String(detail.underwriting.estimatedArv || ""));
-  const [sellerAskingPrice, setSellerAskingPrice] = useState(String(detail.underwriting.sellerAskingPrice || ""));
-  const [repairEstimate, setRepairEstimate] = useState(String(detail.underwriting.repairEstimate || ""));
-  const [closingCosts, setClosingCosts] = useState(String(detail.underwriting.closingCosts || ""));
-  const [holdingCosts, setHoldingCosts] = useState(String(detail.underwriting.holdingCosts || ""));
-  const [buyerProfitTarget, setBuyerProfitTarget] = useState(String(detail.underwriting.buyerProfitTarget || ""));
-  const [assignmentFeeTarget, setAssignmentFeeTarget] = useState(String(detail.underwriting.assignmentFeeTarget || ""));
-  const [rentalEstimate, setRentalEstimate] = useState(String(detail.underwriting.rentalEstimate || ""));
-  const [flipEstimate, setFlipEstimate] = useState(String(detail.underwriting.flipEstimate || ""));
+  const [strategy, setStrategy] = useState<InvestmentStrategy>(detail.underwriting.strategy ?? "assignment");
+  const [monthlyExpenses, setMonthlyExpenses] = useState(String(detail.underwriting.monthlyExpenses ?? ""));
+  const [monthlyDebtService, setMonthlyDebtService] = useState(String(detail.underwriting.monthlyDebtService ?? ""));
+  const [preliminaryArv, setPreliminaryArv] = useState<number | null>(null);
+  const [estimatedArv, setEstimatedArv] = useState(String(detail.underwriting.estimatedArv ?? ""));
+  const [sellerAskingPrice, setSellerAskingPrice] = useState(String(detail.underwriting.sellerAskingPrice ?? ""));
+  const [repairEstimate, setRepairEstimate] = useState(String(detail.underwriting.repairEstimate ?? ""));
+  const [closingCosts, setClosingCosts] = useState(String(detail.underwriting.closingCosts ?? ""));
+  const [holdingCosts, setHoldingCosts] = useState(String(detail.underwriting.holdingCosts ?? ""));
+  const [buyerProfitTarget, setBuyerProfitTarget] = useState(String(detail.underwriting.buyerProfitTarget ?? ""));
+  const [assignmentFeeTarget, setAssignmentFeeTarget] = useState(String(detail.underwriting.assignmentFeeTarget ?? ""));
+  const [rentalEstimate, setRentalEstimate] = useState(String(detail.underwriting.rentalEstimate ?? ""));
+  const [flipEstimate, setFlipEstimate] = useState(String(detail.underwriting.flipEstimate ?? ""));
   const [offerLow, setOfferLow] = useState(
-    detail.contractDraft?.offerWindow.split(" - ")[0]?.replace(/[^0-9]/g, "") ?? "186000",
+    draftOfferInputs(detail.contractDraft?.offerWindow)[0],
   );
   const [offerHigh, setOfferHigh] = useState(
-    detail.contractDraft?.offerWindow.split(" - ")[1]?.replace(/[^0-9]/g, "") ?? "195000",
+    draftOfferInputs(detail.contractDraft?.offerWindow)[1],
   );
   const [earnestMoney, setEarnestMoney] = useState(
-    detail.contractDraft?.earnestMoney.replace(/[^0-9]/g, "") ?? "5000",
+    draftMoneyInput(detail.contractDraft?.earnestMoney),
   );
   const [selectedBuyerSignalId, setSelectedBuyerSignalId] = useState(detail.buyerSignals[0]?.id ?? "");
   const [propertyNotes, setPropertyNotes] = useState(detail.packet.propertyNotes);
@@ -205,6 +222,7 @@ export function DealEngineDealDetailView({
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!offerLow.trim() || !offerHigh.trim() || !earnestMoney.trim()) { setStatus("Enter the proposed offer range and deposit for this property before saving."); return; }
     setWorking("contract");
     setStatus(null);
     try {
@@ -240,23 +258,23 @@ export function DealEngineDealDetailView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dealId,
-          estimatedArv: Number(estimatedArv),
-          sellerAskingPrice: Number(sellerAskingPrice),
-          repairEstimate: Number(repairEstimate),
-          closingCosts: Number(closingCosts),
-          holdingCosts: Number(holdingCosts),
-          buyerProfitTarget: Number(buyerProfitTarget),
-          assignmentFeeTarget: Number(assignmentFeeTarget),
-          rentalEstimate: Number(rentalEstimate),
-          flipEstimate: Number(flipEstimate),
+          strategy,
+          monthlyExpenses: parseInvestmentAmount(monthlyExpenses),
+          monthlyDebtService: parseInvestmentAmount(monthlyDebtService),
+          estimatedArv: parseInvestmentAmount(estimatedArv),
+          sellerAskingPrice: parseInvestmentAmount(sellerAskingPrice),
+          repairEstimate: parseInvestmentAmount(repairEstimate),
+          closingCosts: parseInvestmentAmount(closingCosts),
+          holdingCosts: parseInvestmentAmount(holdingCosts),
+          buyerProfitTarget: parseInvestmentAmount(buyerProfitTarget),
+          assignmentFeeTarget: parseInvestmentAmount(assignmentFeeTarget),
+          rentalEstimate: parseInvestmentAmount(rentalEstimate),
+          flipEstimate: parseInvestmentAmount(flipEstimate),
         }),
       });
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; underwriting?: { maximumAllowableOffer?: number; assignmentFeeTarget?: number } };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Underwriting save failed.");
-      if (payload.underwriting?.maximumAllowableOffer != null) {
-        setOfferHigh(String(payload.underwriting.maximumAllowableOffer));
-        setOfferLow(String(Math.max(payload.underwriting.maximumAllowableOffer - Math.max((payload.underwriting.assignmentFeeTarget ?? 0) / 2, 5000), 0)));
-      }
+
       setStatus(payload.message ?? "Underwriting saved.");
       router.refresh();
     } catch (error) {
@@ -270,6 +288,7 @@ export function DealEngineDealDetailView({
     setWorking("arv");
     setStatus(null);
     setArvEstimateHint(null);
+    setPreliminaryArv(null);
     try {
       const response = await fetch("/api/deal-engine/estimate-arv", {
         method: "POST",
@@ -288,19 +307,15 @@ export function DealEngineDealDetailView({
       };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "ARV estimate failed.");
       if (payload.estimatedArv != null) {
-        setEstimatedArv(String(payload.estimatedArv));
+        setPreliminaryArv(payload.estimatedArv);
       }
-      if (payload.underwriting?.maximumAllowableOffer != null) {
-        setOfferHigh(String(payload.underwriting.maximumAllowableOffer));
-        setOfferLow(String(Math.max(payload.underwriting.maximumAllowableOffer - Math.max((payload.underwriting.assignmentFeeTarget ?? 0) / 2, 5000), 0)));
-      }
+
       setArvEstimateHint(
         [payload.arvRange ? `Range ${payload.arvRange}` : "", payload.confidence ? `confidence ${payload.confidence}` : "", payload.basis ?? ""]
           .filter(Boolean)
           .join(" / "),
       );
-      setStatus(payload.message ?? "ARV estimated.");
-      router.refresh();
+      setStatus("Preliminary estimate previewed. Review sold comparable properties before using it; nothing has been saved.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "ARV estimate failed.");
     } finally {
@@ -689,6 +704,8 @@ export function DealEngineDealDetailView({
   }
 
   async function executeDealCommand(command: "send-contract" | "mark-signed" | "save-packet" | "buyer-draft" | "move-closing") {
+    if (command === "send-contract" && !window.confirm("Confirm the contract was actually sent and its delivery evidence is saved. This button only records that event; it does not send a contract.")) return;
+    if (command === "mark-signed" && !window.confirm("Confirm the required parties have actually signed and the executed contract is saved. This button records the status; it does not collect signatures.")) return;
     setWorking("execute");
     setStatus(null);
     try {
@@ -790,7 +807,7 @@ export function DealEngineDealDetailView({
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-5">
             <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Deal Workstation</p>
+              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Property workspace</p>
               <h2 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
                 {detail.lead.propertyAddress}
               </h2>
@@ -816,7 +833,7 @@ export function DealEngineDealDetailView({
             </div>
             <div className="flex flex-wrap gap-3">
               <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Back to command deck
+                Back to properties
               </Link>
               <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Open packet view
@@ -831,10 +848,10 @@ export function DealEngineDealDetailView({
                 Open external deal room
               </Link>
               <Link href="/seller-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Seller Engine
+                Seller leads
               </Link>
               <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Buyer Engine
+                Buyer contacts
               </Link>
             </div>
           </div>
@@ -842,11 +859,11 @@ export function DealEngineDealDetailView({
           <div className="grid gap-4 content-start">
             <div className="brand-card p-5">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-lg font-semibold text-white">Deal posture</div>
+                <div className="text-lg font-semibold text-white">Property progress</div>
                 <StatusPill tone={statusTone(detail.lead.status)} label={detail.lead.status.toLowerCase()} />
               </div>
               <div className="mt-4 space-y-3 text-sm text-[var(--copy-soft)]">
-                <div>MAO: <span className="font-semibold text-white">{detail.lead.mao}</span></div>
+                <div>Calculated purchase ceiling: <span className="font-semibold text-white">{detail.lead.mao}</span></div>
                 <div>Assignment target: <span className="font-semibold text-white">{detail.lead.assignmentFee}</span></div>
                 <div>Exit strategy: <span className="font-semibold text-white">{detail.lead.exitStrategy}</span></div>
                 <div>Next move: <span className="font-semibold text-white">{detail.lead.nextAction}</span></div>
@@ -863,7 +880,10 @@ export function DealEngineDealDetailView({
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
-      <DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} />
+      <nav aria-label="This property" className="brand-card flex flex-wrap gap-2 p-4">
+        {[["property-research", "Property & research"], ["property-numbers", "Costs & returns"], ["property-terms", "Offer & contract"], ["property-closing", "Closing tasks"], ["property-documents", "Documents"], ["property-conversations", "Conversations"], ["property-packet", "Comps & buyer packet"]].map(([id, label]) => <a key={id} href={`#${id}`} className="brand-button min-h-11 px-4 py-3 text-sm focus-visible:outline focus-visible:outline-2">{label}</a>)}
+      </nav>
+      <DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} strategy={detail.underwriting.strategy} />
       <DealTransactionCommand dealId={dealId} initialSnapshot={transactionCenter} />
 
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
@@ -887,18 +907,19 @@ export function DealEngineDealDetailView({
 
         <Panel
           eyebrow="Underwriting Status"
-          title="Current underwriting posture"
-          description="This is the live financial snapshot behind the contract lane. When key inputs are missing, the workflow should stop here instead of guessing."
+          title="Saved numbers and results"
+          description="A complete calculation is not contract approval. Confirm the figures, seller signing authority, title and purchase terms separately before proceeding."
         >
           <div className="space-y-3 text-sm text-[var(--copy-soft)]">
-            <div>ARV: <span className="font-semibold text-white">{detail.underwriting.estimatedArv ? `$${detail.underwriting.estimatedArv.toLocaleString()}` : "Not set"}</span></div>
-            <div>Seller ask: <span className="font-semibold text-white">{detail.underwriting.sellerAskingPrice ? `$${detail.underwriting.sellerAskingPrice.toLocaleString()}` : "Not set"}</span></div>
-            <div>Repairs: <span className="font-semibold text-white">{detail.underwriting.repairEstimate ? `$${detail.underwriting.repairEstimate.toLocaleString()}` : "Not set"}</span></div>
-            <div>MAO: <span className="font-semibold text-white">{detail.underwriting.maximumAllowableOffer ? `$${detail.underwriting.maximumAllowableOffer.toLocaleString()}` : "Not ready"}</span></div>
-            <div>Spread: <span className="font-semibold text-white">{detail.underwriting.wholesaleSpread ? `$${detail.underwriting.wholesaleSpread.toLocaleString()}` : "Not ready"}</span></div>
+            <div>Resale value after repairs: <span className="font-semibold text-white">{detail.underwriting.estimatedArv != null ? `$${detail.underwriting.estimatedArv.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not set"}</span></div>
+            <div>Seller ask: <span className="font-semibold text-white">{detail.underwriting.sellerAskingPrice != null ? `$${detail.underwriting.sellerAskingPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not set"}</span></div>
+            <div>Repairs: <span className="font-semibold text-white">{detail.underwriting.repairEstimate != null ? `$${detail.underwriting.repairEstimate.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not set"}</span></div>
+            <div>Calculated purchase ceiling: <span className="font-semibold text-white">{detail.underwriting.maximumAllowableOffer != null ? `$${detail.underwriting.maximumAllowableOffer.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not ready"}</span></div>
+            <div>Projected profit before income tax: <span className="font-semibold text-white">{detail.underwriting.wholesaleSpread != null ? `$${detail.underwriting.wholesaleSpread.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not ready"}</span></div>
+            {detail.underwriting.strategy === "rental" ? <div>Monthly cash flow: <span className="font-semibold text-white">{detail.underwriting.monthlyCashFlow != null ? `$${detail.underwriting.monthlyCashFlow.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not ready"}</span></div> : <div>Purchase ceiling minus asking price: <span className="font-semibold text-white">{detail.underwriting.askingGap != null ? `$${detail.underwriting.askingGap.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not ready"}</span></div>}
             <div className="flex gap-2 pt-2">
-              <StatusPill tone={detail.underwriting.readyForContract ? "good" : "warn"} label={detail.underwriting.dealRating.toLowerCase()} />
-              <StatusPill tone={detail.underwriting.readyForContract ? "good" : "active"} label={detail.underwriting.readyForContract ? "contract-ready" : "needs-inputs"} />
+              <StatusPill tone={detail.underwriting.fitsTarget ? "good" : "warn"} label={detail.underwriting.dealRating.toLowerCase()} />
+              <StatusPill tone={detail.underwriting.analysisComplete ? "active" : "warn"} label={detail.underwriting.analysisComplete ? "analysis complete" : "needs inputs"} />
             </div>
             {detail.underwriting.missingInputs.length ? (
               <div className="pt-3">
@@ -1000,6 +1021,7 @@ export function DealEngineDealDetailView({
           title="Acquisition brief"
           description="Everything the acquisitions side should carry from Seller Engine into the live conversation."
         >
+          <span id="property-research" className="scroll-mt-6" />
           <div className="space-y-4">
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Current seller summary</div>
@@ -1212,6 +1234,7 @@ export function DealEngineDealDetailView({
           title="Title and close-table coordination"
           description="Run the post-contract lane here: title assignment, walkthrough timing, signatures, payout posture, and closing readiness."
         >
+          <span id="property-closing" className="scroll-mt-6" />
           <form onSubmit={saveCoordination} className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-2">
               <input value={titleCompany} onChange={(event) => setTitleCompany(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company" />
@@ -1431,6 +1454,7 @@ export function DealEngineDealDetailView({
           title="Saved deal files"
           description="This is the live file trail for the deal, including public proof-of-funds uploads and internal signed documents."
         >
+          <span id="property-documents" className="scroll-mt-6" />
           <div className="space-y-4">
             {detail.uploadedDocuments.length ? (
               detail.uploadedDocuments.map((item) => (
@@ -1505,36 +1529,48 @@ export function DealEngineDealDetailView({
       <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
         <Panel
           eyebrow="Underwriting Console"
-          title="Capture the real analysis inputs"
-          description="Enter live numbers here first. The contract lane should inherit from real underwriting instead of placeholder assumptions, and the wholesale compliance lane should be reviewed before paper goes out."
+          title="Run the numbers"
+          description="Save what you know and leave unknown amounts blank. Enter 0 only when you have confirmed there is no cost. Calculations use your saved assumptions; they do not verify them."
         >
+          <span id="property-numbers" className="scroll-mt-6" />
           <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
-            Need help with ARV? Use the live estimate action to calculate it from the deal county, property type, assessed value, and Seller Engine distress signals. If the exact assessed value is missing, Deal Engine will fall back to a same-market property baseline and label the confidence for you before saving it into underwriting.
+            Need a starting point for resale value? This preliminary estimate uses assessed values and property multipliers, not sold comparable properties. Review the source and confirm a market value before applying it. Previewing does not save or verify a value.
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button type="button" onClick={() => void estimateArv()} disabled={working === "arv"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-                {working === "arv" ? "Estimating ARV..." : "Estimate and save ARV"}
+                {working === "arv" ? "Preparing estimate..." : "Preview preliminary value"}
               </button>
+              {preliminaryArv != null ? <button type="button" onClick={() => { setEstimatedArv(String(preliminaryArv)); setStatus("Estimate copied into the form as an unverified assumption. Save analysis when ready."); }} className="brand-button min-h-11 px-4 py-3 text-sm">Use ${preliminaryArv.toLocaleString("en-US", { maximumFractionDigits: 2 })} as an estimate</button> : null}
               {arvEstimateHint ? <div className="text-xs text-[var(--copy-muted)]">{arvEstimateHint}</div> : null}
             </div>
           </div>
           <form onSubmit={saveAnalysis} className="grid gap-4">
+            <label className="block text-sm text-white">What are you evaluating?
+              <select value={strategy} onChange={(event) => setStrategy(event.target.value as InvestmentStrategy)} className="brand-input mt-2 min-h-11 w-full px-3 py-3 text-base">
+                <option value="flip">Buy and resell (flip)</option><option value="rental">Buy and rent</option><option value="assignment">Assign my purchase contract</option>
+              </select>
+            </label>
+            <p className="text-sm text-[var(--copy-soft)]">Saved with this property. You can change strategy without losing the other numbers.</p>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={estimatedArv} onChange={(event) => setEstimatedArv(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Estimated ARV" />
-              <input value={sellerAskingPrice} onChange={(event) => setSellerAskingPrice(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Seller asking price" />
+              {strategy !== "rental" ? <InvestmentAmountField label="Resale value after repairs" help="What similar renovated homes could sell for. Example: 250000. Confirm with sold comps." value={estimatedArv} onChange={setEstimatedArv} /> : null}
+              <InvestmentAmountField label="Seller asking price" help="Enter the seller’s current asking price. Example: 175000. The calculation compares this price with your purchase ceiling." value={sellerAskingPrice} onChange={setSellerAskingPrice} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={repairEstimate} onChange={(event) => setRepairEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Repair estimate" />
-              <input value={assignmentFeeTarget} onChange={(event) => setAssignmentFeeTarget(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assignment fee target" />
+              <InvestmentAmountField label="Repairs budget" help="Total expected repair spending. Include a contingency; enter 0 only for confirmed no repairs." value={repairEstimate} onChange={setRepairEstimate} />
+              {strategy === "assignment" ? <InvestmentAmountField label="Assignment fee target" help="Your intended disclosed assignment fee. Used only for the assignment strategy." value={assignmentFeeTarget} onChange={setAssignmentFeeTarget} /> : null}
             </div>
             <div className="grid gap-3 md:grid-cols-3">
-              <input value={closingCosts} onChange={(event) => setClosingCosts(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Closing costs" />
-              <input value={holdingCosts} onChange={(event) => setHoldingCosts(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Holding costs" />
-              <input value={buyerProfitTarget} onChange={(event) => setBuyerProfitTarget(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer profit target" />
+              <InvestmentAmountField label="Closing costs" help={strategy === "rental" ? "Acquisition closing costs only. These are included in the acquisition-cost estimate; do not include monthly expenses here." : "Total acquisition and sale closing costs relevant to this strategy. Do not include repairs here."} value={closingCosts} onChange={setClosingCosts} />
+              {strategy !== "rental" ? <InvestmentAmountField label="Holding costs" help="Total taxes, insurance, utilities and financing while holding the property; avoid double-counting closing costs." value={holdingCosts} onChange={setHoldingCosts} /> : null}
+              {strategy !== "rental" ? <InvestmentAmountField label="Required profit" help="Minimum profit after the listed costs. For assignments, this is the end investor’s profit target." value={buyerProfitTarget} onChange={setBuyerProfitTarget} /> : null}
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={rentalEstimate} onChange={(event) => setRentalEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Rental estimate (optional)" />
-              <input value={flipEstimate} onChange={(event) => setFlipEstimate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Flip estimate (optional)" />
+              {strategy === "rental" ? <InvestmentAmountField label="Gross monthly rent" help="Expected rent per month before expenses and loan payments." value={rentalEstimate} onChange={setRentalEstimate} /> : null}
+              <details className="text-sm text-[var(--copy-soft)]"><summary className="min-h-11 cursor-pointer py-3">Optional alternative value</summary><InvestmentAmountField label="Alternative resale estimate" help="Optional reference only; this does not replace the resale value used in the calculation." value={flipEstimate} onChange={setFlipEstimate} /></details>
             </div>
+            {strategy === "rental" ? <div className="grid gap-3 md:grid-cols-2">
+              <InvestmentAmountField label="Monthly operating expenses" help="Monthly taxes, insurance, maintenance, vacancy, management and HOA costs. Exclude loan payments." value={monthlyExpenses} onChange={setMonthlyExpenses} />
+              <InvestmentAmountField label="Monthly loan payment" help="Expected monthly debt service. Enter a confirmed 0 for an all-cash purchase." value={monthlyDebtService} onChange={setMonthlyDebtService} />
+            </div> : null}
             <button type="submit" disabled={working === "analysis"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "analysis" ? "Saving underwriting..." : "Save underwriting"}
             </button>
@@ -1544,8 +1580,9 @@ export function DealEngineDealDetailView({
         <Panel
           eyebrow="Contract Console"
           title="Save underwriting and terms"
-          description="After underwriting is complete, adjust the contract lane here and push the updated posture back into Deal Engine tables with the wholesale disclosure guardrails intact."
+          description="Review purchase terms separately from the calculation. Confirm signing authority, title, funding and required disclosures before sending a contract. Saving this draft does not send it or establish an executed contract."
         >
+          <span id="property-terms" className="scroll-mt-6" />
           <div className="brand-card mb-4 p-4 text-sm leading-6 text-[var(--copy-soft)]">
             Build the live contract draft from this deal record after you save the latest terms.
             <div className="mt-3">
@@ -1565,11 +1602,11 @@ export function DealEngineDealDetailView({
             </div>
           </div>
           <form onSubmit={saveContract} className="grid gap-4">
-            <input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Contract type" />
+            <label className="grid gap-2 text-sm text-white"><span>Contract type</span><input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input min-h-11 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" /></label>
             <div className="grid gap-3 md:grid-cols-3">
-              <input value={offerLow} onChange={(event) => setOfferLow(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Offer low" />
-              <input value={offerHigh} onChange={(event) => setOfferHigh(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Offer high" />
-              <input value={earnestMoney} onChange={(event) => setEarnestMoney(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Earnest money" />
+              <InvestmentAmountField label="Offer range — lower amount" help="Enter your own proposed amount. Saving a draft does not send an offer." value={offerLow} onChange={setOfferLow} required />
+              <InvestmentAmountField label="Offer range — upper amount" help="Enter your own upper amount after reviewing the analysis and seller terms." value={offerHigh} onChange={setOfferHigh} required />
+              <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
             </div>
             <button type="submit" disabled={working === "contract"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "contract" ? "Saving..." : "Save contract posture"}
@@ -1843,6 +1880,7 @@ export function DealEngineDealDetailView({
           title="Saved outreach attempts"
           description="A live record of what has actually been sent or attempted for this deal, across both seller and buyer lanes."
         >
+          <span id="property-conversations" className="scroll-mt-6" />
           <div className="space-y-4">
             {detail.outreachExecutions.length ? (
               detail.outreachExecutions.map((entry) => (
@@ -1876,6 +1914,7 @@ export function DealEngineDealDetailView({
         title="Edit buyer-facing packet sections"
         description="Shape the comps, property notes, investor summary, and buyer-facing copy directly from this workstation."
       >
+          <span id="property-packet" className="scroll-mt-6" />
         <form onSubmit={savePacket} className="grid gap-6 xl:grid-cols-2">
           <div className="space-y-4">
             <textarea value={propertyNotes} onChange={(event) => setPropertyNotes(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Property notes" />
@@ -1937,7 +1976,7 @@ export function DealEngineDealDetailView({
               <div className="mt-4 space-y-2 text-sm leading-6 text-[var(--copy-soft)]">
                 <div>Closed at: {detail.closeout.closedAt || "Not entered"}</div>
                 <div>End buyer: {detail.closeout.buyerName || "Not entered"}</div>
-                <div>Assignment fee: {detail.closeout.assignmentFeeCollected ? `$${detail.closeout.assignmentFeeCollected.toLocaleString()}` : "Not entered"}</div>
+                <div>Assignment fee: {detail.closeout.assignmentFeeCollected != null ? `$${detail.closeout.assignmentFeeCollected.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "Not entered"}</div>
                 <div>{detail.closeout.notes || "No closeout note entered."}</div>
               </div>
             </div>

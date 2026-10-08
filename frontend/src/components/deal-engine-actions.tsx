@@ -3,6 +3,8 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { InvestmentAmountField } from "@/components/investment-amount-field";
+
 import { StatusPill } from "@/components/buyer-shell";
 import type {
   DealEngineBuyerSignal,
@@ -30,9 +32,9 @@ export function DealEngineActions({
   const [selectedContractDealId, setSelectedContractDealId] = useState(contractDrafts[0]?.dealId ?? "");
   const [selectedBuyerDealId, setSelectedBuyerDealId] = useState(contractDrafts[0]?.dealId ?? "");
   const [selectedBuyerSignalId, setSelectedBuyerSignalId] = useState(buyerSignals[0]?.id ?? "");
-  const [offerLow, setOfferLow] = useState("205000");
-  const [offerHigh, setOfferHigh] = useState("214000");
-  const [earnestMoney, setEarnestMoney] = useState("5000");
+  const [offerLow, setOfferLow] = useState("");
+  const [offerHigh, setOfferHigh] = useState("");
+  const [earnestMoney, setEarnestMoney] = useState("");
   const [contractType, setContractType] = useState("Assignable purchase agreement");
   const [status, setStatus] = useState<string | null>(null);
   const [workingLane, setWorkingLane] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function DealEngineActions({
 
   function saveContractTerms(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!offerLow.trim() || !offerHigh.trim() || !earnestMoney.trim()) { setStatus("Enter proposed offer amounts and the deposit for this property before saving terms."); return; }
     void submitJson(
       "/api/deal-engine/save-contract",
       {
@@ -124,7 +127,7 @@ export function DealEngineActions({
               <select
                 value={selectedSellerLeadId}
                 onChange={(event) => setSelectedSellerLeadId(event.target.value)}
-                className="brand-input mt-2 w-full px-3 py-3 text-sm outline-none"
+                className="brand-input mt-2 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]"
               >
                 {sellerSignals.map((signal) => (
                   <option key={signal.id} value={signal.id}>
@@ -150,7 +153,7 @@ export function DealEngineActions({
 
       <form onSubmit={saveContractTerms} className="brand-card p-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-lg font-semibold text-white">Contract posture</div>
+          <div className="text-lg font-semibold text-white">Proposed contract terms</div>
           <StatusPill tone={writesBlocked ? "warn" : "warn"} label={writesBlocked ? "write blocked" : "deal -> contract"} />
         </div>
         <div className="mt-4 grid gap-3">
@@ -159,8 +162,8 @@ export function DealEngineActions({
               <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Deal</span>
               <select
                 value={selectedContractDealId}
-                onChange={(event) => setSelectedContractDealId(event.target.value)}
-                className="brand-input mt-2 w-full px-3 py-3 text-sm outline-none"
+                onChange={(event) => { setSelectedContractDealId(event.target.value); setOfferLow(""); setOfferHigh(""); setEarnestMoney(""); }}
+                className="brand-input mt-2 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]"
               >
                 {contractDrafts.map((draft) => (
                   <option key={draft.dealId} value={draft.dealId}>
@@ -176,19 +179,19 @@ export function DealEngineActions({
           )}
           <label className="block">
             <span className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Contract type</span>
-            <input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input mt-2 w-full px-3 py-3 text-sm outline-none" />
+            <input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input mt-2 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" />
           </label>
           <div className="grid gap-3 md:grid-cols-3">
-            <input value={offerLow} onChange={(event) => setOfferLow(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Offer low" />
-            <input value={offerHigh} onChange={(event) => setOfferHigh(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Offer high" />
-            <input value={earnestMoney} onChange={(event) => setEarnestMoney(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD" />
+            <InvestmentAmountField label="Offer range — lower amount" help="Enter your own proposed amount. Saving a draft does not send an offer." value={offerLow} onChange={setOfferLow} required />
+            <InvestmentAmountField label="Offer range — upper amount" help="Enter your own upper amount after reviewing the analysis and seller terms." value={offerHigh} onChange={setOfferHigh} required />
+            <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
           </div>
           <button
             type="submit"
             disabled={!selectedContractDealId || workingLane === "contract" || writesBlocked}
             className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60"
           >
-            {workingLane === "contract" ? "Saving..." : "Save contract terms"}
+            {workingLane === "contract" ? "Saving..." : "Save draft terms"}
           </button>
         </div>
       </form>
@@ -205,7 +208,7 @@ export function DealEngineActions({
               <select
                 value={selectedBuyerDealId}
                 onChange={(event) => setSelectedBuyerDealId(event.target.value)}
-                className="brand-input mt-2 w-full px-3 py-3 text-sm outline-none"
+                className="brand-input mt-2 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]"
               >
                 {contractDrafts.map((draft) => (
                   <option key={draft.dealId} value={draft.dealId}>
@@ -225,7 +228,7 @@ export function DealEngineActions({
               <select
                 value={selectedBuyerSignalId}
                 onChange={(event) => setSelectedBuyerSignalId(event.target.value)}
-                className="brand-input mt-2 w-full px-3 py-3 text-sm outline-none"
+                className="brand-input mt-2 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]"
               >
                 {buyerSignals.map((signal) => (
                   <option key={signal.id} value={signal.id}>

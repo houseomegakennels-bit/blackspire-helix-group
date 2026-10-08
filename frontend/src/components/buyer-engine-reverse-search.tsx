@@ -37,7 +37,7 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value || 0);
 }
 
@@ -100,8 +100,8 @@ export function BuyerEngineReverseSearchPage({
   return (
     <BuyerShell
       eyebrow="Reverse Search"
-      title="Buyer-to-seller opportunity command"
-      description="Start from the buyer box, then pull the strongest seller-side and deal-side opportunities already inside the Blackspire real-estate stack."
+      title="Find properties for a buyer"
+      description="Enter a buyer’s requirements to find potential matches among your existing property and seller records."
       operatorStatus={operatorStatus}
     >
       <section className="brand-panel overflow-hidden px-6 py-7">
@@ -115,16 +115,16 @@ export function BuyerEngineReverseSearchPage({
               Start with buyer demand, then hunt backward into the pipeline.
             </h3>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
-              This surface flips the normal Seller to Buyer sequence and lets the operator search
-              for opportunities that already fit a named buyer, a hedge-fund lane, or a clear buy
-              box before the next packet is built.
+              Search your saved properties
+              for possible matches to a named buyer’s requirements. Check each result before
+              preparing information to share.
             </p>
           </div>
 
           <div className="brand-card p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <StatusPill tone="good" label="seller -> nexus -> deal -> buyer intact" />
-              <StatusPill tone="active" label="buyer -> seller reverse lane live" />
+              <StatusPill tone="good" label="Existing property records" />
+              <StatusPill tone="active" label="Criteria search" />
             </div>
             <div className="mt-4 text-sm leading-7 text-[var(--copy-soft)]">
               Use this when a buyer says, &quot;Send me more like this,&quot; and the team needs to surface
@@ -136,7 +136,7 @@ export function BuyerEngineReverseSearchPage({
 
       <section className="grid gap-4 md:grid-cols-4">
         <Metric label="Matches" value={String(metrics.total).padStart(2, "0")} detail="Current ranked opportunities returned by reverse search" />
-        <Metric label="High-score lanes" value={String(metrics.highScore).padStart(2, "0")} detail="Matches scoring 80 or better" />
+        <Metric label="Strong criteria matches" value={String(metrics.highScore).padStart(2, "0")} detail="Matches scoring 80 or better" />
         <Metric label="Deal records" value={String(metrics.dealCount).padStart(2, "0")} detail="Opportunities already staged in Deal Engine" />
         <Metric label="Seller records" value={String(metrics.sellerCount).padStart(2, "0")} detail="Seller-side records not fully converted yet" />
       </section>
@@ -145,41 +145,42 @@ export function BuyerEngineReverseSearchPage({
         <Panel
           eyebrow="Search Form"
           title="Buyer criteria"
-          description="Enter the buyer's lane, geography, pricing, and posture. The reverse-search engine will rank the best current opportunities already inside Blackspire."
+          description="Enter the buyer’s location, budget and property requirements. Results are ranked suggestions from your existing records."
         >
+          <p className="mb-4 text-sm leading-6 text-[var(--copy-soft)]">Leave unknown criteria blank. A match score is a screening suggestion, not a committed buyer or confirmed funding. Historical buyer activity does not verify current purchasing capacity.</p>
           <form onSubmit={runSearch} className="grid gap-4">
             <div className="grid gap-4 md:grid-cols-2">
-              <input value={criteria.buyerName ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerName: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer name" />
-              <input value={criteria.buyerGroup ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerGroup: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer group" />
-              <input value={criteria.targetCounty ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCounty: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target county" />
-              <input value={criteria.targetCity ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCity: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target city" />
-              <input value={Array.isArray(criteria.targetZipCodes) ? criteria.targetZipCodes.join(", ") : ""} onChange={(event) => setCriteria((current) => ({ ...current, targetZipCodes: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Target zip codes (comma separated)" />
-              <input value={criteria.propertyType ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, propertyType: event.target.value }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Property type" />
-              <input value={criteria.minBeds ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, minBeds: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Min beds" />
-              <input value={criteria.maxPrice ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, maxPrice: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Max price" />
-              <input value={criteria.minimumArvSpread ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, minimumArvSpread: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Minimum ARV spread" />
-              <input value={criteria.preferredRadius ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, preferredRadius: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Preferred radius (miles)" />
-              <select value={criteria.buyerProfileType ?? "unknown"} onChange={(event) => setCriteria((current) => ({ ...current, buyerProfileType: event.target.value as BuyerReverseSearchCriteria["buyerProfileType"] }))} className="brand-input px-3 py-3 text-sm outline-none">
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer name</span><input value={criteria.buyerName ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerName: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Buyer name" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer group</span><input value={criteria.buyerGroup ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerGroup: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Buyer group" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target county</span><input value={criteria.targetCounty ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCounty: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target county" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target city</span><input value={criteria.targetCity ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCity: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target city" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target zip codes (comma separated)</span><input value={Array.isArray(criteria.targetZipCodes) ? criteria.targetZipCodes.join(", ") : ""} onChange={(event) => setCriteria((current) => ({ ...current, targetZipCodes: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target zip codes (comma separated)" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Separate ZIP codes with commas, for example 27101, 27103.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Property type</span><input value={criteria.propertyType ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, propertyType: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Property type" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Minimum bedrooms</span><input type="number" inputMode="decimal" min="0" step="1" value={criteria.minBeds ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, minBeds: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Min beds" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Bedrooms are recorded here but are not currently enforced by the ranking. Check each property.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Maximum purchase price (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={criteria.maxPrice ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, maxPrice: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Max price" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Enter the buyer’s stated budget. Ranking compares this with an estimated purchase ceiling, not the seller’s asking price; check actual pricing and fees.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Minimum resale value minus purchase ceiling (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={criteria.minimumArvSpread ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, minimumArvSpread: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Minimum ARV spread" /><span className="text-xs leading-5 text-[var(--copy-muted)]">A screening difference, not projected profit. Repairs and transaction costs still need review.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Search radius (miles)</span><input type="number" inputMode="decimal" min="0" step="any" value={criteria.preferredRadius ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, preferredRadius: event.target.value ? Number(event.target.value) : null }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Preferred radius (miles)" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Radius is recorded here but distance is not currently calculated. Verify location on a map.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer investment strategy</span><select value={criteria.buyerProfileType ?? "unknown"} onChange={(event) => setCriteria((current) => ({ ...current, buyerProfileType: event.target.value as BuyerReverseSearchCriteria["buyerProfileType"] }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]">
                 <option value="unknown">Unknown profile</option>
                 <option value="cash_buyer">Cash buyer</option>
                 <option value="landlord">Landlord</option>
                 <option value="flipper">Flipper</option>
                 <option value="hedge_fund">Hedge fund</option>
-              </select>
+              </select></label>
               <label className="flex items-center gap-3 rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 text-sm text-[var(--copy-soft)]">
                 <input type="checkbox" checked={Boolean(criteria.activeOnly)} onChange={(event) => setCriteria((current) => ({ ...current, activeOnly: event.target.checked }))} />
                 Active opportunities only
               </label>
             </div>
 
-            <textarea value={criteria.buyBoxNotes ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyBoxNotes: event.target.value }))} className="brand-input min-h-28 w-full px-3 py-3 text-sm outline-none" placeholder="Buy box notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer requirements and exclusions</span><textarea value={criteria.buyBoxNotes ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyBoxNotes: event.target.value }))} className="brand-input min-h-28 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Buy box notes" /></label>
 
             <div className="flex flex-wrap gap-3">
               <button type="submit" disabled={loading} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-                {loading ? "Running reverse search..." : "Run reverse search"}
+                {loading ? "Running reverse search..." : "Find potential matches"}
               </button>
               <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Back to buyer command
+                Back to buyers
               </Link>
             </div>
           </form>
@@ -187,8 +188,8 @@ export function BuyerEngineReverseSearchPage({
 
         <Panel
           eyebrow="Ranked opportunities"
-          title="Matches"
-          description="The results blend seller motivation, location fit, spread quality, current deal posture, and buyer-demand overlap into one ranked surface."
+          title="Potential matches"
+          description="Review the matching reasons, current availability, seller permission and the buyer’s actual requirements before sharing a property."
         >
           <div className="space-y-4">
             {error ? (
@@ -221,6 +222,7 @@ export function BuyerEngineReverseSearchPage({
               </div>
             ) : null}
 
+            <p className="text-xs leading-6 text-[var(--copy-muted)]">Seller-lead values are preliminary estimates derived from assessed value and equity, not verified sold comps. Check availability and research before relying on these numbers.</p>
             {matches.map((match) => (
               <div key={match.id} className="brand-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -242,11 +244,11 @@ export function BuyerEngineReverseSearchPage({
 
                 <div className="mt-5 grid gap-3 md:grid-cols-3">
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Estimated ARV</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Estimated resale value after repairs</div>
                     <div className="brand-accent-text mt-2 text-xl font-semibold">{formatCurrency(match.estimatedArv)}</div>
                   </div>
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Estimated MAO</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Estimated purchase ceiling</div>
                     <div className="mt-2 text-xl font-semibold text-white">{formatCurrency(match.estimatedMao)}</div>
                   </div>
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
