@@ -186,3 +186,32 @@ test('saving a generated draft returns its database identity for subsequent sele
  const result=await saveGeneratedContractDraft({dealId:'x',templateType:'assignment_agreement',title:'Reviewed draft',body:'Purchase price $0.00'});
  assert.equal(result.draftId,'stored-uuid');assert.equal(selected,'id');
 });
+
+
+test('unknown deposits stay nullable through reload, unrelated updates and contract generation',async()=>{
+ const {toEmdTrackerRecord}=load(['toEmdTrackerRecord','computeEmdStatusTone','nullableMoney']);
+ const detail={...trackerDetail,contractDraft:{earnestMoney:'Not entered'}};
+ const record=toEmdTrackerRecord(null,detail); assert.equal(record.emdAmount,null);
+ assert.equal(toEmdTrackerRecord({id:'existing',emd_amount:null},{...detail,contractDraft:{earnestMoney:'$5,000'}}).emdAmount,null);
+ assert.equal(toEmdTrackerRecord(null,{...detail,contractDraft:{earnestMoney:'$0.00'}}).emdAmount,0);
+ const {db,writes}=trackerDb(); const {updateDealEmdTracker}=load(['updateDealEmdTracker'],{getSupabaseAdmin:()=>db});
+ await updateDealEmdTracker('x',{...record,emdHolder:'Confirmed holder'});assert.equal(writes[0].emd_amount,null);
+ const ui=fs.readFileSync('frontend/src/components/deal-transaction-command.tsx','utf8');
+ const handler=ui.match(/emdAmount: (event.target.value === "" \? null : Number\(event.target.value\))/)[1];
+ const change=value=>vm.runInNewContext(handler,{event:{target:{value}}});assert.equal(change(''),null);assert.equal(change('0'),0);
+});
+test('saved proposal windows round-trip through the real contract form initializers',()=>{
+ const {savedContractOfferWindow}=load(['savedContractOfferWindow','formatCurrency']);
+ const ui=fs.readFileSync('frontend/src/components/deal-engine-deal-detail.tsx','utf8');
+ const helpers=['draftMoneyInput','draftOfferInputs'].map(name=>ui.match(new RegExp('function '+name+'\\([\\s\\S]*?^}', 'm'))[0]).join('\n');
+ const {draftOfferInputs}=vm.runInNewContext(stripTypeScriptTypes(helpers)+'\n({draftOfferInputs})');
+ const window=savedContractOfferWindow({offerLow:90000,offerHigh:95000});assert.deepEqual(Array.from(draftOfferInputs(window)),['90000.00','95000.00']);
+ assert.deepEqual(Array.from(draftOfferInputs('$0.00 - $0.00')),['0.00','0.00']);assert.deepEqual(Array.from(draftOfferInputs('Not entered')),['','']);
+ assert.match(ui,/draftOfferInputs\(detail.contractDraft\?\.offerWindow\)\[0\]/);assert.match(ui,/draftOfferInputs\(detail.contractDraft\?\.offerWindow\)\[1\]/);
+});
+test('initializing execution records never fabricates a deposit or replaces deliberate zero',async()=>{
+ const {db,writes}=dbMock(); const {ensureDealExecutionScaffold}=load(['ensureDealExecutionScaffold','nullableMoney','isDuplicateInsertError']);
+ await ensureDealExecutionScaffold(db,{id:'x'},{earnestMoney:'Not entered'},{},{slug:'x'});
+ assert.equal(writes.find(x=>x.table==='contracts').payload.earnest_money_deposit,null);
+ const zero=dbMock();await ensureDealExecutionScaffold(zero.db,{id:'x'},{earnestMoney:'$0.00'},{},{slug:'x'});assert.equal(zero.writes.find(x=>x.table==='contracts').payload.earnest_money_deposit,0);
+});

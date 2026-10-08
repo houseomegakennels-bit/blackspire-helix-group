@@ -22,6 +22,11 @@ function draftMoneyInput(value: string | undefined) {
   return value.replace(/[$,\s]/g, "");
 }
 
+function draftOfferInputs(value: string | undefined): [string, string] {
+  const parts = value?.split(/\s+(?:to|-)\s+/) ?? [];
+  return [draftMoneyInput(parts[0]), draftMoneyInput(parts[1])];
+}
+
 function statusTone(status: string) {
   if (status === "Negotiating") return "warn";
   if (status === "Offer Ready" || status === "Under Contract") return "good";
@@ -71,10 +76,10 @@ export function DealEngineDealDetailView({
   const [rentalEstimate, setRentalEstimate] = useState(String(detail.underwriting.rentalEstimate ?? ""));
   const [flipEstimate, setFlipEstimate] = useState(String(detail.underwriting.flipEstimate ?? ""));
   const [offerLow, setOfferLow] = useState(
-    draftMoneyInput(detail.contractDraft?.offerWindow.split(" - ")[0]),
+    draftOfferInputs(detail.contractDraft?.offerWindow)[0],
   );
   const [offerHigh, setOfferHigh] = useState(
-    draftMoneyInput(detail.contractDraft?.offerWindow.split(" - ")[1]),
+    draftOfferInputs(detail.contractDraft?.offerWindow)[1],
   );
   const [earnestMoney, setEarnestMoney] = useState(
     draftMoneyInput(detail.contractDraft?.earnestMoney),

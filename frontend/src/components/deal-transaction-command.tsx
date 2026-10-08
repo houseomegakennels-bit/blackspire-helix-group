@@ -88,7 +88,7 @@ export function DealTransactionCommand({
     titleChecklist: [],
     emdTracker: {
       id: null,
-      emdAmount: 0,
+      emdAmount: null,
       emdDueDate: "",
       emdHolder: "",
       emdHolderType: "title_company",
@@ -704,7 +704,7 @@ export function DealTransactionCommand({
           </div>
           <div className="brand-card p-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(emdTracker.emdAmount ?? "")} onChange={(event) => setEmdTracker({ ...emdTracker, emdAmount: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD amount" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Earnest money purchase deposit. Use 0 only if no deposit is required; confirm the agreed amount.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(emdTracker.emdAmount ?? "")} onChange={(event) => setEmdTracker({ ...emdTracker, emdAmount: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD amount" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Earnest money purchase deposit. Use 0 only if no deposit is required; confirm the agreed amount.</span></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit due date</span><input value={emdTracker.emdDueDate} onChange={(event) => setEmdTracker({ ...emdTracker, emdDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder</span><input value={emdTracker.emdHolder} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolder: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD holder" /></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder type</span><select value={emdTracker.emdHolderType} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolderType: event.target.value as DealEmdTrackerRecord["emdHolderType"] })} className="brand-input px-3 py-3 text-sm outline-none">

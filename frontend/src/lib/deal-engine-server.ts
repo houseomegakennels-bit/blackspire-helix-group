@@ -608,7 +608,7 @@ export type DealTitleChecklistItemRecord = {
 
 export type DealEmdTrackerRecord = {
   id: string | null;
-  emdAmount: number;
+  emdAmount: number | null;
   emdDueDate: string;
   emdHolder: string;
   emdHolderType: "title_company" | "attorney" | "broker" | "other";
@@ -2068,7 +2068,7 @@ async function ensureDealExecutionScaffold(
     contract_sent: false,
     contract_signed: false,
     inspection_period: "14 days",
-    earnest_money_deposit: Number((contractDraft?.earnestMoney ?? "$3000").replace(/[^0-9.-]/g, "")) || 3000,
+    earnest_money_deposit: nullableMoney(contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")),
     assignment_status: contractDraft?.contractType ?? "Drafting",
   });
   if (contractInsert.error && !isDuplicateInsertError(contractInsert.error)) {
@@ -5121,9 +5121,9 @@ function computeEmdStatusTone(status: DealEmdTrackerRecord["emdStatus"]) {
 
 function toEmdTrackerRecord(row: DealEmdTrackerRow | null, detail: DealEngineDealDetail): DealEmdTrackerRecord {
   const emdDueDate = row?.emd_due_date ?? detail.coordination.inspectionEndsOn ?? "";
-  const amount = row?.emd_amount != null
-    ? asNumber(row.emd_amount)
-    : nullableMoney(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) ?? 0;
+  const amount = row
+    ? nullableMoney(row.emd_amount)
+    : nullableMoney(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, ""));
   let emdStatus = (row?.emd_status as DealEmdTrackerRecord["emdStatus"] | null) ?? "pending";
   const alertFlags: string[] = [];
   if (!row?.emd_holder?.trim()) alertFlags.push("No EMD holder assigned.");
