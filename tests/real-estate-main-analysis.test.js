@@ -2,15 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { stripTypeScriptTypes, createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const ts = require('../frontend/node_modules/typescript');
-const source = fs.readFileSync('frontend/src/lib/deal-engine-server.ts', 'utf8');
-const ast = ts.createSourceFile('engine.ts', source, ts.ScriptTarget.Latest, true);
+import { stripTypeScriptTypes } from 'node:module';
+const source = fs.readFileSync('frontend/src/lib/deal-engine-server.ts', 'utf8').replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
 const shared = vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync('frontend/src/lib/investment-analysis.ts','utf8').replace(/^export /gm,'')) + '\n({analyzeInvestment,parseInvestmentAmount})');
 function load(names, context={}) {
- const code = ast.statements.filter(node=>ts.isFunctionDeclaration(node)&&names.includes(node.name?.text)).map(node=>node.getText(ast).replace(/^export /,'')).join('\n');
- return vm.runInNewContext(stripTypeScriptTypes(code)+'\n({'+names.join(',')+'})',{...shared,...context});
+ const overrides=Object.keys(context).map(name=>`${name}=fixtures[${JSON.stringify(name)}];`).join('\n');
+ return vm.runInNewContext(stripTypeScriptTypes(source)+'\n'+overrides+'\n({'+names.join(',')+'})',{...shared,...context,fixtures:context});
 }
 const snapshotNames=['buildUnderwritingSnapshot','buildInvestmentComplianceSnapshot','buildWholesalingComplianceSnapshot'];
 const {buildUnderwritingSnapshot} = load(snapshotNames);
@@ -153,4 +150,12 @@ test('signature preparation revalidates required facts and approval before writi
  validation={...validation,availableFields:{purchase_price:'$0.00'},template:{...validation.template,approvalStatus:'reference_only'}}; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
  validation={...validation,template:{...validation.template,approvalStatus:'attorney_reviewed'}}; draft.legal_disclaimer_acknowledged=false; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,false); assert.equal(writes,0);
  draft.legal_disclaimer_acknowledged=true; assert.equal((await prepareDealSignaturePacket({dealId:'x'})).ok,true); assert.equal(writes,1);
+});
+
+test('completed rental workflow reports cash flow rather than an absent offer ceiling',()=>{
+ const {buildDealAutomationWorkflow}=load(['buildDealAutomationWorkflow','formatCurrency'],{isResendConfigured:()=>false});
+ const underwriting=buildUnderwritingSnapshot(lead,{seller_asking_price:100000,repair_estimate:0,closing_costs:5000,rental_estimate:1500,formula_settings:{strategy:'rental',monthlyExpenses:500,monthlyDebtService:600}});
+ const detail={underwriting,sellerContact:{ownerPhone:'Not captured'},buyerSignals:[],coordination:{},packet:{investorSummary:'',buyerEmailBlast:''},lead:{id:'rental'},uploadedDocuments:[]};
+ const item=buildDealAutomationWorkflow(detail).find(row=>row.id==='rental-workflow-underwrite');
+ assert.equal(item.status,'ready');assert.match(item.detail,/Monthly cash flow is \$400/);assert.doesNotMatch(item.detail,/MAO|Not entered/);
 });

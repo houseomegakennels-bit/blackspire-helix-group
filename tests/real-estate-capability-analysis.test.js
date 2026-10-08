@@ -2,41 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { stripTypeScriptTypes, createRequire } from 'node:module';
+import { stripTypeScriptTypes } from 'node:module';
 import { dealAnalysisCapability, summarizeDealAnalysis } from '../packages/capabilities/deal-analysis.js';
 import { validateCapabilityOutput } from '../packages/capabilities/contract.js';
 
-const require = createRequire(import.meta.url);
-const ts = require('../frontend/node_modules/typescript');
-const source = fs.readFileSync('frontend/src/lib/deal-engine-server.ts', 'utf8');
-const ast = ts.createSourceFile('engine.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['getDealEngineAnalysisForCapability','toLead','asSingle','asNumber','nullableMoney','formatCurrency','buildUnderwritingSnapshot','buildInvestmentComplianceSnapshot','buildWholesalingComplianceSnapshot'];
-const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text)).map(n => n.getText(ast).replace(/^export /,'')).join('\n');
+const functions = fs.readFileSync('frontend/src/lib/deal-engine-server.ts', 'utf8').replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
+const readSource = fs.readFileSync('frontend/src/lib/capability-read-client.ts','utf8').replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
+const readContext = {URL,URLSearchParams,performance,AbortController,AbortSignal,TextDecoder,Response,Uint8Array};
+const createScope = vm.runInNewContext(stripTypeScriptTypes(readSource)+'\ncreateCapabilityReadScope',readContext);
 const model = fs.readFileSync('frontend/src/lib/investment-analysis.ts','utf8').replace(/^export /gm,'');
 const route = fs.readFileSync('frontend/src/app/api/internal/capabilities/deal-analysis/route.ts','utf8').replace(/^import[^;]+;\s*/gm,'').replace(/^export /gm,'');
 
 async function readAnalysis(analysis) {
   const reads = [];
-  const client = { from(table) {
-    let columns;
-    const q = { select(value){ columns=value;return q; }, eq(){return q;}, limit(){return q;}, maybeSingle(){
-      reads.push({table,columns});
-      const row = table === 'deal_leads' ? {id:'DE-9999',owner_name:'Fictional seller',property_address:'Fictional practice property',county:'Forsyth',status:'Needs Analysis',motivation_score:1} : analysis;
-      const data = table === 'deal_analysis' ? Object.fromEntries(columns.split(',').filter(k => Object.hasOwn(row,k)).map(k=>[k,row[k]])) : row;
-      return Promise.resolve({data,error:null});
-    }, update(){throw Error('read attempted a write');}, insert(){throw Error('read attempted a write');}, upsert(){throw Error('read attempted a write');} }; return q;
-  } };
+  const scope = createScope({origin:'https://abcdefghijklmnopqrst.supabase.co',key:'fictional-test-key',fetchImpl:async(url,options)=>{
+    assert.equal(options.method,'GET');
+    const parsed=new URL(url);const table=parsed.pathname.split('/').at(-1);const columns=parsed.searchParams.get('select');
+    assert.equal(parsed.searchParams.get('limit'),'1');
+    reads.push({table,columns});
+    const row=table==='deal_leads'?{id:'DE-9999',owner_name:'Fictional seller',property_address:'Fictional practice property',county:'Forsyth',status:'Needs Analysis',motivation_score:1}:analysis;
+    const data=Object.fromEntries(columns.split(',').filter(k=>Object.hasOwn(row,k)).map(k=>[k,row[k]]));
+    return Response.json([data]);
+  }});
   const ctx = {
     Intl, Date,
-    productionCapabilityReadScope:()=>({client,respond:body=>body}),
+    productionCapabilityReadScope:()=>scope,
     readBoundedRequestBody:async()=>JSON.stringify({workspaceId:'test-workspace',dealId:'DE-9999'}),
     authorizeInternalCapability:async()=>({bindingDigest:'test-only'}),
     NextResponse:{json:(body,options)=>({body,status:options?.status??200})},
   };
   const { POST } = vm.runInNewContext(stripTypeScriptTypes(model+'\n'+functions+'\n'+route)+'\n({POST})',ctx);
   const response = await POST({});
-  assert.equal(response.found,true,JSON.stringify(response));
-  return {result:validateCapabilityOutput(dealAnalysisCapability,JSON.parse(JSON.stringify(response))),reads};
+  assert.equal(response.status,200);
+  const body=await response.json();assert.equal(body.found,true,JSON.stringify(body));
+  const observation=JSON.parse(response.headers.get('x-zola-read-observation'));assert.equal(observation.requests,2);assert.equal(observation.forbiddenAttempts,0);
+  return {result:validateCapabilityOutput(dealAnalysisCapability,body),reads};
 }
 
 test('persisted rental strategy survives scoped read, API response, validation and summary',async()=>{
@@ -66,4 +66,21 @@ test('capability rejects malformed amounts and strategies instead of substitutin
     assert.throws(()=>validateCapabilityOutput(dealAnalysisCapability,{...result,repairEstimate:value}),/invalid deal analysis repairEstimate/);
   }
   assert.throws(()=>validateCapabilityOutput(dealAnalysisCapability,{...result,strategy:'unknown'}),/invalid deal analysis strategy/);
+});
+
+test('analysis flags accept only booleans or optional null and fail closed on skewed adapters',async()=>{
+ const {result}=await readAnalysis({formula_settings:{strategy:'flip'}});
+ for(const name of ['analysisComplete','fitsTarget']) {
+  for(const value of ['false','true',0,1,{},[]]) assert.throws(()=>validateCapabilityOutput(dealAnalysisCapability,{...result,[name]:value}),new RegExp('invalid deal analysis '+name));
+  for(const value of [false,true,null,undefined]) assert.equal(validateCapabilityOutput(dealAnalysisCapability,{...result,[name]:value})[name],value??null);
+ }
+});
+
+test('bounded read client still rejects arbitrary projections and write methods before transport',()=>{
+ let requests=0;
+ for(const attempt of [scope=>scope.client.from('deal_analysis').select('*'),scope=>scope.client.from('deal_analysis').select('formula_settings,private_column'),scope=>scope.client.from('deal_analysis').update({formula_settings:{}})]) {
+  const scope=createScope({origin:'https://abcdefghijklmnopqrst.supabase.co',key:'fictional-test-key',fetchImpl:async()=>{requests++;return Response.json([]);}});
+  assert.throws(()=>attempt(scope),/CAPABILITY_READ_REJECTED/);
+ }
+ assert.equal(requests,0);
 });

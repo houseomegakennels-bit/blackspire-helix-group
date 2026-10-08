@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-10-08 — Peggy release-check repairs
+
+PR #163 independent review identified a rejected formula-settings projection, coerced non-boolean analysis flags and a rental workflow MAO headline. All three are repaired; the analysis regression now exercises the real closed scoped reader through the actual internal route, with no network or production credentials. Arbitrary projections and write methods still refuse. Main analysis tests no longer depend on uninstalled frontend node_modules inside the sealed test snapshot. The six-read offline fixture uses the actual shared calculator and complete fictional cost inputs; all 28 previously failing offline/collector tests now pass. The focused combined suite passes 133 tests with zero failures or skips. Root build/lint/typecheck, frontend lint/production build, secret scan and whitespace checks pass.
+
+To clear known current-main review findings from PR #159/#160, Client access now announces its active page, desktop Books visual order follows its viewer-first DOM order, and the canonical Books entry is correctly described as signed-in. This is a bounded repair of those known findings, not a comprehensive audit of all inherited implementation. Fresh exact-head CI and independent review remain required before merging; the last verified anchor and checker remain unchanged until genuine reviewed evidence exists. User has approved publication and requested clearing the checkpoint. No production effects occurred.
+
 ## 2026-10-08 — Peggy publication approved; review checkpoint retained
 
 The user explicitly approved pushing Peggy’s completed changes for review and publishing after release gates clear. Implementation commit `0707035839f1c35fa309bfa6fbf1249420568747` is pushed on `feat/real-estate-usability-finish-20261008`, and [PR #163](https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/163) is ready for review. Its frontend Vercel preview build passed; the VPS-owned root build was correctly ignored. GitHub CI run `37842698429` and the configured independent Codex review are in progress at this checkpoint, not recorded as passed.

@@ -39,7 +39,8 @@ export function MarketingNav() {
             {label}
           </Link>
         ))}
-        <Link href="/workspaces" className="public-client-link" onClick={() => setOpenPath(null)}>
+        <Link href="/workspaces" className="public-client-link" onClick={() => setOpenPath(null)}
+          aria-current={pathname === "/workspaces" || pathname.startsWith("/workspaces/") ? "page" : undefined}>
           Client access
         </Link>
         <Link href="/contact" className="public-button" onClick={() => setOpenPath(null)}

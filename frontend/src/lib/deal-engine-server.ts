@@ -1612,7 +1612,9 @@ function buildDealAutomationWorkflow(
       id: `${detail.lead.id}-workflow-underwrite`,
       title: "Complete underwriting inputs",
       detail: underwritingReady
-        ? `Underwriting is live. MAO is ${formatCurrency(detail.underwriting.maximumAllowableOffer)} with rating ${detail.underwriting.dealRating}. Compliance lane: ${detail.underwriting.compliance.disclosureHeadline}`
+        ? detail.underwriting.strategy === "rental"
+          ? `Rental analysis is complete. Monthly cash flow is ${formatCurrency(detail.underwriting.monthlyCashFlow)} with rating ${detail.underwriting.dealRating}. Compliance lane: ${detail.underwriting.compliance.disclosureHeadline}`
+          : `Underwriting is complete. MAO is ${formatCurrency(detail.underwriting.maximumAllowableOffer)} with rating ${detail.underwriting.dealRating}. Compliance lane: ${detail.underwriting.compliance.disclosureHeadline}`
         : `Still missing: ${detail.underwriting.missingInputs.join("; ")}.`,
       status: underwritingReady ? "ready" : "active",
     },

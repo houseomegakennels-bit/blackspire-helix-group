@@ -1,5 +1,12 @@
 import { defineCapability } from './contract.js';
 
+function analysisFlag(value, name) {
+  if (value == null) return null;
+  if (typeof value !== 'boolean') throw new Error(`invalid deal analysis ${name}`);
+  return value;
+}
+
+
 const RESULT_KEYS = [
   'found',
   'dealId',
@@ -108,8 +115,8 @@ function output(raw) {
     monthlyDebtService: analysisAmount(raw.monthlyDebtService, 'monthlyDebtService'),
     monthlyCashFlow: analysisAmount(raw.monthlyCashFlow, 'monthlyCashFlow', { signed: true }),
     annualReturnOnCost: analysisAmount(raw.annualReturnOnCost, 'annualReturnOnCost', { signed: true }),
-    analysisComplete: raw.analysisComplete == null ? null : Boolean(raw.analysisComplete),
-    fitsTarget: raw.fitsTarget == null ? null : Boolean(raw.fitsTarget),
+    analysisComplete: analysisFlag(raw.analysisComplete, 'analysisComplete'),
+    fitsTarget: analysisFlag(raw.fitsTarget, 'fitsTarget'),
     askingGap: analysisAmount(raw.askingGap, 'askingGap', { signed: true }),
     estimatedArv: analysisAmount(raw.estimatedArv, 'estimatedArv'),
     sellerAskingPrice: analysisAmount(raw.sellerAskingPrice, 'sellerAskingPrice'),
