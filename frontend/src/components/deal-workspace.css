@@ -4,6 +4,8 @@
   --workspace-ink: #edf3f5;
   --workspace-muted: #b4c3cb;
   color: var(--workspace-ink);
+  overflow-x: clip;
+  overflow-y: visible;
 }
 .deal-workspace .brand-panel {
   border-radius: 20px;
