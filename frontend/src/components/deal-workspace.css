@@ -26,6 +26,7 @@
   .deal-workspace .workspace-layout { grid-template-columns: 280px minmax(0, 1fr); }
 }
 .deal-workspace .workspace-sidebar { min-width: 0; }
+.deal-workspace .workspace-nav > a { min-height: 44px; }
 .deal-workspace .uppercase {
   text-transform: none;
   letter-spacing: .025em;
