@@ -42,16 +42,14 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
             <div>
               <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Wholesale Command Deck</p>
               <h2 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
-                The Helix workspace where qualified leads become real deals.
+                Your property pipeline.
               </h2>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
-                Blackspire Deal Engine is the bridge between Seller Engine intelligence and Buyer
-                Engine activation: underwriting, acquisition, negotiation tracking, contracts, and
-                disposition packaging all live here.
+                Review qualified properties, compare the numbers, and prepare offers and buyer packets.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="workspace-actions flex flex-wrap gap-3">
               <Link href="/seller-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
                 Review seller pipeline
               </Link>
@@ -218,7 +216,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
             </div>
           ) : (
             <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-              No live deals are stored in Deal Engine yet. Seller leads can still be reviewed below, but nothing appears in this queue until a real `deal_leads` record exists.
+              No properties are in your pipeline yet. Review the seller leads below, or add a property using the intake form.
             </div>
           )}
         </Panel>

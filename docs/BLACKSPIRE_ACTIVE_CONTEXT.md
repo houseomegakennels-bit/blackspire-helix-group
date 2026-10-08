@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-08 — Peggy workspace visual polish prepared
+
+User requested the final visual pass and has standing publication authority for the Peggy scope. Scoped Deal Engine styles simplify typography and card hierarchy, standardize buttons and 16px form controls, expose compact mobile navigation, prioritize the packet action, and provide sticky accessible save feedback. Empty states explain the next action. Existing teal/silver/gold division identity and all calculations, access controls and production boundaries are preserved.
+
+Commander reconnected; the Peggy worktree was inspected clean and fast-forwarded to published main1945536 before creating polish/peggy-workspace-20261008. Frontend lint/build, all 25 calculation/contract regressions, secret and whitespace scans passed under Node22.23.1. Subsequent CSS layout corrections were checked in Chromium at 390px and 1440px with no horizontal overflow or page errors, using an isolated fictional adapter. Final exact-source build/review/CI remains pending. The earlier inherited browser functional fixture failed on rental reload and is not recorded as passed for this polish. Signed-in production visual acceptance remains UNVERIFIED. Commander disconnected after these checks; work is preserved in the independent recovery checkout and connected repository. No production changes or live data writes occurred.
+
 ## 2026-10-08 — Peggy changes published; release checkpoint cleared
 
 PR #163 merged as `6c46b233dbad239edd6a42fa16efff47c9358446` after full exact-head CI `37855320946` passed on `3d616bf77f916d71d1bd6b0babf939ec778f100b` and independent review completed cleanly on both implementation `097b585a07ce668ac8f17288e1831f6dc530710c` and its documentation successor. All eight earlier review findings are resolved. The unchanged living-memory checker now returns PASS against freshly fetched trusted origin/main, with CANONICAL_MEMORY_ONLY_DESCENDANT, a clean working tree and no protected credential paths or secret-shaped memory.

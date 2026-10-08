@@ -828,14 +828,14 @@ export function DealEngineDealDetailView({
                 </Link>
               </div>
               <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                {detail.lead.ownerName} / {detail.lead.county} County. This is the live workbench for underwriting posture, contract movement, buyer activation, and investor follow-up around deal {dealId}.
+                {detail.lead.ownerName} / {detail.lead.county} County. Review the numbers, set purchase terms, and track closing tasks. Property {dealId}.
               </p>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="workspace-actions flex flex-wrap gap-3">
               <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Back to properties
               </Link>
-              <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
+              <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="workspace-primary brand-button inline-flex px-5 py-4 text-sm transition">
                 Open packet view
               </Link>
               <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
@@ -880,7 +880,7 @@ export function DealEngineDealDetailView({
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
-      <nav aria-label="This property" className="brand-card flex flex-wrap gap-2 p-4">
+      <nav aria-label="This property" className="property-section-nav brand-card flex flex-wrap gap-2 p-4">
         {[["property-research", "Property & research"], ["property-numbers", "Costs & returns"], ["property-terms", "Offer & contract"], ["property-closing", "Closing tasks"], ["property-documents", "Documents"], ["property-conversations", "Conversations"], ["property-packet", "Comps & buyer packet"]].map(([id, label]) => <a key={id} href={`#${id}`} className="brand-button min-h-11 px-4 py-3 text-sm focus-visible:outline focus-visible:outline-2">{label}</a>)}
       </nav>
       <DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} strategy={detail.underwriting.strategy} />
@@ -1989,7 +1989,7 @@ export function DealEngineDealDetailView({
       </div>
 
       {status ? (
-        <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+        <div role="status" aria-live="polite" className="workspace-feedback text-sm">
           {status}
         </div>
       ) : null}

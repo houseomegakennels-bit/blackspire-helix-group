@@ -253,7 +253,7 @@ export function DealEngineActions({
       </form>
 
       {status ? (
-        <div className="xl:col-span-3 rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+        <div role="status" aria-live="polite" className="workspace-feedback xl:col-span-3 text-sm">
           {status}
         </div>
       ) : null}

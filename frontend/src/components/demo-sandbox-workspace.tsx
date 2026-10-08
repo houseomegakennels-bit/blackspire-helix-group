@@ -1,5 +1,7 @@
 "use client";
 
+import "./deal-workspace.css";
+
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { analyzeDemoDeal, demoStages, type DemoLead, type DemoState } from "@/lib/demo-sandbox";
 import type { DemoSnapshot } from "@/lib/demo-access-server";
@@ -82,7 +84,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
   const lead = data?.state.leads.find(l => l.id === selected);
   const draft = lead ? drafts[lead.id] ?? {} : {};
   const value = (key: keyof DemoLead) => draft[key] ?? lead?.[key] as string | number | null | undefined;
-  return <main className="min-h-screen bg-[#050505] px-4 py-8 text-white"><div className="mx-auto max-w-6xl space-y-6">
+  return <main className="deal-workspace min-h-screen bg-[#050505] px-4 py-8 text-white"><div className="mx-auto max-w-6xl space-y-6">
     <header className={card}>
       <p className="text-sm text-amber-200">Blackspire · Private practice workspace</p>
       <h1 className="mt-3 text-3xl font-bold">Review a property. Know your next step.</h1>
@@ -92,7 +94,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
     </header>
     <nav aria-label="Workspace tools" className="flex flex-wrap gap-2">{["Properties", "Follow-ups", "Activity", "Buyer reference", "Live snapshot"].map(t => <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t} className={tab === t ? button : secondary}>{t}</button>)}</nav>
     {error && <p role="alert" className="rounded-xl border border-red-400 p-4 text-red-200">{error}</p>}
-    {notice && <p role="status" className="text-amber-200">{notice}</p>}
+    {notice && <p role="status" className="workspace-feedback text-sm">{notice}</p>}
     {!data ? <p>Opening your workspace…</p> : <>
       {tab === "Properties" && !lead && <section className="space-y-5">
         <h2 className="text-2xl font-semibold">Add or review a property</h2>
