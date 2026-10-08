@@ -7,6 +7,14 @@ const RESULT_KEYS = [
   'county',
   'status',
   'motivationScore',
+  'strategy',
+  'monthlyExpenses',
+  'monthlyDebtService',
+  'monthlyCashFlow',
+  'annualReturnOnCost',
+  'analysisComplete',
+  'fitsTarget',
+  'askingGap',
   'estimatedArv',
   'sellerAskingPrice',
   'repairEstimate',
@@ -27,6 +35,14 @@ const RESULT_KEYS = [
 ];
 const COMPLIANCE_KEYS = ['strategy','disclosureHeadline','licenseNote','marketingRule','earnestMoneyRule','cancellationRule','contractWarnings','checklist'];
 const TEXT_MAX = 500;
+
+function analysisAmount(value, key, { signed = false } = {}) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return null;
+  if (typeof value !== 'number' && typeof value !== 'string') throw new Error(`invalid deal analysis ${key}`);
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || (!signed && amount < 0)) throw new Error(`invalid deal analysis ${key}`);
+  return amount;
+}
 
 function boundedText(value, key, { nullable = false } = {}) {
   if (nullable && (value === null || value === undefined || value === '')) return null;
@@ -53,6 +69,8 @@ function output(raw) {
     if (!Number.isFinite(Date.parse(sourceSnapshotAt))) throw new Error('invalid deal source snapshot timestamp');
     return Object.freeze({ found: false, dealId: boundedText(raw.dealId, 'dealId'), sourceSnapshotAt });
   }
+  const strategy = raw.strategy ?? 'assignment';
+  if (!['flip', 'rental', 'assignment'].includes(strategy)) throw new Error('invalid deal analysis strategy');
   const score = Number(raw.motivationScore);
   if (!Number.isSafeInteger(score) || score < 0 || score > 100) throw new Error('invalid deal motivation score');
   if (!Array.isArray(raw.missingInputs)) throw new Error('invalid deal missingInputs: must be an array');
@@ -85,18 +103,26 @@ function output(raw) {
     county: boundedText(raw.county, 'county', { nullable: true }),
     status: boundedText(raw.status, 'status'),
     motivationScore: score,
-    estimatedArv: Number(raw.estimatedArv) || 0,
-    sellerAskingPrice: Number(raw.sellerAskingPrice) || 0,
-    repairEstimate: Number(raw.repairEstimate) || 0,
-    closingCosts: Number(raw.closingCosts) || 0,
-    holdingCosts: Number(raw.holdingCosts) || 0,
-    buyerProfitTarget: Number(raw.buyerProfitTarget) || 0,
-    assignmentFeeTarget: Number(raw.assignmentFeeTarget) || 0,
-    rentalEstimate: Number(raw.rentalEstimate) || 0,
-    flipEstimate: Number(raw.flipEstimate) || 0,
-    purchasePriceTarget: Number(raw.purchasePriceTarget) || 0,
-    maximumAllowableOffer: Number(raw.maximumAllowableOffer) || 0,
-    wholesaleSpread: Number(raw.wholesaleSpread) || 0,
+    strategy,
+    monthlyExpenses: analysisAmount(raw.monthlyExpenses, 'monthlyExpenses'),
+    monthlyDebtService: analysisAmount(raw.monthlyDebtService, 'monthlyDebtService'),
+    monthlyCashFlow: analysisAmount(raw.monthlyCashFlow, 'monthlyCashFlow', { signed: true }),
+    annualReturnOnCost: analysisAmount(raw.annualReturnOnCost, 'annualReturnOnCost', { signed: true }),
+    analysisComplete: raw.analysisComplete == null ? null : Boolean(raw.analysisComplete),
+    fitsTarget: raw.fitsTarget == null ? null : Boolean(raw.fitsTarget),
+    askingGap: analysisAmount(raw.askingGap, 'askingGap', { signed: true }),
+    estimatedArv: analysisAmount(raw.estimatedArv, 'estimatedArv'),
+    sellerAskingPrice: analysisAmount(raw.sellerAskingPrice, 'sellerAskingPrice'),
+    repairEstimate: analysisAmount(raw.repairEstimate, 'repairEstimate'),
+    closingCosts: analysisAmount(raw.closingCosts, 'closingCosts'),
+    holdingCosts: analysisAmount(raw.holdingCosts, 'holdingCosts'),
+    buyerProfitTarget: analysisAmount(raw.buyerProfitTarget, 'buyerProfitTarget'),
+    assignmentFeeTarget: analysisAmount(raw.assignmentFeeTarget, 'assignmentFeeTarget'),
+    rentalEstimate: analysisAmount(raw.rentalEstimate, 'rentalEstimate'),
+    flipEstimate: analysisAmount(raw.flipEstimate, 'flipEstimate'),
+    purchasePriceTarget: analysisAmount(raw.purchasePriceTarget, 'purchasePriceTarget', { signed: true }),
+    maximumAllowableOffer: analysisAmount(raw.maximumAllowableOffer, 'maximumAllowableOffer', { signed: true }),
+    wholesaleSpread: analysisAmount(raw.wholesaleSpread, 'wholesaleSpread', { signed: true }),
     dealRating: boundedText(raw.dealRating, 'dealRating', { nullable: true }),
     missingInputs,
     readyForContract: Boolean(raw.readyForContract),
@@ -136,6 +162,10 @@ export function summarizeDealAnalysis(result) {
   const rating = dealRating ? ` — ${dealRating}` : '';
   const ready = readyForContract ? ' [contract-ready]' : '';
   const missing = missingInputs.length ? ` | Missing: ${missingInputs.join(', ')}` : '';
-  const formatCurrency = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(Number(n) || 0);
+  const formatCurrency = (n) => n == null ? 'Unknown' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
+  if (result.strategy === 'rental') {
+    const annual = result.annualReturnOnCost == null ? 'Unknown' : `${result.annualReturnOnCost.toFixed(1)}%`;
+    return `Deal ${dealId} rental analysis for ${propertyAddress}:${rating}${ready}\nMonthly cash flow: ${formatCurrency(result.monthlyCashFlow)} | Annual cash flow / acquisition cost: ${annual}${missing}`;
+  }
   return `Deal ${dealId} underwriting for ${propertyAddress}:${rating}${ready}\nARV: ${formatCurrency(estimatedArv)} | MAO: ${formatCurrency(maximumAllowableOffer)}${missing}`;
 }

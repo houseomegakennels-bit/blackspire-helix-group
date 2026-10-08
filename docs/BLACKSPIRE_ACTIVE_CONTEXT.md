@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-10-08 — Peggy usability completion on current main
+
+The saved candidate `0d58882baec1b6c559752e8d2298b1510b97476a` was reconciled onto freshly fetched main `ab390b899cc83d72d1c80f5af15c790994f5aa9c` in `feat/real-estate-usability-finish-20261008` at `/mnt/blackspire-builds/real-estate-usability-finish-20261008`. The earlier worktree remains intact. Newer Buyer dispatch authority, owned-store fallback refusal, admin guards and observed read-client behavior are preserved.
+
+Node 22.23.1 deterministic root/frontend npm ci passed. All 98 focused calculation, persistence, role, invitation, scoped Buyer/receiver and Deal capability tests pass with zero failures or skips. Root build/lint/syntax typecheck and full frontend lint/production build pass; existing lint and book-studio tracing warnings remain. Chromium checks passed at 1440px and 390px for actual practice and operator components. Browser data adapters were fictional in-memory stores, not production Supabase; production authentication/data acceptance and external exact-commit CI/review remain UNVERIFIED.
+
+Implementation and local browser verification are complete; release publication is pending explicit authority, independent exact-commit review/CI and reconciliation of the inherited reviewed-memory checkpoint. Research-provider integration remains a later phase.
+
 ## 2026-09-24 — nonroot CI fixture correction
 
 PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.

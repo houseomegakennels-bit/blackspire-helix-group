@@ -14,8 +14,14 @@ export default async function PropertyIndexPage() {
           <div className="text-[10px] uppercase tracking-[0.4em] text-[#5eead4]">Property Command</div>
           <h1 className="mt-2 text-3xl font-black tracking-[0.04em] text-white">Properties</h1>
           <p className="mt-2 text-sm text-[var(--copy-soft)]">
-            Every property is a single source-of-truth record. Open one to see its seller, deal, buyers,
-            contract, transaction, scores, and full timeline in one command view.
+            Open an existing property to review its details, research gaps, seller notes and linked deal in one place. You can visit sections in any order.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link href="/workspace/harvester" className="inline-flex min-h-11 items-center rounded-xl border border-[#2dd4bf] px-4 text-sm text-white">Add or review a property</Link>
+            <Link href="/workspace/deal-engine" className="inline-flex min-h-11 items-center rounded-xl border border-[var(--line)] px-4 text-sm text-white">Open deal workspace</Link>
+          </div>
+          <p className="mt-3 text-sm text-[var(--copy-soft)]">
+            Check the list before adding a property so its notes and documents stay together.
           </p>
         </div>
 
@@ -34,7 +40,7 @@ export default async function PropertyIndexPage() {
                   </div>
                 </div>
                 {property.estimatedEquity != null ? (
-                  <span className="shrink-0 text-sm text-[#5eead4]">${property.estimatedEquity.toLocaleString()} eq</span>
+                  <span className="shrink-0 text-sm text-[#5eead4]">${property.estimatedEquity.toLocaleString()} estimated equity</span>
                 ) : null}
               </Link>
             ))

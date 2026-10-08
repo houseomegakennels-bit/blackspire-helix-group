@@ -1,5 +1,12 @@
 # Blackspire Next Actions
 
+## 2026-10-08 — Peggy usability completion on current main
+
+1. Review the completed Peggy candidate and its desktop/phone evidence. Local implementation and 98 focused tests are DONE.
+2. Under explicit publication authority, publish for exact-commit review/CI and reconcile the inherited main memory-anchor failure using legitimate reviewed evidence. Do not weaken the checker or replace its anchor merely to pass.
+3. After release gates and deployment authority are satisfied, deploy the frontend and verify authenticated practice/operator behavior against the actual data services. Do not present fictional browser adapters as production acceptance.
+4. Evaluate live research-provider coverage, freshness, permissions and costs separately; missing comps/loan/lien data must remain explicitly unavailable.
+
 ## 2026-09-24 — nonroot CI fixture correction
 
 PR155 CI36004343479 ran 2,578 tests: 2,398 passed, 179 skipped and one failed. The failure was the new pending-marker fixture using /run under the nonroot runner; no product assertion failed. The fixture now uses the normal temporary directory. All five fence tests pass as root and as an isolated nonroot nobody user. Runtime code is unchanged. Fresh exact-head CI is required; no deployment or OPEN occurred.

@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-08 — Peggy usability completion on current main
+
+The saved candidate `0d58882baec1b6c559752e8d2298b1510b97476a` was reconciled onto freshly fetched main `ab390b899cc83d72d1c80f5af15c790994f5aa9c` in `feat/real-estate-usability-finish-20261008` at `/mnt/blackspire-builds/real-estate-usability-finish-20261008`. The earlier worktree remains intact. Newer Buyer dispatch authority, owned-store fallback refusal, admin guards and observed read-client behavior are preserved.
+
+Clear amount help, incomplete property capture, retained drafts, signed losses, strategy-specific calculation and transaction evidence semantics are integrated. Reconciliation additionally fixed scoped analysis reads to retrieve saved formula settings and preserve unknown amounts, zero, rental cash flow and signed cents through the internal API, capability validation and assistant summary. Calculations do not confer contract readiness.
+
+Node 22.23.1 deterministic root/frontend npm ci passed. All 98 focused calculation, persistence, role, invitation, scoped Buyer/receiver and Deal capability tests pass with zero failures or skips. Root build/lint/syntax typecheck and full frontend lint/production build pass; existing lint and book-studio tracing warnings remain. Chromium checks passed at 1440px and 390px for actual practice and operator components. Browser data adapters were fictional in-memory stores, not production Supabase; production authentication/data acceptance and external exact-commit CI/review remain UNVERIFIED.
+
+The unchanged living-memory checker also fails on the unmodified current-main baseline with UNREVIEWED_NON_DOCUMENTATION_CHANGE against reviewed anchor `3019785f108f3da78720da265bb5ccc6e17ae2d4`; no anchor or check was advanced or weakened. Live sold comps, loan/payoff and lien/title providers remain unconnected. No push, merge, deployment, production credential load, provider purchase, outreach or signing occurred. Publishing requires explicit authority under AGENTS.md rule 8 and the relevant exact-release checks.
+
 ## 2026-09-27 — Books access and chapter publishing preparation
 
 Books now has an explicit public-header/footer link, a public Creative Publishing directory entry, and a cross-workspace navigation link beside Book Studio. The book detail heading is compact and the player appears before the chapter list on mobile, with native video controls and recoverable playback messages. Studio access boundaries are unchanged.

@@ -2,6 +2,7 @@ import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
+import { analyzeInvestment, parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -139,21 +140,29 @@ export type DealEngineWorkspaceSnapshot = {
 export type DealEngineDealDetail = {
   lead: DealEngineLead;
   underwriting: {
-    estimatedArv: number;
-    sellerAskingPrice: number;
-    repairEstimate: number;
-    closingCosts: number;
-    holdingCosts: number;
-    buyerProfitTarget: number;
-    assignmentFeeTarget: number;
-    rentalEstimate: number;
-    flipEstimate: number;
-    purchasePriceTarget: number;
-    maximumAllowableOffer: number;
-    wholesaleSpread: number;
+    strategy: InvestmentStrategy;
+    monthlyExpenses: number | null;
+    monthlyDebtService: number | null;
+    monthlyCashFlow: number | null;
+    annualReturnOnCost: number | null;
+    estimatedArv: number | null;
+    sellerAskingPrice: number | null;
+    repairEstimate: number | null;
+    closingCosts: number | null;
+    holdingCosts: number | null;
+    buyerProfitTarget: number | null;
+    assignmentFeeTarget: number | null;
+    rentalEstimate: number | null;
+    flipEstimate: number | null;
+    purchasePriceTarget: number | null;
+    maximumAllowableOffer: number | null;
+    wholesaleSpread: number | null;
     dealRating: string;
     missingInputs: string[];
     readyForContract: boolean;
+    analysisComplete: boolean;
+    fitsTarget: boolean;
+    askingGap: number | null;
     compliance: {
       strategy: string;
       disclosureHeadline: string;
@@ -327,12 +336,13 @@ export type DealEngineDealDetail = {
 };
 
 export type DealCommanderInsight = {
+  strategy: InvestmentStrategy;
   priority: "High" | "Medium" | "Low";
   confidenceScore: number;
   suggestedNextAction: string;
-  estimatedMao: number;
-  offerRangeLow: number;
-  offerRangeHigh: number;
+  estimatedMao: number | null;
+  offerRangeLow: number | null;
+  offerRangeHigh: number | null;
   negotiationAngle: string;
   sellerPainPointHypothesis: string;
   buyerFitSummary: string;
@@ -393,6 +403,7 @@ type DispositionLogRow = {
 };
 
 type DealAnalysisRow = {
+  formula_settings?: Record<string, unknown> | null;
   estimated_arv: number | null;
   purchase_price_target: number | null;
   seller_asking_price: number | null;
@@ -611,12 +622,12 @@ export type DealEmdTrackerRecord = {
 
 export type DealAssignmentFeeTrackerRecord = {
   id: string | null;
-  sellerContractPrice: number;
-  buyerAssignmentPrice: number;
-  assignmentFee: number;
-  expectedNetFee: number;
-  titleCompanyFee: number;
-  otherClosingCosts: number;
+  sellerContractPrice: number | null;
+  buyerAssignmentPrice: number | null;
+  assignmentFee: number | null;
+  expectedNetFee: number | null;
+  titleCompanyFee: number | null;
+  otherClosingCosts: number | null;
   payoutStatus: "projected" | "pending_closing" | "confirmed" | "paid" | "delayed";
   payoutDueDate: string;
   payoutReceivedAt: string;
@@ -701,12 +712,19 @@ function asSingle<T>(value: T | T[] | null | undefined) {
   return value ?? null;
 }
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number | null) {
+  if (value == null) return "Not entered";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
+}
+
+function nullableMoney(value: number | string | null | undefined) {
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : null;
 }
 
 function clampMoney(value: number) {
@@ -735,8 +753,8 @@ function toLead(row: DealLeadJoin): DealEngineLead {
     county: row.county ?? "Unknown",
     status: row.status ?? "Imported",
     motivationScore: asNumber(row.motivation_score),
-    mao: formatCurrency(asNumber(analysis?.maximum_allowable_offer)),
-    assignmentFee: formatCurrency(asNumber(analysis?.assignment_fee_target)),
+    mao: formatCurrency(nullableMoney(analysis?.maximum_allowable_offer)),
+    assignmentFee: formatCurrency(nullableMoney(analysis?.assignment_fee_target)),
     exitStrategy: buyerMatch?.exit_strategy?.trim() || "Exit strategy still being modeled",
     nextAction:
       conversation?.next_action?.trim()
@@ -977,20 +995,6 @@ function buildInvestorTypeRecommendation(
   return `${topBuyer.buyerName} is the strongest live statewide fallback until a ${lead.county} County buyer search finishes.`;
 }
 
-function deriveOfferWindow(mao: string, assignmentFee: string) {
-  const maoValue = Number(mao.replace(/[^0-9.-]/g, ""));
-  const assignmentValue = Number(assignmentFee.replace(/[^0-9.-]/g, ""));
-  const low = Number.isFinite(maoValue) ? Math.max(maoValue - Math.max(assignmentValue / 2, 5000), 0) : 0;
-  const high = Number.isFinite(maoValue) ? maoValue : 0;
-  return `${formatCurrency(low)} - ${formatCurrency(high)}`;
-}
-
-function deriveOfferWindowFromNumbers(maximumAllowableOffer: number, assignmentFeeTarget: number) {
-  const high = clampMoney(maximumAllowableOffer);
-  const low = high > 0 ? Math.max(high - Math.max(clampMoney(assignmentFeeTarget) / 2, 5000), 0) : 0;
-  return `${formatCurrency(low)} - ${formatCurrency(high)}`;
-}
-
 function estimateArvFromSignals(input: {
   assessedValue: number;
   county: string;
@@ -1142,8 +1146,8 @@ function buildContractDrafts(
       contractType: /wholesale|flip/i.test(lead.exitStrategy)
         ? "Assignable purchase agreement"
         : "Direct purchase with assignment fallback",
-      offerWindow: deriveOfferWindow(lead.mao, lead.assignmentFee),
-      earnestMoney: lead.motivationScore >= 85 ? "$5,000" : "$3,000",
+      offerWindow: "Not entered",
+      earnestMoney: "Not entered",
       outreachLead:
         sellerSignal?.recommendedAction
         || "Lead with speed, certainty, and a clean as-is close path.",
@@ -1306,16 +1310,19 @@ type SaveDealContractInput = {
 };
 
 type SaveDealAnalysisInput = {
+  strategy?: InvestmentStrategy;
+  monthlyExpenses?: number | null;
+  monthlyDebtService?: number | null;
   dealId: string;
-  estimatedArv: number;
-  sellerAskingPrice: number;
-  repairEstimate: number;
-  closingCosts: number;
-  holdingCosts: number;
-  buyerProfitTarget: number;
-  assignmentFeeTarget: number;
-  rentalEstimate: number;
-  flipEstimate: number;
+  estimatedArv: number | null;
+  sellerAskingPrice: number | null;
+  repairEstimate: number | null;
+  closingCosts: number | null;
+  holdingCosts: number | null;
+  buyerProfitTarget: number | null;
+  assignmentFeeTarget: number | null;
+  rentalEstimate: number | null;
+  flipEstimate: number | null;
 };
 
 type EstimateDealArvInput = {
@@ -1490,40 +1497,34 @@ function buildUnderwritingSnapshot(
   lead: DealEngineLead,
   analysis: DealAnalysisRow | null,
 ) {
-  const estimatedArv = clampMoney(analysis?.estimated_arv ?? 0);
-  const repairEstimate = clampMoney(analysis?.repair_estimate ?? 0);
-  const closingCosts = clampMoney(analysis?.closing_costs ?? 0);
-  const holdingCosts = clampMoney(analysis?.holding_costs ?? 0);
-  const buyerProfitTarget = clampMoney(analysis?.buyer_profit_target ?? 0);
-  const assignmentFeeTarget = clampMoney(analysis?.assignment_fee_target ?? Number(lead.assignmentFee.replace(/[^0-9.-]/g, "")));
-  const sellerAskingPrice = clampMoney(analysis?.seller_asking_price ?? 0);
-  const rentalEstimate = clampMoney(analysis?.rental_estimate ?? 0);
-  const flipEstimate = clampMoney(analysis?.flip_estimate ?? 0);
-  const maximumAllowableOffer = clampMoney(
-    analysis?.maximum_allowable_offer
-    ?? (estimatedArv - repairEstimate - closingCosts - holdingCosts - buyerProfitTarget - assignmentFeeTarget),
-  );
-  const purchasePriceTarget = clampMoney(analysis?.purchase_price_target ?? maximumAllowableOffer);
-  const wholesaleSpread = clampMoney(analysis?.wholesale_spread ?? Math.max(estimatedArv - purchasePriceTarget - repairEstimate - closingCosts - holdingCosts, 0));
-
-  const missingInputs = [
-    estimatedArv <= 0 ? "Set ARV / resale value" : null,
-    repairEstimate <= 0 ? "Set repair estimate" : null,
-    sellerAskingPrice <= 0 ? "Capture seller asking price or expected anchor" : null,
-  ].filter((item): item is string => Boolean(item));
-
-  const dealRating =
-    analysis?.deal_rating
-    ?? (missingInputs.length
-      ? "Needs Underwriting"
-      : maximumAllowableOffer > 0 && wholesaleSpread >= assignmentFeeTarget
-        ? "Green Deal"
-        : "Yellow Deal");
-
-  const readyForContract = missingInputs.length === 0 && maximumAllowableOffer > 0;
-  const compliance = buildWholesalingComplianceSnapshot(lead.exitStrategy);
+  const settings = analysis?.formula_settings ?? {};
+  const strategy = (settings.strategy ?? "assignment") as InvestmentStrategy;
+  const monthlyExpenses = parseInvestmentAmount(settings.monthlyExpenses);
+  const monthlyDebtService = parseInvestmentAmount(settings.monthlyDebtService);
+  const estimatedArv = parseInvestmentAmount(analysis?.estimated_arv);
+  const repairEstimate = parseInvestmentAmount(analysis?.repair_estimate);
+  const closingCosts = parseInvestmentAmount(analysis?.closing_costs);
+  const holdingCosts = parseInvestmentAmount(analysis?.holding_costs);
+  const buyerProfitTarget = parseInvestmentAmount(analysis?.buyer_profit_target);
+  const assignmentFeeTarget = parseInvestmentAmount(analysis?.assignment_fee_target);
+  const sellerAskingPrice = parseInvestmentAmount(analysis?.seller_asking_price);
+  const rentalEstimate = parseInvestmentAmount(analysis?.rental_estimate);
+  const flipEstimate = parseInvestmentAmount(analysis?.flip_estimate);
+  const result = analyzeInvestment({ strategy, monthlyRent: rentalEstimate, monthlyExpenses, monthlyDebtService, purchasePrice: sellerAskingPrice, resaleValue: estimatedArv,
+    repairs: repairEstimate, closingCosts, holdingCosts, profitTarget: buyerProfitTarget,
+    assignmentFee: assignmentFeeTarget });
+  const maximumAllowableOffer = result.ceiling;
+  const purchasePriceTarget = result.ceiling;
+  const wholesaleSpread = result.profit;
+  const missingInputs = result.missing;
+  const dealRating = !result.complete ? "Needs Underwriting" : result.fitsTarget ? "Green Deal" : "Yellow Deal";
+  // A completed calculation does not verify authority, contract terms, title or funding.
+  const readyForContract = false;
+  const compliance = buildInvestmentComplianceSnapshot(strategy, lead.exitStrategy);
 
   return {
+    strategy, monthlyExpenses, monthlyDebtService,
+    monthlyCashFlow: result.monthlyCashFlow, annualReturnOnCost: result.annualReturnOnCost,
     estimatedArv,
     sellerAskingPrice,
     repairEstimate,
@@ -1539,7 +1540,24 @@ function buildUnderwritingSnapshot(
     dealRating,
     missingInputs,
     readyForContract,
+    analysisComplete: result.complete,
+    fitsTarget: result.fitsTarget,
+    askingGap: result.askingGap,
     compliance,
+  };
+}
+
+function buildInvestmentComplianceSnapshot(strategy: InvestmentStrategy, exitStrategy: string) {
+  if (strategy === "assignment") return buildWholesalingComplianceSnapshot(exitStrategy);
+  return {
+    strategy: strategy === "rental" ? "Purchase and rent" : "Purchase and resell",
+    disclosureHeadline: "Confirm the purchase terms and signing authority before contract execution.",
+    licenseNote: "Confirm the rules applicable to the property and proposed transaction.",
+    marketingRule: "Do not promote ownership or availability beyond the rights actually held.",
+    earnestMoneyRule: "Confirm escrow holder, deposit amount and due date in the purchase agreement.",
+    cancellationRule: "Review inspection deadlines and cancellation terms in the purchase agreement.",
+    contractWarnings: ["Analysis completion does not verify authority, title, funding or agreed terms."],
+    checklist: ["Verify seller authority and title.", "Confirm funding and deposit requirements.", "Review inspection and closing terms before signature."],
   };
 }
 
@@ -1572,7 +1590,7 @@ function buildDealAutomationWorkflow(
   detail: Pick<DealEngineDealDetail, "underwriting" | "sellerContact" | "buyerSignals" | "coordination" | "packet" | "lead" | "uploadedDocuments">,
 ): DealEngineDealDetail["automationWorkflow"] {
   const hasSellerPhone = detail.sellerContact.ownerPhone !== "Not captured";
-  const underwritingReady = detail.underwriting.readyForContract;
+  const underwritingReady = detail.underwriting.analysisComplete;
   const buyerReady = detail.buyerSignals.length > 0;
   const packetReady = Boolean(detail.packet.investorSummary.trim() && detail.packet.buyerEmailBlast.trim());
   const contractReady = detail.coordination.contractSent && detail.coordination.contractSigned;
@@ -2844,10 +2862,6 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
 
   const dealId = createDealId();
   const arv = Math.max(sellerLead.assessedValue * 1.18, sellerLead.assessedValue);
-  const repairEstimate = sellerLead.signals.vacant || sellerLead.signals.codeViolation ? 35000 : 22000;
-  const assignmentFee = sellerLead.score >= 85 ? 18000 : 12000;
-  const mao = Math.max(Math.round(arv * 0.7 - repairEstimate - assignmentFee), 0);
-  const buyerPrice = mao + assignmentFee;
   const roomSlug = slugify(sellerLead.propertyAddress);
 
   const operations = [
@@ -2873,24 +2887,24 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
     }),
     supabase.from("deal_analysis").insert({
       lead_id: dealId,
-      estimated_arv: Math.round(arv),
-      purchase_price_target: mao,
-      seller_asking_price: sellerLead.assessedValue,
-      repair_estimate: repairEstimate,
-      closing_costs: 9000,
-      holding_costs: 6000,
-      buyer_profit_target: 30000,
-      assignment_fee_target: assignmentFee,
-      rental_estimate: 0,
-      flip_estimate: 0,
-      wholesale_spread: Math.max(Math.round(arv - buyerPrice), 0),
-      maximum_allowable_offer: mao,
-      formula_settings: { arvMultiplier: 0.7, assignmentFee },
-      deal_rating: sellerLead.score >= 80 ? "Green Deal" : "Yellow Deal",
+      estimated_arv: null,
+      purchase_price_target: null,
+      seller_asking_price: null,
+      repair_estimate: null,
+      closing_costs: null,
+      holding_costs: null,
+      buyer_profit_target: null,
+      assignment_fee_target: null,
+      rental_estimate: null,
+      flip_estimate: null,
+      wholesale_spread: null,
+      maximum_allowable_offer: null,
+      formula_settings: { strategy: "assignment", calculationModel: "itemized-costs-v1", preliminaryAssessmentEstimate: Math.round(arv), preliminaryEstimateSource: "Assessed value multiplier; not sold comps" },
+      deal_rating: "Needs Underwriting",
     }),
     supabase.from("seller_conversations").insert({
       lead_id: dealId,
-      seller_asking_price: sellerLead.assessedValue,
+      seller_asking_price: null,
       seller_motivation: sellerLead.summary,
       timeline: "Needs qualification",
       property_condition: sellerLead.signals.codeViolation ? "Condition concerns likely" : "Needs confirmation",
@@ -2911,12 +2925,12 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
       city: sellerLead.city,
       zip_code: sellerLead.zipCode,
       property_type: sellerLead.propertyType,
-      arv_range: formatCurrency(Math.round(arv * 0.92)) + " - " + formatCurrency(Math.round(arv * 1.04)),
-      purchase_price_range: `${formatCurrency(mao)} - ${formatCurrency(buyerPrice)}`,
-      repair_level: repairEstimate >= 30000 ? "Medium-High" : "Medium",
+      arv_range: "Not checked",
+      purchase_price_range: "Not entered",
+      repair_level: "Not checked",
       exit_strategy: sellerLead.propertyType.toLowerCase().includes("duplex") ? "BRRRR / Value Add" : "Wholesale / Flip",
       rental_potential: "Needs market rent confirmation",
-      flip_potential: sellerLead.score >= 80 ? "High" : "Moderate",
+      flip_potential: "Not analyzed",
       top_buyer_matches: [],
       buyer_score: 0,
       investor_type_recommendation: "Use Buyer Engine to shortlist best-fit active operators.",
@@ -2928,8 +2942,8 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
       offer_accepted: false,
       contract_sent: false,
       contract_signed: false,
-      inspection_period: "14 days",
-      earnest_money_deposit: sellerLead.score >= 85 ? 5000 : 3000,
+      inspection_period: null,
+      earnest_money_deposit: null,
       assignment_status: "Drafting",
     }),
     supabase.from("deal_packets").insert({
@@ -2947,9 +2961,9 @@ export async function createDealFromSellerLead(input: CreateDealFromSellerLeadIn
       slug: roomSlug,
       property_summary: `Blackspire Deal Engine assembled this opportunity from Seller Engine lead ${sellerLead.id}.`,
       financial_breakdown: [
-        `MAO: ${formatCurrency(mao)}`,
-        `Buyer Price: ${formatCurrency(buyerPrice)}`,
-        `Assignment Fee Target: ${formatCurrency(assignmentFee)}`,
+        "Purchase ceiling: Not analyzed",
+        "Buyer price: Not entered",
+        "Assignment fee: Not entered",
       ],
       photos: [],
       map_placeholder: "Map pending",
@@ -3053,40 +3067,37 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
     return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
   }
 
-  const estimatedArv = clampMoney(input.estimatedArv);
-  const sellerAskingPrice = clampMoney(input.sellerAskingPrice);
-  const repairEstimate = clampMoney(input.repairEstimate);
-  const closingCosts = clampMoney(input.closingCosts);
-  const holdingCosts = clampMoney(input.holdingCosts);
-  const buyerProfitTarget = clampMoney(input.buyerProfitTarget);
-  const assignmentFeeTarget = clampMoney(input.assignmentFeeTarget);
-  const rentalEstimate = clampMoney(input.rentalEstimate);
-  const flipEstimate = clampMoney(input.flipEstimate);
-  const maximumAllowableOffer = clampMoney(
-    estimatedArv - repairEstimate - closingCosts - holdingCosts - buyerProfitTarget - assignmentFeeTarget,
-  );
-  const purchasePriceTarget = maximumAllowableOffer;
-  const wholesaleSpread = clampMoney(estimatedArv - purchasePriceTarget - repairEstimate - closingCosts - holdingCosts);
-  const missingInputs = [
-    estimatedArv <= 0 ? "ARV missing" : null,
-    repairEstimate <= 0 ? "repairs missing" : null,
-    sellerAskingPrice <= 0 ? "seller ask missing" : null,
-  ].filter(Boolean);
-  const dealRating = missingInputs.length
-    ? "Needs Underwriting"
-    : maximumAllowableOffer > 0 && wholesaleSpread >= assignmentFeeTarget
-      ? "Green Deal"
-      : "Yellow Deal";
-  const complianceChecklist = [
-    "Use written equitable-interest disclosure with the seller.",
-    "Verify assignment is expressly allowed before marketing the deal.",
-    "Keep earnest money routed through title or escrow.",
-    "Check state-specific cancellation and licensing rules before contract send.",
-  ];
-  const compliance = buildWholesalingComplianceSnapshot("Assignable purchase agreement");
+  const { data: existing, error: readError } = await supabase.from("deal_analysis").select("formula_settings").eq("lead_id", input.dealId).maybeSingle();
+  if (readError) return { ok: false as const, error: readError.message };
+  const settings = existing?.formula_settings ?? {};
+  const strategy = input.strategy ?? settings.strategy ?? "assignment";
+  const monthlyExpenses = parseInvestmentAmount(input.monthlyExpenses === undefined ? settings.monthlyExpenses : input.monthlyExpenses);
+  const monthlyDebtService = parseInvestmentAmount(input.monthlyDebtService === undefined ? settings.monthlyDebtService : input.monthlyDebtService);
+  const estimatedArv = parseInvestmentAmount(input.estimatedArv);
+  const sellerAskingPrice = parseInvestmentAmount(input.sellerAskingPrice);
+  const repairEstimate = parseInvestmentAmount(input.repairEstimate);
+  const closingCosts = parseInvestmentAmount(input.closingCosts);
+  const holdingCosts = parseInvestmentAmount(input.holdingCosts);
+  const buyerProfitTarget = parseInvestmentAmount(input.buyerProfitTarget);
+  const assignmentFeeTarget = parseInvestmentAmount(input.assignmentFeeTarget);
+  const rentalEstimate = parseInvestmentAmount(input.rentalEstimate);
+  const flipEstimate = parseInvestmentAmount(input.flipEstimate);
+  const result = analyzeInvestment({ strategy, monthlyRent: rentalEstimate, monthlyExpenses, monthlyDebtService, purchasePrice: sellerAskingPrice, resaleValue: estimatedArv,
+    repairs: repairEstimate, closingCosts, holdingCosts, profitTarget: buyerProfitTarget,
+    assignmentFee: assignmentFeeTarget });
+  const maximumAllowableOffer = result.ceiling;
+  const purchasePriceTarget = result.ceiling;
+  const wholesaleSpread = result.profit;
+  const missingInputs = result.missing;
+  const dealRating = !result.complete ? "Needs Underwriting" : result.fitsTarget ? "Green Deal" : "Yellow Deal";
+  const compliance = buildInvestmentComplianceSnapshot(strategy, "Assignable purchase agreement");
+  const complianceChecklist = compliance.checklist;
+  const analysisResultSummary = strategy === "rental"
+    ? `monthly cash flow ${formatCurrency(result.monthlyCashFlow)}`
+    : `calculated purchase ceiling ${formatCurrency(maximumAllowableOffer)}`;
   const nextAction = missingInputs.length
     ? "Finish underwriting inputs before setting final contract posture."
-    : `Underwriting complete. Review MAO ${formatCurrency(maximumAllowableOffer)}, confirm seller terms, and save the contract posture.`;
+    : `Underwriting complete. Review ${analysisResultSummary}, confirm seller terms, and save the contract posture.`;
 
   const underwritingTask = {
     lead_id: input.dealId,
@@ -3095,14 +3106,14 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       taskId: `underwriting-follow-up-${input.dealId}`,
       title: missingInputs.length
         ? "Collect missing underwriting inputs"
-        : "Review contract posture and send offer",
+        : "Review analysis and verify transaction requirements",
       owner: "Acquisitions",
       dueDate: "",
       priority: "High",
       status: missingInputs.length ? "Open" : "In Progress",
       notes: missingInputs.length
         ? `Still needed before contract drafting: ${missingInputs.join("; ")}.`
-        : `Underwriting is complete. Review MAO ${formatCurrency(maximumAllowableOffer)}, confirm seller response, and move into contract. `,
+        : `Underwriting is complete. Review ${analysisResultSummary}, confirm seller response, and verify authority, funding and terms before deciding to proceed. `,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -3111,9 +3122,10 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
   const [analysisUpsert, leadUpdate, conversationUpdate, logInsert, taskInsert] = await Promise.all([
     supabase.from("deal_analysis").upsert({
       lead_id: input.dealId,
+      formula_settings: { ...settings, strategy, monthlyExpenses, monthlyDebtService, calculationModel: "itemized-costs-v1" },
       estimated_arv: estimatedArv,
       purchase_price_target: purchasePriceTarget,
-      seller_asking_price: sellerAskingPrice || null,
+      seller_asking_price: sellerAskingPrice,
       repair_estimate: repairEstimate,
       closing_costs: closingCosts,
       holding_costs: holdingCosts,
@@ -3127,12 +3139,12 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       updated_at: new Date().toISOString(),
     }, { onConflict: "lead_id" }),
     supabase.from("deal_leads").update({
-      status: missingInputs.length ? "Underwriting" : "Offer Ready",
+      status: missingInputs.length ? "Underwriting" : "Analysis Complete",
       recommended_next_action: nextAction,
       updated_at: new Date().toISOString(),
-    }).eq("id", input.dealId),
+    }).eq("id", input.dealId).in("status", ["Imported", "Needs Analysis", "Underwriting", "Offer Ready", "Analysis Complete"]),
     supabase.from("seller_conversations").update({
-      seller_asking_price: sellerAskingPrice || null,
+      seller_asking_price: sellerAskingPrice,
       next_action: nextAction,
       updated_at: new Date().toISOString(),
     }).eq("lead_id", input.dealId),
@@ -3140,6 +3152,7 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       lead_id: input.dealId,
       action_type: "analysis_update",
       payload: {
+        strategy, monthlyExpenses, monthlyDebtService,
         estimatedArv,
         sellerAskingPrice,
         repairEstimate,
@@ -3175,6 +3188,8 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
   return {
     ok: true as const,
     underwriting: {
+      strategy, monthlyExpenses, monthlyDebtService,
+      monthlyCashFlow: result.monthlyCashFlow, annualReturnOnCost: result.annualReturnOnCost,
       estimatedArv,
       sellerAskingPrice,
       repairEstimate,
@@ -3189,7 +3204,10 @@ export async function saveDealAnalysis(input: SaveDealAnalysisInput) {
       wholesaleSpread,
       dealRating,
       missingInputs,
-      readyForContract: missingInputs.length === 0 && maximumAllowableOffer > 0,
+      readyForContract: false,
+      analysisComplete: result.complete,
+      fitsTarget: result.fitsTarget,
+      askingGap: result.askingGap,
       compliance,
     },
   };
@@ -3216,7 +3234,7 @@ export async function estimateDealArv(input: EstimateDealArvInput) {
 
   const { data: analysisRow, error: analysisError } = await supabase
     .from("deal_analysis")
-    .select("estimated_arv,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate")
+    .select("estimated_arv,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,formula_settings")
     .eq("lead_id", input.dealId)
     .maybeSingle();
 
@@ -3286,46 +3304,19 @@ export async function estimateDealArv(input: EstimateDealArvInput) {
     valueSource,
   });
 
-  const saveResult = await saveDealAnalysis({
-    dealId: input.dealId,
-    estimatedArv: estimate.estimatedArv,
-    sellerAskingPrice: clampMoney(Number(analysisRow?.seller_asking_price ?? 0)),
-    repairEstimate: clampMoney(Number(analysisRow?.repair_estimate ?? 0)),
-    closingCosts: clampMoney(Number(analysisRow?.closing_costs ?? 0)),
-    holdingCosts: clampMoney(Number(analysisRow?.holding_costs ?? 0)),
-    buyerProfitTarget: clampMoney(Number(analysisRow?.buyer_profit_target ?? 0)),
-    assignmentFeeTarget: clampMoney(Number(analysisRow?.assignment_fee_target ?? 0)),
-    rentalEstimate: clampMoney(Number(analysisRow?.rental_estimate ?? 0)),
-    flipEstimate: clampMoney(Number(analysisRow?.flip_estimate ?? 0)),
-  });
-
-  if (!saveResult.ok) {
-    return saveResult;
-  }
-
-  await supabase.from("disposition_logs").insert({
-    lead_id: input.dealId,
-    action_type: "analysis_update",
-    payload: {
-      estimateOnly: true,
-      estimatedArv: estimate.estimatedArv,
-      arvRange: `${formatCurrency(estimate.rangeLow)} - ${formatCurrency(estimate.rangeHigh)}`,
-      confidence: estimate.confidence,
-      basis: estimate.basis,
-      updatedAt: new Date().toISOString(),
-    },
-  });
 
   return {
     ok: true as const,
-    message: `ARV estimated at ${formatCurrency(estimate.estimatedArv)} and saved into underwriting.`,
+    message: `Preliminary assessment-based estimate: ${formatCurrency(estimate.estimatedArv)}. Not saved; verify against sold comparables before use.`,
+    preliminary: true,
+    saved: false,
     estimatedArv: estimate.estimatedArv,
     arvRange: `${formatCurrency(estimate.rangeLow)} - ${formatCurrency(estimate.rangeHigh)}`,
     confidence: estimate.confidence,
     basis: marketMedian && valueSource === "market-median"
       ? `${estimate.basis} Median pulled from ${marketMedian.sampleCount} ${marketMedian.scope}-level ${marketMedian.valuationBucket} property records.`
       : estimate.basis,
-    underwriting: saveResult.underwriting,
+    underwriting: buildUnderwritingSnapshot(toLead({ ...dealRow, owner_name: null, status: null, motivation_score: null, recommended_next_action: null, deal_analysis: null, seller_conversations: null, buyer_matches: null } as DealLeadJoin), analysisRow as DealAnalysisRow | null),
   };
 }
 
@@ -4161,7 +4152,7 @@ export async function getDealEngineAnalysisForCapability(dealId: string, readCli
   const lead = toLead(data as unknown as DealLeadJoin);
   const { data: analysis, error: analysisError } = await supabase
     .from("deal_analysis")
-    .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
+    .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating,formula_settings")
     .eq("lead_id", dealId)
     .limit(1)
     .maybeSingle();
@@ -4267,24 +4258,11 @@ export async function getDealEngineDealDetail(
 
     const { data: analysisData, error: analysisError } = await supabase
       .from("deal_analysis")
-      .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating")
+      .select("estimated_arv,purchase_price_target,seller_asking_price,repair_estimate,closing_costs,holding_costs,buyer_profit_target,assignment_fee_target,rental_estimate,flip_estimate,wholesale_spread,maximum_allowable_offer,deal_rating,formula_settings")
       .eq("lead_id", dealId)
       .maybeSingle();
     if (!persistScaffold && analysisError) throw new Error("Deal capability unavailable");
     underwriting = buildUnderwritingSnapshot(lead, analysisData as DealAnalysisRow | null);
-    if (contractDraft) {
-      contractDraft = {
-        ...contractDraft,
-        offerWindow:
-          underwriting.maximumAllowableOffer > 0
-            ? deriveOfferWindowFromNumbers(
-                underwriting.maximumAllowableOffer,
-                underwriting.assignmentFeeTarget,
-              )
-            : contractDraft.offerWindow,
-      };
-    }
-
     const { data: contractData, error: contractError } = await supabase
       .from("contracts")
       .select("contract_sent,contract_signed,inspection_period,earnest_money_deposit,assignment_status")
@@ -4572,91 +4550,45 @@ function buildRuleBasedCommanderInsight(
   detail: DealEngineDealDetail,
   sellerLead: SellerLeadView | null,
 ): DealCommanderInsight {
+  const underwriting = detail.underwriting;
+  const strategy = underwriting.strategy;
   const contactConfidence = inferContactConfidence(detail, sellerLead);
-  const missingCount = detail.underwriting.missingInputs.length;
-  const estimatedMao = Math.max(0, Math.round(detail.underwriting.maximumAllowableOffer || detail.underwriting.purchasePriceTarget || 0));
-  const offerRangeHigh = estimatedMao;
-  const offerRangeLow = Math.max(
-    0,
-    Math.round(
-      offerRangeHigh
-        ? offerRangeHigh - Math.max(detail.underwriting.assignmentFeeTarget * 0.5, 5000)
-        : detail.underwriting.purchasePriceTarget * 0.92,
-    ),
-  );
-  const estimatedArv = Math.max(0, Math.round(detail.underwriting.estimatedArv || 0));
-  const spread =
-    detail.underwriting.wholesaleSpread > 0
-      ? Math.round(detail.underwriting.wholesaleSpread)
-      : Math.max(
-          0,
-          estimatedArv
-            - detail.underwriting.repairEstimate
-            - detail.underwriting.closingCosts
-            - detail.underwriting.holdingCosts
-            - Math.max(detail.underwriting.sellerAskingPrice || detail.underwriting.purchasePriceTarget, offerRangeHigh)
-            - detail.underwriting.assignmentFeeTarget,
-        );
-  const spreadRatio = estimatedArv > 0 ? spread / estimatedArv : 0;
-  const buyerFitCount = detail.buyerSignals.length;
-
-  let priorityScore = 0;
-  priorityScore += detail.lead.motivationScore >= 80 ? 28 : detail.lead.motivationScore >= 60 ? 18 : 8;
-  priorityScore += spreadRatio >= 0.18 ? 26 : spreadRatio >= 0.1 ? 16 : spreadRatio >= 0.05 ? 8 : 0;
-  priorityScore += contactConfidence >= 70 ? 18 : contactConfidence >= 55 ? 10 : 2;
-  priorityScore += buyerFitCount >= 3 ? 16 : buyerFitCount >= 1 ? 9 : 0;
-  priorityScore += missingCount === 0 ? 12 : missingCount <= 2 ? 4 : -6;
-
-  const priority: DealCommanderInsight["priority"] =
-    priorityScore >= 70 ? "High" : priorityScore >= 42 ? "Medium" : "Low";
-
-  const completenessScore = Math.max(0, 100 - missingCount * 12);
-  const confidenceScore = Math.max(
-    18,
-    Math.min(
-      98,
-      Math.round(
-        completenessScore * 0.35
-          + Math.min(detail.lead.motivationScore, 100) * 0.2
-          + Math.min(contactConfidence, 100) * 0.2
-          + Math.min(buyerFitCount * 18, 100) * 0.15
-          + Math.min(spreadRatio * 240, 100) * 0.1,
-      ),
-    ),
-  );
-
+  const missingCount = underwriting.missingInputs.length;
   const riskWarnings: string[] = [];
-  if (!estimatedArv) riskWarnings.push("ARV is still missing, so the pricing lane is not fully anchored.");
-  if (detail.underwriting.repairEstimate <= 0) riskWarnings.push("Repair estimate is missing or too soft, which can distort the true spread.");
-  if (contactConfidence < 60) riskWarnings.push("Seller contact confidence is weak, so negotiation timing may be premature.");
-  if (!buyerFitCount) riskWarnings.push("No live buyer fit is attached yet, so disposition confidence is limited.");
-  if (spreadRatio < 0.08) riskWarnings.push("The current spread looks thin for a clean wholesale release.");
-  if (/dead|blocked/i.test(detail.lead.status)) riskWarnings.push("The current deal stage suggests the lane may already be cooling.");
-
-  const suggestedNextAction =
-    missingCount > 0
-      ? `Finish underwriting inputs first: ${detail.underwriting.missingInputs.slice(0, 2).join(", ")}. Once the numbers are tight, reopen the seller lane with a disciplined range.`
-      : contactConfidence < 60
-        ? "Refresh Nexus contact posture and verify the best decision-maker line before pushing into a pricing conversation."
-        : !buyerFitCount
-          ? `Launch Buyer Engine for ${detail.lead.county} County after the seller lane is stabilized so the packet has a real shortlist behind it.`
-          : spreadRatio >= 0.12
-            ? "Move into live negotiation with a certainty-first range, then line up the first buyer packet release as soon as the seller soft-commits."
-            : "Keep the deal warm, tighten the terms, and avoid forcing a contract until either spread or buyer fit strengthens.";
-
+  if (missingCount) riskWarnings.push(`Missing analysis inputs: ${underwriting.missingInputs.join(", ")}.`);
+  if (contactConfidence < 60) riskWarnings.push("Seller contact and decision-making authority still need verification.");
+  if (underwriting.analysisComplete && !underwriting.fitsTarget) {
+    riskWarnings.push(strategy === "rental"
+      ? "The entered rental assumptions do not produce positive monthly cash flow."
+      : "The seller asking price exceeds the calculated purchase ceiling under the entered assumptions.");
+  }
+  if (strategy === "assignment") riskWarnings.push("Buyer candidates are not confirmed funding or an assignment commitment.");
+  riskWarnings.push("A completed calculation does not verify condition, title, authority or readiness to contract.");
+  const suggestedNextAction = missingCount
+    ? `Complete the missing ${strategy} analysis inputs: ${underwriting.missingInputs.slice(0, 2).join(", ")}.`
+    : !underwriting.fitsTarget
+      ? `Review the ${strategy} assumptions and asking price before proposing purchase terms.`
+      : "Verify the underlying property facts, seller authority and proposed terms before deciding whether to proceed.";
   return {
-    priority,
-    confidenceScore,
+    strategy,
+    priority: underwriting.analysisComplete && underwriting.fitsTarget ? "Medium" : "Low",
+    confidenceScore: Math.min(85, Math.max(10, 80 - missingCount * 12)),
     suggestedNextAction,
-    estimatedMao,
-    offerRangeLow,
-    offerRangeHigh,
-    negotiationAngle: deriveNegotiationAngle(detail, spread, contactConfidence),
+    estimatedMao: strategy === "rental" ? null : underwriting.maximumAllowableOffer,
+    offerRangeLow: null,
+    offerRangeHigh: null,
+    negotiationAngle: "Ask about the seller's priorities; enter proposed purchase terms explicitly after reviewing the facts and numbers.",
     sellerPainPointHypothesis: deriveSellerPainPoint(detail, sellerLead),
-    buyerFitSummary: deriveBuyerFitSummary(detail, spread),
+    buyerFitSummary: strategy === "assignment"
+      ? `${detail.buyerSignals.length} buyer candidates are attached. Confirm current criteria and independent funding before relying on them.`
+      : `The selected strategy is ${strategy}; buyer disposition is not an analysis requirement.`,
     riskWarnings,
-    dispositionStrategy: deriveDispositionStrategy(detail, spread),
-    followUpRecommendation: deriveFollowUpRecommendation(detail, contactConfidence),
+    dispositionStrategy: strategy === "assignment"
+      ? "Confirm contract rights, seller permission and buyer qualifications before preparing an assignment release."
+      : strategy === "rental"
+        ? "Review rent, operating expenses, debt service and property condition for the intended hold."
+        : "Review resale evidence, repair scope and holding costs for the intended renovation and sale.",
+    followUpRecommendation: "Confirm the next missing fact or agreed term with the appropriate contact; retain their actual response in the record.",
     generationMode: "rules",
     generatedAt: new Date().toISOString(),
   };
@@ -4671,16 +4603,16 @@ async function maybeEnhanceCommanderInsightWithAi(
   if (!apiKey) return fallbackInsight;
 
   const model = process.env.OPENAI_TEXT_MODEL?.trim() || "gpt-4.1-mini";
-  const prompt = `You are Blackspire's AI Deal Commander. Refine the fallback commander insight for this wholesale real-estate deal and return valid JSON only.
+  const prompt = `You are Blackspire's AI Deal Commander. Refine the fallback commander insight for this ${detail.underwriting.strategy} real-estate analysis and return valid JSON only.
 
 Return exactly this shape:
 {
   "priority": "High" | "Medium" | "Low",
   "confidenceScore": number,
   "suggestedNextAction": string,
-  "estimatedMao": number,
-  "offerRangeLow": number,
-  "offerRangeHigh": number,
+  "estimatedMao": number | null,
+  "offerRangeLow": number | null,
+  "offerRangeHigh": number | null,
   "negotiationAngle": string,
   "sellerPainPointHypothesis": string,
   "buyerFitSummary": string,
@@ -4692,7 +4624,8 @@ Return exactly this shape:
 Rules:
 - Stay grounded in the provided deal data.
 - Keep the tone tactical, operator-facing, and concise.
-- Do not invent buyers, valuations, or contact data that are not supported.
+- Do not invent buyers, valuations, contact data, purchase terms, timelines or offer ranges.
+- Keep numeric fields exactly as supplied. A rental strategy does not require ARV, wholesale spread, or an assignment buyer.
 
 Deal data:
 - Deal id: ${detail.lead.id}
@@ -4752,15 +4685,16 @@ ${JSON.stringify(fallbackInsight)}`;
     };
 
     return {
+      strategy: fallbackInsight.strategy,
       priority:
         parsed.priority === "High" || parsed.priority === "Medium" || parsed.priority === "Low"
           ? parsed.priority
           : fallbackInsight.priority,
       confidenceScore: Math.max(1, Math.min(100, Math.round(Number(parsed.confidenceScore ?? fallbackInsight.confidenceScore)))),
       suggestedNextAction: String(parsed.suggestedNextAction ?? fallbackInsight.suggestedNextAction),
-      estimatedMao: Math.max(0, Math.round(Number(parsed.estimatedMao ?? fallbackInsight.estimatedMao))),
-      offerRangeLow: Math.max(0, Math.round(Number(parsed.offerRangeLow ?? fallbackInsight.offerRangeLow))),
-      offerRangeHigh: Math.max(0, Math.round(Number(parsed.offerRangeHigh ?? fallbackInsight.offerRangeHigh))),
+      estimatedMao: fallbackInsight.estimatedMao,
+      offerRangeLow: fallbackInsight.offerRangeLow,
+      offerRangeHigh: fallbackInsight.offerRangeHigh,
       negotiationAngle: String(parsed.negotiationAngle ?? fallbackInsight.negotiationAngle),
       sellerPainPointHypothesis: String(parsed.sellerPainPointHypothesis ?? fallbackInsight.sellerPainPointHypothesis),
       buyerFitSummary: String(parsed.buyerFitSummary ?? fallbackInsight.buyerFitSummary),
@@ -4901,10 +4835,10 @@ function dealFieldPayload(detail: DealEngineDealDetail, emd: DealEmdTrackerRecor
   const terms = deriveContractTerms(detail);
   const fallbackClosingDate = inferClosingDate(detail);
   const inspectionDeadline = detail.coordination.inspectionEndsOn || inferInspectionPeriod(detail);
-  const originalPurchasePrice = assignment?.sellerContractPrice || terms.purchasePrice || 0;
-  const assignmentPrice = assignment?.buyerAssignmentPrice || (originalPurchasePrice + (assignment?.assignmentFee || terms.assignmentFee || 0));
-  const assignmentFee = assignment?.assignmentFee || terms.assignmentFee || 0;
-  const emdAmount = emd?.emdAmount || terms.earnestMoney || 0;
+  const originalPurchasePrice = assignment?.sellerContractPrice ?? terms.purchasePrice;
+  const assignmentPrice = assignment?.buyerAssignmentPrice ?? null;
+  const assignmentFee = assignment?.assignmentFee ?? terms.assignmentFee;
+  const emdAmount = emd?.id != null ? emd.emdAmount : terms.earnestMoney;
 
   return {
     deal_id: detail.lead.id,
@@ -4914,7 +4848,7 @@ function dealFieldPayload(detail: DealEngineDealDetail, emd: DealEmdTrackerRecor
     assignee_name: inferBuyerOrAssigneeName(detail),
     original_seller_name: detail.sellerContact.ownerName || detail.lead.ownerName || "",
     property_address: detail.lead.propertyAddress || "",
-    purchase_price: terms.purchasePrice,
+    purchase_price: originalPurchasePrice,
     original_purchase_price: originalPurchasePrice,
     assignment_price: assignmentPrice,
     assignment_fee: assignmentFee,
@@ -5036,42 +4970,30 @@ function buildTemplateSafetyLines(template: DealContractTemplateRecord) {
 }
 
 function inferBuyerOrAssigneeName(detail: DealEngineDealDetail) {
-  return detail.closeout?.buyerName?.trim()
-    || detail.investorResponses[0]?.investorName?.trim()
-    || detail.buyerSignals[0]?.buyerName?.trim()
-    || "Assignee / Buyer TBD";
+  return detail.closeout?.buyerName?.trim() || "";
 }
 
 function inferClosingDate(detail: DealEngineDealDetail) {
-  return detail.coordination.closingDate || detail.closeout?.closedAt || "TBD";
+  return detail.coordination.closingDate || detail.closeout?.closedAt || "";
 }
 
 function inferInspectionPeriod(detail: DealEngineDealDetail) {
-  return detail.coordination.inspectionEndsOn || detail.contractDraft?.earnestMoney || "14 days";
+  return detail.coordination.inspectionEndsOn || "";
 }
 
 function deriveContractTerms(detail: DealEngineDealDetail) {
-  const purchasePrice =
-    detail.underwriting.purchasePriceTarget
-    || detail.underwriting.maximumAllowableOffer
-    || Number(detail.lead.mao.replace(/[^0-9.-]/g, "")) || 0;
-  const assignmentFee =
-    detail.underwriting.assignmentFeeTarget
-    || Number(detail.lead.assignmentFee.replace(/[^0-9.-]/g, "")) || 0;
-  const earnestMoney =
-    Number(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) || 0;
-
+  // Underwriting targets and buyer candidates are not agreed transaction terms.
   return {
     sellerName: detail.sellerContact.ownerName || detail.lead.ownerName,
     buyerName: inferBuyerOrAssigneeName(detail),
     propertyAddress: detail.lead.propertyAddress,
-    purchasePrice,
-    assignmentFee,
-    earnestMoney,
+    purchasePrice: null as number | null,
+    assignmentFee: null as number | null,
+    earnestMoney: nullableMoney(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")),
     closingDate: inferClosingDate(detail),
-    titleCompany: detail.coordination.titleCompany || "Title Company TBD",
-    inspectionPeriod: detail.coordination.inspectionEndsOn || "14 days",
-    specialTerms: detail.coordination.coordinationNotes || detail.packet.contactInstructions || "No additional special terms entered yet.",
+    titleCompany: detail.coordination.titleCompany || "",
+    inspectionPeriod: inferInspectionPeriod(detail),
+    specialTerms: detail.coordination.coordinationNotes || "",
   };
 }
 
@@ -5195,7 +5117,9 @@ function computeEmdStatusTone(status: DealEmdTrackerRecord["emdStatus"]) {
 
 function toEmdTrackerRecord(row: DealEmdTrackerRow | null, detail: DealEngineDealDetail): DealEmdTrackerRecord {
   const emdDueDate = row?.emd_due_date ?? detail.coordination.inspectionEndsOn ?? "";
-  const amount = asNumber(row?.emd_amount) || Number(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) || 0;
+  const amount = row?.emd_amount != null
+    ? asNumber(row.emd_amount)
+    : nullableMoney(detail.contractDraft?.earnestMoney.replace(/[^0-9.-]/g, "")) ?? 0;
   let emdStatus = (row?.emd_status as DealEmdTrackerRecord["emdStatus"] | null) ?? "pending";
   const alertFlags: string[] = [];
   if (!row?.emd_holder?.trim()) alertFlags.push("No EMD holder assigned.");
@@ -5227,22 +5151,17 @@ function toEmdTrackerRecord(row: DealEmdTrackerRow | null, detail: DealEngineDea
 }
 
 function toAssignmentTrackerRecord(row: DealAssignmentFeeTrackerRow | null, detail: DealEngineDealDetail): DealAssignmentFeeTrackerRecord {
-  const sellerContractPrice =
-    asNumber(row?.seller_contract_price)
-    || detail.underwriting.purchasePriceTarget
-    || detail.underwriting.maximumAllowableOffer
-    || 0;
-  const assignmentFeeSeed =
-    asNumber(row?.assignment_fee)
-    || detail.underwriting.assignmentFeeTarget
-    || Number(detail.lead.assignmentFee.replace(/[^0-9.-]/g, "")) || 0;
-  const buyerAssignmentPrice =
-    asNumber(row?.buyer_assignment_price)
-    || (sellerContractPrice && assignmentFeeSeed ? sellerContractPrice + assignmentFeeSeed : 0);
-  const assignmentFee = clampMoney(buyerAssignmentPrice - sellerContractPrice);
-  const titleCompanyFee = asNumber(row?.title_company_fee);
-  const otherClosingCosts = asNumber(row?.other_closing_costs);
-  const expectedNetFee = clampMoney(assignmentFee - titleCompanyFee - otherClosingCosts);
+  // Actual transaction terms stay separate from underwriting targets and ceilings.
+  const sellerContractPrice = nullableMoney(row?.seller_contract_price);
+  const buyerAssignmentPrice = nullableMoney(row?.buyer_assignment_price);
+  const assignmentFee = sellerContractPrice != null && buyerAssignmentPrice != null
+    ? nullableMoney(buyerAssignmentPrice - sellerContractPrice)
+    : nullableMoney(row?.assignment_fee);
+  const titleCompanyFee = nullableMoney(row?.title_company_fee);
+  const otherClosingCosts = nullableMoney(row?.other_closing_costs);
+  const expectedNetFee = assignmentFee != null && titleCompanyFee != null && otherClosingCosts != null
+    ? nullableMoney(assignmentFee - titleCompanyFee - otherClosingCosts)
+    : nullableMoney(row?.expected_net_fee);
   const payoutStatus = (row?.payout_status as DealAssignmentFeeTrackerRecord["payoutStatus"] | null) ?? "projected";
   const closingWarning =
     ["projected", "pending_closing", "delayed"].includes(payoutStatus)
@@ -5762,6 +5681,28 @@ export async function prepareDealSignaturePacket(input: {
 }) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { data: draft, error: draftError } = await supabase.from("deal_contract_drafts")
+    .select("template_id,template_type,metadata,legal_disclaimer_acknowledged,generated_body,body")
+    .eq("deal_id", input.dealId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  if (draftError) return { ok: false as const, error: draftError.message };
+  if (!draft?.template_id || !draft.template_type || !(draft.generated_body || draft.body)?.trim()) {
+    return { ok: false as const, error: "Save a reviewed contract draft with a registered template before preparing a signature packet." };
+  }
+  const templateKey = typeof draft.metadata?.templateKey === "string" ? draft.metadata.templateKey : undefined;
+  const validation = await validateDealFieldsForTemplate(input.dealId, draft.template_type, { templateKey, requestedUse: draft.template_type });
+  if (!validation || validation.template.id !== draft.template_id || !validation.purposeValid || !validation.canGenerate || validation.template.approvalStatus === "reference_only") {
+    return { ok: false as const, error: validation?.blockingError || "The saved draft template is not eligible for signature preparation." };
+  }
+  const unresolvedFields = validation.template.requiredFields.filter((field) => {
+    const value = validation.availableFields[field]?.trim() || "";
+    return !value || /^(?:TBD|Not entered|Unknown(?: .*)?|.*\{\{.*)$/i.test(value);
+  });
+  if (validation.missingFields.length || unresolvedFields.length) {
+    return { ok: false as const, error: `Complete and verify required fields before signature preparation: ${[...new Set([...validation.missingFields, ...unresolvedFields])].join(", ")}.` };
+  }
+  if (validation.disclaimerRequired && !draft.legal_disclaimer_acknowledged) {
+    return { ok: false as const, error: "Acknowledge the draft review disclaimer before signature preparation." };
+  }
   const provider = input.signatureProvider?.trim() || "DocuSign";
   const packetUrl = `provider-placeholder://${sanitizeDraftType(provider)}/${encodeURIComponent(input.dealId)}`;
   const { error } = await supabase.from("deal_signature_packets").upsert({
@@ -5864,16 +5805,26 @@ export async function getDealEmdStatus(dealId: string): Promise<DealEmdTrackerRe
 export async function updateDealEmdTracker(dealId: string, payload: Partial<DealEmdTrackerRecord>) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
+  const { data: existing, error: readError } = await supabase.from("deal_emd_trackers")
+    .select("emd_amount,emd_due_date,emd_holder,emd_holder_type,emd_status,emd_payment_method,emd_receipt_url,emd_notes")
+    .eq("deal_id", dealId).maybeSingle();
+  if (readError) return { ok: false as const, error: readError.message };
+  let amount: number | null;
+  try {
+    amount = parseInvestmentAmount(Object.prototype.hasOwnProperty.call(payload, "emdAmount") ? payload.emdAmount : existing?.emd_amount);
+  } catch {
+    return { ok: false as const, error: "Enter a valid non-negative purchase deposit amount." };
+  }
   const { error } = await supabase.from("deal_emd_trackers").upsert({
     deal_id: dealId,
-    emd_amount: payload.emdAmount ?? 0,
-    emd_due_date: payload.emdDueDate ?? "",
-    emd_holder: payload.emdHolder ?? "",
-    emd_holder_type: payload.emdHolderType ?? "title_company",
-    emd_status: payload.emdStatus ?? "pending",
-    emd_payment_method: payload.emdPaymentMethod ?? "",
-    emd_receipt_url: payload.emdReceiptUrl ?? "",
-    emd_notes: payload.emdNotes ?? "",
+    emd_amount: amount,
+    emd_due_date: payload.emdDueDate ?? existing?.emd_due_date ?? "",
+    emd_holder: payload.emdHolder ?? existing?.emd_holder ?? "",
+    emd_holder_type: payload.emdHolderType ?? existing?.emd_holder_type ?? "title_company",
+    emd_status: payload.emdStatus ?? existing?.emd_status ?? "pending",
+    emd_payment_method: payload.emdPaymentMethod ?? existing?.emd_payment_method ?? "",
+    emd_receipt_url: payload.emdReceiptUrl ?? existing?.emd_receipt_url ?? "",
+    emd_notes: payload.emdNotes ?? existing?.emd_notes ?? "",
     updated_at: new Date().toISOString(),
   }, { onConflict: "deal_id" });
   if (error) return { ok: false as const, error: error.message };
@@ -5893,12 +5844,26 @@ export async function calculateDealAssignmentFee(dealId: string): Promise<DealAs
 export async function updateDealAssignmentTracker(dealId: string, payload: Partial<DealAssignmentFeeTrackerRecord>) {
   const supabase = getSupabaseAdmin();
   if (!supabase) return { ok: false as const, error: `Missing Supabase env: ${getEnvState().missing.join(", ")}` };
-  const sellerContractPrice = asNumber(payload.sellerContractPrice);
-  const buyerAssignmentPrice = asNumber(payload.buyerAssignmentPrice);
-  const assignmentFee = clampMoney(buyerAssignmentPrice - sellerContractPrice);
-  const titleCompanyFee = asNumber(payload.titleCompanyFee);
-  const otherClosingCosts = asNumber(payload.otherClosingCosts);
-  const expectedNetFee = clampMoney(assignmentFee - titleCompanyFee - otherClosingCosts);
+  const { data: existing, error: readError } = await supabase.from("deal_assignment_fee_trackers")
+    .select("seller_contract_price,buyer_assignment_price,title_company_fee,other_closing_costs,payout_status,payout_due_date,payout_received_at,payout_notes")
+    .eq("deal_id", dealId).maybeSingle();
+  if (readError) return { ok: false as const, error: readError.message };
+  const fields = ["sellerContractPrice", "buyerAssignmentPrice", "titleCompanyFee", "otherClosingCosts"] as const;
+  const columns = ["seller_contract_price", "buyer_assignment_price", "title_company_fee", "other_closing_costs"] as const;
+  const amounts: (number | null)[] = [];
+  for (const [index, field] of fields.entries()) {
+    const value = Object.prototype.hasOwnProperty.call(payload, field) ? payload[field] : existing?.[columns[index]];
+    try {
+      amounts.push(parseInvestmentAmount(value));
+    } catch {
+      return { ok: false as const, error: `Enter a valid non-negative amount for ${field}.` };
+    }
+  }
+  const [sellerContractPrice, buyerAssignmentPrice, titleCompanyFee, otherClosingCosts] = amounts;
+  const assignmentFee = sellerContractPrice != null && buyerAssignmentPrice != null
+    ? nullableMoney(buyerAssignmentPrice - sellerContractPrice) : null;
+  const expectedNetFee = assignmentFee != null && titleCompanyFee != null && otherClosingCosts != null
+    ? nullableMoney(assignmentFee - titleCompanyFee - otherClosingCosts) : null;
   const { error } = await supabase.from("deal_assignment_fee_trackers").upsert({
     deal_id: dealId,
     seller_contract_price: sellerContractPrice,
@@ -5907,10 +5872,10 @@ export async function updateDealAssignmentTracker(dealId: string, payload: Parti
     expected_net_fee: expectedNetFee,
     title_company_fee: titleCompanyFee,
     other_closing_costs: otherClosingCosts,
-    payout_status: payload.payoutStatus ?? "projected",
-    payout_due_date: payload.payoutDueDate ?? "",
-    payout_received_at: payload.payoutReceivedAt ?? "",
-    payout_notes: payload.payoutNotes ?? "",
+    payout_status: payload.payoutStatus ?? existing?.payout_status ?? "projected",
+    payout_due_date: payload.payoutDueDate ?? existing?.payout_due_date ?? "",
+    payout_received_at: payload.payoutReceivedAt ?? existing?.payout_received_at ?? "",
+    payout_notes: payload.payoutNotes ?? existing?.payout_notes ?? "",
     updated_at: new Date().toISOString(),
   }, { onConflict: "deal_id" });
   if (error) return { ok: false as const, error: error.message };

@@ -43,10 +43,9 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
 
   const quickActions = [
     { label: "Call / Contact Seller", href: view.related.sellerLeadId ? "/workspace/nexus" : "/workspace/harvester" },
-    { label: view.deal ? "Open Deal" : "Create Deal", href: view.deal ? `/workspace/deal-engine/${view.deal.dealId}` : "/workspace/deal-engine" },
+    { label: view.deal ? "Open linked deal" : "Open deal workspace", href: view.deal ? `/workspace/deal-engine/${view.deal.dealId}` : "/workspace/deal-engine" },
     { label: "Find Buyers", href: "#buyers" },
-    { label: "Open Contract", href: view.deal ? `/workspace/deal-engine/${view.deal.dealId}` : "#" },
-    { label: "Open Title", href: view.deal ? `/workspace/deal-engine/${view.deal.dealId}` : "#" },
+    ...(view.deal ? [{ label: "Contract and closing", href: `/workspace/deal-engine/${view.deal.dealId}` }] : []),
     { label: "View in Sentinel", href: "/workspace/sentinel" },
   ];
 
@@ -54,10 +53,11 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
     <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.1),transparent_34%),linear-gradient(180deg,#020403,#06090b_44%,#020303)]">
       <div className="relative z-10 mx-auto max-w-[1320px] px-4 py-8 lg:px-6 lg:py-10 space-y-6">
         {/* Header + Next Best Action */}
-        <div className="brand-panel p-6 lg:p-7">
+        <div id="overview" className="brand-panel scroll-mt-6 p-6 lg:p-7">
+          <Link href="/workspace/property" className="inline-flex min-h-11 items-center text-sm text-[#5eead4] underline">Back to properties</Link>
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-[10px] uppercase tracking-[0.4em] text-[#5eead4]">Property Command</div>
+              <div className="text-[10px] uppercase tracking-[0.4em] text-[#5eead4]">Property overview</div>
               <h1 className="mt-2 text-3xl font-black tracking-[0.04em] text-white sm:text-4xl">{view.property.address}</h1>
               <p className="mt-2 text-sm text-[var(--copy-soft)]">
                 {[view.property.city, view.property.county && `${view.property.county} County`, view.property.state, view.property.zip].filter(Boolean).join(" · ")}
@@ -102,18 +102,52 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
           </div>
         </div>
 
+        <nav aria-label="Property sections" className="brand-panel p-4">
+          <p className="mb-3 text-sm text-[var(--copy-soft)]">Open any section whenever you need it. You do not have to finish the numbers first.</p>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["Overview", "overview"], ["Property details", "property-details"],
+              ["Research", "research"], ["Seller and owner", "seller-owner"],
+              ["Potential buyers", "buyers"], ["Deal and documents", "records"], ["Activity and notes", "timeline"],
+            ].map(([label, target]) => (
+              <a key={target} href={"#" + target} className="inline-flex min-h-11 items-center rounded-xl border border-[var(--line)] px-4 text-sm text-white hover:border-[#2dd4bf] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2dd4bf]">{label}</a>
+            ))}
+          </div>
+        </nav>
+
+        <section id="research" aria-labelledby="research-heading" className="brand-panel scroll-mt-6 p-6">
+          <h2 id="research-heading" className="text-lg font-bold text-white">Property research</h2>
+          <p className="mt-2 text-sm text-[var(--copy-soft)]">These checks are not available in this property view yet. Missing information means not checked, not that no loans or liens exist.</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {[
+              ["Sold comparisons", "Not loaded", "Collect sale price and date, distance, size and condition, with a source link and date checked. Assessed value is not a sold comparison."],
+              ["Loans and payoff", "Not verified", "Confirm recorded loan documents and obtain a current payoff if needed. Original loan amount is not today's balance."],
+              ["Liens and title", "Not checked", "Record the search source, date and any outstanding findings. An empty result is not confirmation of clear title."],
+            ].map(([label, status, help]) => (
+              <div key={label} className="rounded-xl border border-[var(--line)] p-4">
+                <h3 className="font-semibold text-white">{label}</h3>
+                <p className="mt-2 text-sm text-amber-200">{status}</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{help}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-sm text-[var(--copy-soft)]">Keep research findings with the existing deal documents or seller notes. This page does not start a paid search or create another property record.</p>
+        </section>
+
         {/* Scores + Revenue */}
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <ScoreCard label="Opportunity Score™" value={String(view.scores.opportunity.score)} sub={view.scores.opportunity.tier} color={opportunityTierColor(view.scores.opportunity.tier)} />
           <ScoreCard label="Deal Readiness" value={view.scores.dealReadiness != null ? String(view.scores.dealReadiness) : "—"} sub={view.scores.dealReadinessCategory ?? "No deal yet"} color={view.scores.dealReadinessCategory ? readinessColor(view.scores.dealReadinessCategory as never) : "#94a3b8"} />
-          <ScoreCard label="Property Health" value={String(view.scores.propertyHealth.score)} sub={view.scores.propertyHealth.category} color={healthColor(view.scores.propertyHealth.category)} />
-          <ScoreCard label="Expected Revenue" value={view.expectedRevenue != null ? `$${view.expectedRevenue.toLocaleString()}` : "—"} sub={view.potentialAssignmentValue ? `of $${view.potentialAssignmentValue.toLocaleString()} potential` : "potential unknown"} color="#d6a84f" />
+          <ScoreCard label="Workflow information score" value={String(view.scores.propertyHealth.score)} sub={view.scores.propertyHealth.category} color={healthColor(view.scores.propertyHealth.category)} />
+          <ScoreCard label="Weighted assignment estimate" value={view.expectedRevenue != null ? `$${view.expectedRevenue.toLocaleString()}` : "—"} sub={view.potentialAssignmentValue != null ? `From $${view.potentialAssignmentValue.toLocaleString()} potential fee; not profit or committed revenue` : "Fee unknown; not a profit calculation"} color="#d6a84f" />
         </div>
+
+        <p className="text-sm text-[var(--copy-soft)]">Scores summarize recorded workflow information. They do not confirm property condition, clear title, a signed contract or available buyer funds.</p>
 
         {/* Quick actions */}
         <div className="flex flex-wrap gap-3">
           {quickActions.map((action) => (
-            <Link key={action.label} href={action.href} className="rounded-full border border-[var(--line)] bg-black/30 px-4 py-2 text-xs uppercase tracking-[0.18em] text-white transition hover:border-[#2dd4bf] hover:text-[#5eead4]">
+            <Link key={action.label} href={action.href} className="inline-flex min-h-11 items-center rounded-full border border-[var(--line)] bg-black/30 px-4 py-2 text-sm text-white transition hover:border-[#2dd4bf] hover:text-[#5eead4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2dd4bf]">
               {action.label}
             </Link>
           ))}
@@ -122,8 +156,9 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
           {/* Left: property + seller + owner */}
           <div className="space-y-6">
-            <div className="brand-panel p-6">
-              <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Property</div>
+            <div id="property-details" className="brand-panel scroll-mt-6 p-6">
+              <h2 className="text-lg font-bold text-white">Property details</h2>
+              <p className="mt-2 text-sm text-[var(--copy-soft)]">Assessed value is a tax-record figure, not the asking price or expected resale value. Source dates and verification are not available in this view.</p>
               <dl className="mt-4 space-y-2 text-sm">
                 {[
                   ["Type", view.property.propertyType ?? "Unknown"],
@@ -138,8 +173,8 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
               </dl>
             </div>
 
-            <div className="brand-panel p-6">
-              <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Seller & Owner</div>
+            <div id="seller-owner" className="brand-panel scroll-mt-6 p-6">
+              <h2 className="text-lg font-bold text-white">Seller and owner</h2>
               <dl className="mt-4 space-y-2 text-sm">
                 {[
                   ["Owner", view.owner?.name ?? "Unknown"],
@@ -161,15 +196,18 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
 
           {/* Right: buyers + related */}
           <div className="space-y-6">
-            <div id="buyers" className="brand-panel p-6">
+            <div id="buyers" className="brand-panel scroll-mt-6 p-6">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Buyer Matches</div>
+                <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Potential buyer matches</div>
                 <span className="rounded-full px-3 py-1 text-[10px] uppercase tracking-wider" style={{ color: view.buyers.assignmentPotential === "high" ? "#34d399" : view.buyers.assignmentPotential === "medium" ? "#fbbf24" : "#94a3b8", background: "rgba(45,212,191,0.1)" }}>
-                  {view.buyers.buyerCount} buyers · {view.buyers.assignmentPotential} demand
+                  {view.buyerMatchError ? "Check unavailable" : `${view.buyers.buyerCount} indexed · ${view.buyers.assignmentPotential} matching signal`}
                 </span>
               </div>
+              <p className="mt-3 text-sm text-[var(--copy-soft)]">Matches are research candidates, not committed buyers. Current purchase criteria, interest in this property and independent funding still need confirmation.</p>
               <div className="mt-4 space-y-3">
-                {view.buyers.matches.length ? (
+                {view.buyerMatchError ? (
+                  <p role="status" className="text-sm text-amber-200">{view.buyerMatchError} Buyer availability is unknown; retry before interpreting the matching signal.</p>
+                ) : view.buyers.matches.length ? (
                   view.buyers.matches.slice(0, 6).map((buyer) => (
                     <div key={buyer.buyerId} className="rounded-[14px] border border-[var(--line)] p-3">
                       <div className="flex items-center justify-between gap-2">
@@ -181,13 +219,14 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm text-[var(--copy-soft)]">No buyers indexed for {view.property.county ?? "this county"} yet. Launch a Buyer Engine search to ingest them.</div>
+                  <div className="text-sm text-[var(--copy-soft)]">No matching candidates were returned for this property. Review the search criteria or add buyer activity in Buyer Engine; this does not establish that no buyers exist.</div>
                 )}
               </div>
             </div>
 
-            <div className="brand-panel p-6">
-              <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Related Records</div>
+            <div id="records" className="brand-panel scroll-mt-6 p-6">
+              <h2 className="text-lg font-bold text-white">Deal and documents</h2>
+              <p className="mt-2 text-sm text-[var(--copy-soft)]">{view.deal ? "Open the linked deal for its numbers, documents and closing checklist." : "No deal is linked to this property. Open the deal workspace to review existing deals before creating another record."}</p>
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {[
                   { label: "Seller Lead", href: view.related.sellerLeadId ? "/seller-engine" : null, ok: Boolean(view.related.sellerLeadId) },
@@ -200,7 +239,7 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
                   rec.href ? (
                     <Link key={rec.label} href={rec.href} className="rounded-[12px] border border-[var(--line)] p-3 text-center text-xs transition hover:border-[#2dd4bf]">
                       <div className="text-white">{rec.label}</div>
-                      <div className="mt-1 text-[10px]" style={{ color: rec.ok ? "#34d399" : "#94a3b8" }}>{rec.ok ? "linked" : "—"}</div>
+                      <div className="mt-1 text-[10px]" style={{ color: rec.ok ? "#34d399" : "#94a3b8" }}>{rec.label === "Buyers" && view.buyerMatchError ? "check unavailable" : rec.ok ? "available" : "not recorded"}</div>
                     </Link>
                   ) : (
                     <div key={rec.label} className="rounded-[12px] border border-[var(--line)] p-3 text-center text-xs opacity-50">
@@ -215,7 +254,7 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
         </div>
 
         {/* Timeline */}
-        <div id="timeline" className="brand-panel p-6">
+        <div id="timeline" className="brand-panel scroll-mt-6 p-6">
           <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Activity Timeline</div>
           <div className="mt-4 space-y-3">
             {view.timeline.length ? (

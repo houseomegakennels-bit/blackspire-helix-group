@@ -11,38 +11,38 @@ type WorkflowStage = {
 const stages: WorkflowStage[] = [
   {
     id: "harvester",
-    label: "Harvester",
+    label: "Add property",
     href: "/workspace/harvester",
-    action: "Capture opportunity",
+    action: "Add a listing or lead",
     detail: "Ingest marketplace posts, screenshots, flyers, PDFs, and pasted deal chatter.",
   },
   {
     id: "seller",
-    label: "Seller",
+    label: "Seller leads",
     href: "/seller-engine",
     action: "Find and qualify",
     detail: "Source, score, and organize motivated seller leads.",
   },
   {
     id: "nexus",
-    label: "Nexus",
+    label: "Contacts",
     href: "/workspace/nexus",
-    action: "Resolve contact",
-    detail: "Run skip trace and confirm the decision-maker lane.",
+    action: "Check contact details",
+    detail: "Review contact sources and confirm who can make the selling decision.",
   },
   {
     id: "deal",
-    label: "Deal",
+    label: "Property workspace",
     href: "/workspace/deal-engine",
-    action: "Execute deal",
-    detail: "Underwrite, contract, package, coordinate, and close.",
+    action: "Review, offer and close",
+    detail: "Research the property, run numbers, review contracts and track closing.",
   },
   {
     id: "buyer",
-    label: "Buyer",
+    label: "Buyer contacts",
     href: "/workspace/buyer-engine",
-    action: "Activate exit",
-    detail: "Match buyers, launch outreach, and track disposition.",
+    action: "Find potential buyers",
+    detail: "Review buyer criteria, prepare outreach and track responses.",
   },
 ];
 
@@ -65,7 +65,8 @@ export function RealEstateWorkflowRail({
             <Link
               key={stage.id}
               href={stage.href}
-              className={`block rounded-[14px] border px-3 py-3 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] ${
+              aria-current={current ? "page" : undefined}
+              className={`block min-h-11 rounded-[14px] border px-3 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)] transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] ${
                 current
                   ? "border-[var(--line-strong)] bg-[var(--project-surface)] text-white"
                   : "border-[var(--line)] bg-[hsl(0_0%_100%/.02)] text-[var(--copy-soft)]"
@@ -77,7 +78,7 @@ export function RealEstateWorkflowRail({
                 </span>
                 {current ? (
                   <span className="rounded-full border border-[var(--line)] px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[var(--gold-soft)]">
-                    active
+                    current section
                   </span>
                 ) : null}
               </div>

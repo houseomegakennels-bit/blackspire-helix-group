@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-10-08 — Peggy usability completion on current main
+
+Preserve current-main Buyer authority and read-only controls while integrating Peggy usability changes; do not replace current canonical records with the old worktree files. The internal analysis capability must use saved strategy/formula settings, preserve null/zero/signed cents, and describe rental cash flow separately from resale/assignment ceilings. Desktop and phone browser verification can use explicit fictional adapters without loading production credentials; release acceptance remains a distinct step.
+
 ## 2026-09-18 — mutating Buyer Writer calls require API-held operation permits
 
 The local socket capability authenticates the API to the gateway but does not itself authorize a database mutation. Production `issue`, `cancel`, `reconcile`, `apply` and `receipt` calls must be converted into fresh, bounded Ed25519 permits by the API and sent through the admission bridge; a rejected or uncertain admission never falls back to a legacy mutation. Issuance preserves the caller-generated dispatch UUID as both the request parameter and signed permit request while minting a distinct fresh JTI; static release operation authority cannot replace it. Recovery is a separate signed operation bound to the original issuer, JTI, request, body digest and route operation; it may correlate an outcome but may never replay the original mutation. Read-only `context` may continue through the restricted runtime statement. The signing private key is owned by the API identity as a single-link mode-`0600` inode, while its root-owned descriptor is separately published to the API private group and bound to the exact gateway authority. Private socket publication must also keep its randomized backing pathname within Linux `sun_path` while retaining exact descriptor/inode/path proof and no-replace publication.

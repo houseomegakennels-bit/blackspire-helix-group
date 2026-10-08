@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Panel, StatusPill } from "@/components/buyer-shell";
+import type { InvestmentStrategy } from "@/lib/investment-analysis";
 import type { DealCommanderInsight } from "@/lib/deal-engine-server";
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number | null) {
+  if (value == null) return "Not entered";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function priorityTone(priority: DealCommanderInsight["priority"]) {
@@ -42,9 +44,11 @@ async function fetchCommanderInsight(dealId: string) {
 export function DealCommanderPanel({
   dealId,
   initialInsight,
+  strategy,
 }: {
   dealId: string;
   initialInsight: DealCommanderInsight | null;
+  strategy: InvestmentStrategy;
 }) {
   const [insight, setInsight] = useState(initialInsight);
   const [loading, setLoading] = useState(!initialInsight);
@@ -171,20 +175,20 @@ export function DealCommanderPanel({
                   Suggested next action
                 </div>
                 <div className="mt-3 text-lg font-semibold text-white">{insight.suggestedNextAction}</div>
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {strategy === "rental" ? <p className="mt-5 text-sm leading-6 text-[var(--copy-soft)]">Rental cash flow and acquisition costs are shown in Saved numbers and results. A resale-based purchase ceiling is not applicable to the rental calculation. Review any purchase terms separately.</p> : <div className="mt-5 grid gap-3 md:grid-cols-3">
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Estimated MAO</div>
-                    <div className="brand-accent-text mt-2 text-xl font-semibold">{formatCurrency(insight.estimatedMao)}</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Calculated purchase ceiling</div>
+                    <div className="brand-accent-text mt-2 text-xl font-semibold">{insight.estimatedMao == null ? "Not available from analysis" : formatCurrency(insight.estimatedMao)}</div>
                   </div>
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Offer low</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Entered proposed lower amount</div>
                     <div className="mt-2 text-xl font-semibold text-white">{formatCurrency(insight.offerRangeLow)}</div>
                   </div>
                   <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Offer high</div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Entered proposed upper amount</div>
                     <div className="mt-2 text-xl font-semibold text-white">{formatCurrency(insight.offerRangeHigh)}</div>
                   </div>
-                </div>
+                </div>}
               </div>
 
               <div className="brand-card p-5">
@@ -203,7 +207,7 @@ export function DealCommanderPanel({
                     ))
                   ) : (
                     <div className="rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 text-sm leading-6 text-[var(--copy-soft)]">
-                      No critical risk flags are currently blocking operator action.
+                      No flags were generated from the available information. This does not confirm title, signing authority, funding or approval.
                     </div>
                   )}
                 </div>

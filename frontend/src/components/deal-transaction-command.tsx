@@ -18,12 +18,13 @@ import type {
 
 type TabKey = "overview" | "contracts" | "emd" | "assignment" | "title" | "timeline" | "documents";
 
-function formatCurrency(value: number) {
+function formatCurrency(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "Not entered";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value || 0);
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function canPrepareForSignature(
@@ -100,12 +101,12 @@ export function DealTransactionCommand({
     },
     assignmentTracker: {
       id: null,
-      sellerContractPrice: 0,
-      buyerAssignmentPrice: 0,
-      assignmentFee: 0,
-      expectedNetFee: 0,
-      titleCompanyFee: 0,
-      otherClosingCosts: 0,
+      sellerContractPrice: null,
+      buyerAssignmentPrice: null,
+      assignmentFee: null,
+      expectedNetFee: null,
+      titleCompanyFee: null,
+      otherClosingCosts: null,
       payoutStatus: "projected",
       payoutDueDate: "",
       payoutReceivedAt: "",
@@ -298,6 +299,7 @@ export function DealTransactionCommand({
   }
 
   async function updateSignaturePacket(payload: Partial<DealSignaturePacketRecord>, prepare = false) {
+    if (!prepare && payload.signatureStatus && !window.confirm("Have you checked the actual signature packet and confirmed this send or signature? This only records status; it does not send or sign a document.")) return;
     setWorking("signature");
     setStatus(null);
     try {
@@ -347,7 +349,7 @@ export function DealTransactionCommand({
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "EMD save failed.");
       setEmdTracker(payload.tracker);
-      setStatus("EMD tracker updated.");
+      setStatus("Purchase deposit record updated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "EMD save failed.");
     } finally {
@@ -362,7 +364,17 @@ export function DealTransactionCommand({
       const response = await fetch("/api/deal-engine/assignment-fee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dealId, ...assignmentTracker }),
+        body: JSON.stringify({
+          dealId,
+          sellerContractPrice: assignmentTracker.sellerContractPrice,
+          buyerAssignmentPrice: assignmentTracker.buyerAssignmentPrice,
+          titleCompanyFee: assignmentTracker.titleCompanyFee,
+          otherClosingCosts: assignmentTracker.otherClosingCosts,
+          payoutStatus: assignmentTracker.payoutStatus,
+          payoutDueDate: assignmentTracker.payoutDueDate,
+          payoutReceivedAt: assignmentTracker.payoutReceivedAt,
+          payoutNotes: assignmentTracker.payoutNotes,
+        }),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Assignment fee save failed.");
@@ -460,7 +472,7 @@ export function DealTransactionCommand({
   const tabs: Array<{ key: TabKey; label: string }> = [
     { key: "overview", label: "Overview" },
     { key: "contracts", label: "Contracts" },
-    { key: "emd", label: "EMD" },
+    { key: "emd", label: "Purchase deposit" },
     { key: "assignment", label: "Assignment Fee" },
     { key: "title", label: "Title" },
     { key: "timeline", label: "Timeline" },
@@ -470,9 +482,10 @@ export function DealTransactionCommand({
   return (
     <Panel
       eyebrow="Transaction Command"
-      title="Wholesale transaction management"
-      description="A command-center lane for paper, title, deposits, payout tracking, close timing, and document control from contract through disposition and final fee collection."
+      title="Contracts and closing"
+      description="Review contract drafts, track the purchase deposit, record signatures and organize closing documents for this property."
     >
+      <p className="mb-4 text-sm leading-6 text-[var(--copy-soft)]">Proposed terms and saved drafts do not mean a contract is executed. Signature status is an operator record: record sent or signed only after checking the actual provider packet. Preparing a packet does not send it.</p>
       <div className="mb-5 flex flex-wrap gap-2">
         {tabs.map((tab) => (
           <button
@@ -493,7 +506,7 @@ export function DealTransactionCommand({
       {activeTab === "overview" ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="brand-card p-4">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Contracts saved</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Drafts saved</div>
             <div className="brand-accent-text mt-2 text-2xl font-semibold">{snapshot.contracts.length}</div>
           </div>
           <div className="brand-card p-4">
@@ -501,7 +514,7 @@ export function DealTransactionCommand({
             <div className="mt-2 text-lg font-semibold text-white">{snapshot.contractTemplates.length}</div>
           </div>
           <div className="brand-card p-4">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">EMD status</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Purchase deposit status</div>
             <div className="mt-2 text-lg font-semibold text-white">{emdTracker.emdStatus}</div>
           </div>
           <div className="brand-card p-4">
@@ -522,7 +535,7 @@ export function DealTransactionCommand({
 
             <div className="brand-card p-4">
               <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Template Library</div>
-              <select
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Contract template</span><select
                 value={selectedTemplateKey}
                 onChange={(event) => {
                   setSelectedTemplateKey(event.target.value);
@@ -535,7 +548,7 @@ export function DealTransactionCommand({
                     {template.name} / {template.type}{template.state ? ` / ${template.state}` : ""}
                   </option>
                 ))}
-              </select>
+              </select></label>
               <div className="mt-3 flex flex-wrap gap-3">
                 <button
                   type="button"
@@ -614,22 +627,22 @@ export function DealTransactionCommand({
           <div className="space-y-4">
             {contractDraft ? (
               <div className="brand-card p-4">
-                <input
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Draft title</span><input
                   value={contractDraft.title}
                   onChange={(event) => setContractDraft({ ...contractDraft, title: event.target.value })}
                   className="brand-input w-full px-3 py-3 text-sm outline-none"
-                />
-                <textarea
+                /></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Special terms</span><textarea
                   value={contractDraft.specialTerms}
                   onChange={(event) => setContractDraft({ ...contractDraft, specialTerms: event.target.value })}
                   className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none"
                   placeholder="Special terms"
-                />
-                <textarea
+                /></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Contract draft text</span><textarea
                   value={contractDraft.body}
                   onChange={(event) => setContractDraft({ ...contractDraft, body: event.target.value })}
                   className="brand-input mt-3 min-h-[360px] w-full px-3 py-3 text-sm outline-none"
-                />
+                /><span className="text-xs leading-5 text-[var(--copy-muted)]">Saved draft text is not an executed agreement.</span></label>
                 <label className="mt-4 flex items-start gap-3 text-sm text-[var(--copy-soft)]">
                   <input
                     type="checkbox"
@@ -684,16 +697,16 @@ export function DealTransactionCommand({
           </div>
           <div className="brand-card p-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={String(emdTracker.emdAmount || "")} onChange={(event) => setEmdTracker({ ...emdTracker, emdAmount: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD amount" />
-              <input value={emdTracker.emdDueDate} onChange={(event) => setEmdTracker({ ...emdTracker, emdDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD due date" />
-              <input value={emdTracker.emdHolder} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolder: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD holder" />
-              <select value={emdTracker.emdHolderType} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolderType: event.target.value as DealEmdTrackerRecord["emdHolderType"] })} className="brand-input px-3 py-3 text-sm outline-none">
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(emdTracker.emdAmount ?? "")} onChange={(event) => setEmdTracker({ ...emdTracker, emdAmount: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD amount" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Earnest money purchase deposit. Use 0 only if no deposit is required; confirm the agreed amount.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit due date</span><input value={emdTracker.emdDueDate} onChange={(event) => setEmdTracker({ ...emdTracker, emdDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder</span><input value={emdTracker.emdHolder} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolder: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD holder" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder type</span><select value={emdTracker.emdHolderType} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolderType: event.target.value as DealEmdTrackerRecord["emdHolderType"] })} className="brand-input px-3 py-3 text-sm outline-none">
                 <option value="title_company">Title company</option>
                 <option value="attorney">Attorney</option>
                 <option value="broker">Broker</option>
                 <option value="other">Other</option>
-              </select>
-              <select value={emdTracker.emdStatus} onChange={(event) => setEmdTracker({ ...emdTracker, emdStatus: event.target.value as DealEmdTrackerRecord["emdStatus"] })} className="brand-input px-3 py-3 text-sm outline-none">
+              </select></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit status</span><select value={emdTracker.emdStatus} onChange={(event) => setEmdTracker({ ...emdTracker, emdStatus: event.target.value as DealEmdTrackerRecord["emdStatus"] })} className="brand-input px-3 py-3 text-sm outline-none">
                 <option value="not_required">Not required</option>
                 <option value="pending">Pending</option>
                 <option value="submitted">Submitted</option>
@@ -701,13 +714,13 @@ export function DealTransactionCommand({
                 <option value="overdue">Overdue</option>
                 <option value="released">Released</option>
                 <option value="forfeited">Forfeited</option>
-              </select>
-              <input value={emdTracker.emdPaymentMethod} onChange={(event) => setEmdTracker({ ...emdTracker, emdPaymentMethod: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payment method" />
-              <input value={emdTracker.emdReceiptUrl} onChange={(event) => setEmdTracker({ ...emdTracker, emdReceiptUrl: event.target.value })} className="brand-input md:col-span-2 px-3 py-3 text-sm outline-none" placeholder="EMD receipt URL" />
+              </select></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payment method</span><input value={emdTracker.emdPaymentMethod} onChange={(event) => setEmdTracker({ ...emdTracker, emdPaymentMethod: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payment method" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)] md:col-span-2"><span>Deposit receipt URL</span><input value={emdTracker.emdReceiptUrl} onChange={(event) => setEmdTracker({ ...emdTracker, emdReceiptUrl: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD receipt URL" /></label>
             </div>
-            <textarea value={emdTracker.emdNotes} onChange={(event) => setEmdTracker({ ...emdTracker, emdNotes: event.target.value })} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="EMD notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit notes</span><textarea value={emdTracker.emdNotes} onChange={(event) => setEmdTracker({ ...emdTracker, emdNotes: event.target.value })} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="EMD notes" /></label>
             <button type="button" onClick={() => void saveEmdTracker()} disabled={working === "emd"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              Save EMD tracker
+              Save purchase deposit
             </button>
           </div>
         </div>
@@ -716,31 +729,32 @@ export function DealTransactionCommand({
       {activeTab === "assignment" ? (
         <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
           <div className="brand-card p-4">
-            <div className="text-lg font-semibold text-white">Payout posture</div>
+            <div className="text-lg font-semibold text-white">Assignment payout estimate</div>
+            <p className="mt-2 text-sm leading-6 text-[var(--copy-muted)]">Leave unknown amounts blank. Enter 0 only when confirmed. Save changed amounts to recalculate fees; negative results indicate a loss. These figures do not confirm an executed contract or received payout.</p>
             <div className="mt-3 space-y-2 text-sm text-[var(--copy-soft)]">
-              <div>Gross assignment fee: <span className="text-white">{formatCurrency(assignmentTracker.assignmentFee)}</span></div>
-              <div>Expected net payout: <span className="text-white">{formatCurrency(assignmentTracker.expectedNetFee)}</span></div>
+              <div>Saved gross assignment fee: <span className="text-white">{formatCurrency(assignmentTracker.assignmentFee)}</span></div>
+              <div>Saved expected net payout: <span className="text-white">{formatCurrency(assignmentTracker.expectedNetFee)}</span></div>
               <div>Payout status: <span className="text-white">{assignmentTracker.payoutStatus}</span></div>
               {assignmentTracker.closingWarning ? <div className="text-[hsl(22_100%_72%)]">{assignmentTracker.closingWarning}</div> : null}
             </div>
           </div>
           <div className="brand-card p-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={String(assignmentTracker.sellerContractPrice || "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, sellerContractPrice: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Seller contract price" />
-              <input value={String(assignmentTracker.buyerAssignmentPrice || "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, buyerAssignmentPrice: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer assignment price" />
-              <input value={String(assignmentTracker.titleCompanyFee || "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, titleCompanyFee: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company fee" />
-              <input value={String(assignmentTracker.otherClosingCosts || "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, otherClosingCosts: Number(event.target.value || 0) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Other closing costs" />
-              <select value={assignmentTracker.payoutStatus} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutStatus: event.target.value as DealAssignmentFeeTrackerRecord["payoutStatus"] })} className="brand-input px-3 py-3 text-sm outline-none">
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Seller purchase price (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(assignmentTracker.sellerContractPrice ?? "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, sellerContractPrice: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Seller contract price" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>End buyer purchase price (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(assignmentTracker.buyerAssignmentPrice ?? "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, buyerAssignmentPrice: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer assignment price" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Title company fee (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(assignmentTracker.titleCompanyFee ?? "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, titleCompanyFee: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company fee" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Other closing costs (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(assignmentTracker.otherClosingCosts ?? "")} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, otherClosingCosts: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Other closing costs" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout status</span><select value={assignmentTracker.payoutStatus} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutStatus: event.target.value as DealAssignmentFeeTrackerRecord["payoutStatus"] })} className="brand-input px-3 py-3 text-sm outline-none">
                 <option value="projected">Projected</option>
                 <option value="pending_closing">Pending closing</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="paid">Paid</option>
                 <option value="delayed">Delayed</option>
-              </select>
-              <input value={assignmentTracker.payoutDueDate} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout due date" />
-              <input value={assignmentTracker.payoutReceivedAt} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutReceivedAt: event.target.value })} className="brand-input md:col-span-2 px-3 py-3 text-sm outline-none" placeholder="Payout received at" />
+              </select></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout due date</span><input value={assignmentTracker.payoutDueDate} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)] md:col-span-2"><span>Payout received at</span><input value={assignmentTracker.payoutReceivedAt} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutReceivedAt: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout received at" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use an ISO date and time, for example 2026-10-08T15:00:00-04:00. Record actual receipt or completion.</span></label>
             </div>
-            <textarea value={assignmentTracker.payoutNotes} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutNotes: event.target.value })} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Payout notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout notes</span><textarea value={assignmentTracker.payoutNotes} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutNotes: event.target.value })} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Payout notes" /></label>
             <button type="button" onClick={() => void saveAssignmentTracker()} disabled={working === "assignment"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               Save assignment tracker
             </button>
@@ -757,15 +771,15 @@ export function DealTransactionCommand({
                 <StatusPill tone={item.status === "complete" ? "good" : item.status === "blocked" ? "warn" : "neutral"} label={item.status} />
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <select value={item.status} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: event.target.value as DealTitleChecklistItemRecord["status"] } : entry))} className="brand-input px-3 py-3 text-sm outline-none">
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Checklist status</span><select value={item.status} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: event.target.value as DealTitleChecklistItemRecord["status"] } : entry))} className="brand-input px-3 py-3 text-sm outline-none">
                   <option value="pending">Pending</option>
                   <option value="complete">Complete</option>
                   <option value="blocked">Blocked</option>
-                </select>
-                <input value={item.assignedOwner} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, assignedOwner: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assigned owner" />
-                <input value={item.dueDate} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, dueDate: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" />
+                </select></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Assigned owner</span><input value={item.assignedOwner} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, assignedOwner: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assigned owner" /></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input value={item.dueDate} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, dueDate: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
               </div>
-              <textarea value={item.notes} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, notes: event.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes</span><textarea value={item.notes} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, notes: event.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" /></label>
               <button type="button" onClick={() => void updateChecklistItem(titleChecklist.find((entry) => entry.id === item.id)!)} disabled={working === `title-${item.id}`} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save checklist item
               </button>
@@ -783,16 +797,16 @@ export function DealTransactionCommand({
                 <StatusPill tone={event.status === "complete" ? "good" : event.status === "delayed" || event.status === "blocked" ? "warn" : "neutral"} label={event.status} />
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <select value={event.status} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, status: e.target.value as DealClosingTimelineEventRecord["status"] } : entry))} className="brand-input px-3 py-3 text-sm outline-none">
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Timeline status</span><select value={event.status} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, status: e.target.value as DealClosingTimelineEventRecord["status"] } : entry))} className="brand-input px-3 py-3 text-sm outline-none">
                   <option value="upcoming">Upcoming</option>
                   <option value="complete">Complete</option>
                   <option value="delayed">Delayed</option>
                   <option value="blocked">Blocked</option>
-                </select>
-                <input value={event.dueDate} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, dueDate: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" />
-                <input value={event.completedAt} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, completedAt: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Completed at" />
+                </select></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input value={event.dueDate} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, dueDate: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Completed at</span><input value={event.completedAt} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, completedAt: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Completed at" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use an ISO date and time, for example 2026-10-08T15:00:00-04:00. Record actual receipt or completion.</span></label>
               </div>
-              <textarea value={event.notes} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, notes: e.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes</span><textarea value={event.notes} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, notes: e.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" /></label>
               <button type="button" onClick={() => void updateTimelineEvent(timeline.find((entry) => entry.id === event.id)!)} disabled={working === `timeline-${event.id}`} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save timeline event
               </button>
@@ -804,7 +818,7 @@ export function DealTransactionCommand({
       {activeTab === "documents" ? (
         <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
           <form onSubmit={uploadDocument} className="brand-card grid gap-3 p-4">
-            <select name="category" className="brand-input px-3 py-3 text-sm outline-none" defaultValue="purchase_agreement">
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Document category</span><select name="category" className="brand-input px-3 py-3 text-sm outline-none" defaultValue="purchase_agreement">
               <option value="purchase_agreement">Purchase agreement</option>
               <option value="assignment_agreement">Assignment agreement</option>
               <option value="addendum">Addendum</option>
@@ -818,12 +832,12 @@ export function DealTransactionCommand({
               <option value="repair_estimate">Repair estimate</option>
               <option value="buyer_packet">Buyer packet</option>
               <option value="other">Other</option>
-            </select>
-            <input name="owner" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Uploaded by" defaultValue="Blackspire operator" />
-            <input name="status" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Document status" defaultValue="Received" />
-            <input name="source" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Source" defaultValue="internal" />
-            <textarea name="notes" className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" />
-            <input type="file" name="file" className="brand-input px-3 py-3 text-sm outline-none" />
+            </select></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Uploaded by</span><input name="owner" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Uploaded by" defaultValue="Blackspire operator" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Document status</span><input name="status" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Document status" defaultValue="Received" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Source</span><input name="source" className="brand-input px-3 py-3 text-sm outline-none" placeholder="Source" defaultValue="internal" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes</span><textarea name="notes" className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Select document file</span><input type="file" name="file" className="brand-input px-3 py-3 text-sm outline-none" /></label>
             <button type="submit" disabled={working === "documents"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "documents" ? "Uploading..." : "Upload document"}
             </button>
@@ -853,35 +867,35 @@ export function DealTransactionCommand({
           <div className="brand-card p-4">
             <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Signature packet</div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <select value={signaturePacket.signatureProvider} onChange={(event) => setSignaturePacket({ ...signaturePacket, signatureProvider: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none">
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Signature provider</span><select value={signaturePacket.signatureProvider} onChange={(event) => setSignaturePacket({ ...signaturePacket, signatureProvider: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none">
                 <option value="">Select provider</option>
                 {signaturePacket.availableProviders.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
-              </select>
-              <input value={signaturePacket.signerEmail} onChange={(event) => setSignaturePacket({ ...signaturePacket, signerEmail: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signer email" />
-              <input value={signaturePacket.signerRole} onChange={(event) => setSignaturePacket({ ...signaturePacket, signerRole: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signer role" />
-              <input value={signaturePacket.signaturePacketUrl} onChange={(event) => setSignaturePacket({ ...signaturePacket, signaturePacketUrl: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signature packet URL" />
+              </select></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Signer email</span><input type="email" value={signaturePacket.signerEmail} onChange={(event) => setSignaturePacket({ ...signaturePacket, signerEmail: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signer email" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Signer role</span><input value={signaturePacket.signerRole} onChange={(event) => setSignaturePacket({ ...signaturePacket, signerRole: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signer role" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Signature packet URL</span><input value={signaturePacket.signaturePacketUrl} onChange={(event) => setSignaturePacket({ ...signaturePacket, signaturePacketUrl: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Signature packet URL" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Link to the provider packet or supporting evidence; saving this link does not send it.</span></label>
             </div>
             <div className="mt-3 flex flex-wrap gap-3">
-              <button type="button" onClick={() => void updateSignaturePacket(signaturePacket, true)} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Prepare Signature Packet</button>
-              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "sent", sentForSignatureAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Mark Sent</button>
-              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "seller_signed", signedBySellerAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Mark Seller Signed</button>
-              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "buyer_signed", signedByBuyerAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Mark Buyer Signed</button>
+              <button type="button" onClick={() => void updateSignaturePacket(signaturePacket, true)} disabled={!canPrepareForSignature(templateValidation, contractDraft) || working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Prepare Signature Packet</button>
+              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "sent", sentForSignatureAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Record actual send</button>
+              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "seller_signed", signedBySellerAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Record seller signature</button>
+              <button type="button" onClick={() => void updateSignaturePacket({ signatureStatus: "buyer_signed", signedByBuyerAt: new Date().toISOString() })} disabled={working === "signature"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">Record buyer signature</button>
             </div>
           </div>
           <div className="brand-card p-4">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Close posture</div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Closing checklist summary</div>
             <div className="mt-3 space-y-3 text-sm leading-6 text-[var(--copy-soft)]">
               <div>{titleChecklist.filter((item) => item.status === "complete").length} title checklist items complete.</div>
               <div>{timeline.filter((item) => item.status === "complete").length} timeline events marked complete.</div>
               <div>{documents.length} documents in the vault.</div>
-              <div>{assignmentTracker.closingWarning ?? "Payout posture is stable enough for the current lane."}</div>
+              <div>{assignmentTracker.closingWarning ?? "No payout warning recorded. This does not confirm readiness to close."}</div>
             </div>
           </div>
         </div>
       ) : null}
 
       {status ? (
-        <div className="mt-5 rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
+        <div role="status" aria-live="polite" className="mt-5 rounded-[18px] border border-[var(--line)] bg-[hsl(0_0%_100%/.03)] px-4 py-3 text-sm text-[var(--copy-soft)]">
           {status}
         </div>
       ) : null}
