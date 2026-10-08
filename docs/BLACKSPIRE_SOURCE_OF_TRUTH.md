@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-08 — Peggy changes published; release checkpoint cleared
+
+PR #163 merged as `6c46b233dbad239edd6a42fa16efff47c9358446` after full exact-head CI `37855320946` passed on `3d616bf77f916d71d1bd6b0babf939ec778f100b` and independent review completed cleanly on both implementation `097b585a07ce668ac8f17288e1831f6dc530710c` and its documentation successor. All eight earlier review findings are resolved. The unchanged living-memory checker now returns PASS against freshly fetched trusted origin/main, with CANONICAL_MEMORY_ONLY_DESCENDANT, a clean working tree and no protected credential paths or secret-shaped memory.
+
+Frontend production deployment `dpl_TL3NEsa67rW16qugMzQf3c4cC2jE` is READY at that merge SHA and serves blackspirehelix.com and www.blackspirehelix.com. Health and demo login return HTTP 200; anonymous demo and operator-page requests lead to their login screens; the EMD API returns HTTP 401 without authentication. No error/fatal runtime logs were found for this deployment in the checked five-minute window. Signed-in production workflow acceptance remains UNVERIFIED; earlier desktop/phone behavior checks used fictional adapters. No live database mutation, migration, paid lookup, outreach or signing occurred. VPS/Zola release and HELD boundaries remain unchanged.
+
+Blackspire Command went offline, so a full independent repository checkout at `/workspace/scratch/70261599c2c0/blackspire-verified-recovery` was used for completion. Checksum-verified official Node 22.23.1 runs all 25 latest contract/analysis regressions successfully; repository secret scan and whitespace checks pass. Earlier combined focused coverage passed 133 tests. Original remote worktrees are preserved and require inspection before syncing. The genuine reviewed implementation anchor remains `097b585a07ce668ac8f17288e1831f6dc530710c`; no checker or approval boundary was weakened.
+
 ## 2026-10-08 — Peggy independent review verified
 
 Configured independent Codex review completed at 22:42 UTC on implementation `097b585a07ce668ac8f17288e1831f6dc530710c` with no findings and a fresh positive reaction. All eight earlier PR #163 findings have verified fixes and resolved threads. The latest frontend preview `dpl_6vmkBuvCjRmpkzzYQLq4ZRuPuiFn` is READY for that exact code. Read-only live schema observation confirms nullable purchase deposits and the stored draft identity/payload/body fields; no migration or data mutation is needed.

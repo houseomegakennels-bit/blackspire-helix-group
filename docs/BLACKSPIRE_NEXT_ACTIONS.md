@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-08 — Peggy release complete
+
+Publication and review-record reconciliation are complete: PR #163 merged, exact-head release CI and independent review passed, the unchanged memory checker passes, and frontend deployment dpl_TL3NEsa67rW16qugMzQf3c4cC2jE serves blackspirehelix.com at merge 6c46b233. Follow-up: collect Peggy’s signed-in workflow feedback; authenticated end-to-end production acceptance remains UNVERIFIED. Live comps, loan/payoff and lien/title providers remain a separately scoped integration phase. Preserve VPS/Zola HELD boundaries and inspect the offline Command worktrees before syncing.
+
 ## 2026-10-08 — Peggy independent review verified
 
 Configured independent Codex review completed at 22:42 UTC on implementation `097b585a07ce668ac8f17288e1831f6dc530710c` with no findings and a fresh positive reaction. All eight earlier PR #163 findings have verified fixes and resolved threads. The latest frontend preview `dpl_6vmkBuvCjRmpkzzYQLq4ZRuPuiFn` is READY for that exact code. Read-only live schema observation confirms nullable purchase deposits and the stored draft identity/payload/body fields; no migration or data mutation is needed.
