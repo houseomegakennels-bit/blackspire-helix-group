@@ -216,7 +216,8 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
             </div>
           ) : (
             <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-              No properties are in your pipeline yet. Review the seller leads below, or add a property using the intake form.
+              <p>No properties are in your pipeline yet. Review the seller leads below, or capture a property in Harvester and qualify it in Seller Engine first.</p>
+              <Link href="/workspace/harvester" className="brand-button mt-4 inline-flex px-4 py-3 text-sm">Open property intake</Link>
             </div>
           )}
         </Panel>

@@ -1,8 +1,8 @@
 /* Deliberately scoped to the property workbench and its practice workspace. */
 .deal-workspace {
-  --workspace-surface: #10171b;
   --workspace-ink: #edf3f5;
-  --workspace-muted: #b4c3cb;
+  --copy-soft: #b4c3cb;
+  --copy-muted: #aebfc8;
   color: var(--workspace-ink);
   overflow-x: clip;
   overflow-y: visible;
@@ -51,7 +51,7 @@
   outline: 2px solid var(--gold-soft, #f4d48a);
   outline-offset: 3px;
 }
-.deal-workspace :is(input, select, textarea) {
+.deal-workspace :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
   font-size: 16px;
   min-height: 44px;
   border-radius: 10px;
@@ -63,7 +63,7 @@
 }
 .deal-workspace .brand-input::placeholder { color: #9aaeb9; }
 .deal-workspace :is(dd, .brand-accent-text) { font-variant-numeric: tabular-nums; }
-.deal-workspace [id^="property-"] { scroll-margin-top: 100px; }
+.deal-workspace [id^="property-"] { scroll-margin-top: 170px; }
 .deal-workspace .property-section-nav {
   position: sticky;
   top: 8px;
@@ -106,6 +106,7 @@
   .deal-workspace .workspace-nav > a { white-space: nowrap; padding: 10px 12px; border-radius: 10px; }
 }
 @media (max-width: 639px) {
+  .deal-workspace [id^="property-"] { scroll-margin-top: 90px; }
   .deal-workspace > div { gap: 16px; }
   .deal-workspace header.brand-panel { padding: 20px 16px; }
   .deal-workspace header h2.brand-display { font-size: 30px; line-height: 1.2; }
