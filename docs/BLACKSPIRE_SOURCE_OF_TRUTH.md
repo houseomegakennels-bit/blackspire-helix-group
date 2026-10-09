@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy review findings repaired
+
+The independent review of PR #166 head 2142562d1ce5074ae71bed6d985cd967597cfce7 completed with two P2 findings; exact-head CI 37983740308 passed. The follow-up includes stageNote in the unsaved snapshot, clears only the note actually submitted after success, and acknowledges a blank saved note without erasing newer in-flight text. Closeout now has an explicit disabled blank prompt, keeping displayed and controlled outcomes consistent. Both findings are corrected in source; fresh exact-head review and CI remain required.
+
+Preview authentication remains UNVERIFIED and blocked: the hosted sign-in screen reports AUTH ENV MISSING and disables sign-in. The connected Vercel API refused environment-metadata inspection with HTTP403 (no permission to list project environment variables), and no installed Vercel CLI is available. No environment values were read or changed; production credentials were not copied. An account authorized to manage preview configuration and separate non-production auth configuration are needed for the final signed-in visual check. No merge or production publication occurred.
+
 ## 2026-10-09 — Peggy client review repairs prepared
 
 The user authorized fixing the findings from the client/admin review. This candidate extends PR #166 with focused property sections, a light reading surface, a next-step action, persistent form labels and date controls, broader save/leave feedback, and a guided add/review/open intake. The separate isolated practice workspace receives readable colors, retained follow-up entries, save timestamps, retry and empty states. Public navigation now exposes Sign in; the admin analytics error accurately distinguishes unavailable analytics from access permissions.

@@ -200,7 +200,7 @@ export function DealEngineDealDetailView({
   const contractSave = useWorkspaceSaveState({ contractType, offerLow, offerHigh, earnestMoney });
   const packetSave = useWorkspaceSaveState({ propertyNotes, investorSummary, buyerEmailBlast, buyerSmsAlert, contactInstructions, deadlineToSubmitOffer, comps });
 
-  const stageSave = useWorkspaceSaveState({ stageStatus, stageNextAction });
+  const stageSave = useWorkspaceSaveState({ stageStatus, stageNextAction, stageNote });
   const coordinationSave = useWorkspaceSaveState({ titleCompany, titleOfficer, walkthroughAt, inspectionEndsOn, closingDate, buyerAssignmentStatus, earnestMoneyStatus, payoutStatus, contractSent, contractSigned, coordinationNotes, closingChecklist, closingDocuments });
   const taskSave = useWorkspaceSaveState({ taskId, taskTitle, taskOwner, taskDueDate, taskPriority, taskStatus, taskNotes });
   const followUpSave = useWorkspaceSaveState({ selectedInvestorEmail, followUpStatus, followUpOwner, followUpNextStep, followUpNotes });
@@ -486,8 +486,8 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Stage update failed.");
       setStatus(payload.message ?? "Deal stage updated.");
-      setStageNote("");
-      stageSave.succeed(submitted);
+      setStageNote((current) => current === stageNote ? "" : current);
+      stageSave.succeed(JSON.stringify({ ...JSON.parse(submitted), stageNote: "" }));
       router.refresh();
     } catch (error) {
       stageSave.fail();
@@ -2066,6 +2066,7 @@ export function DealEngineDealDetailView({
             <WorkspaceSaveState state={closeoutSave} label="Final outcome" />
             <div className="grid gap-3 md:grid-cols-2">
               <select aria-label="Final outcome" value={closeoutOutcome} onChange={(event) => setCloseoutOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+                <option value="" disabled>Choose the actual outcome</option>
                 <option>Closed Won</option>
                 <option>Closed Lost</option>
                 <option>Cancelled</option>
