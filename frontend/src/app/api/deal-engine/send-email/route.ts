@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (draftNeedsReview(body.subject + " " + body.body)) {
+    if (draftNeedsReview(body.subject) || draftNeedsReview(body.body)) {
       return NextResponse.json({ ok: false, error: "Remove missing-value placeholders and internal technical messages before sending." }, { status: 400 });
     }
     const result = await sendDealEmail({

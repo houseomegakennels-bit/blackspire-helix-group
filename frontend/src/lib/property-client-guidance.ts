@@ -1,6 +1,6 @@
 /** Client-safe presentation rules; never change the underlying evidence. */
 export function readableNextStep(value: string) {
-  if (/workflow|dispatch|502|bad gateway/i.test(value)) return "The buyer search needs attention. Open Buyers to check its status before using the results.";
+  if (/\b(?:workflow|dispatch)(?:\s+trigger)?\s+(?:failed|error|returned|did not start cleanly)\b|\b(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway timeout)\b/i.test(value)) return "The buyer search needs attention. Open Buyers to check its status before using the results.";
   if (/buyer search.*(launched|created)/i.test(value)) return "Check the buyer search results and confirm each buyer’s criteria before preparing outreach.";
   return value.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "(reference in activity)");
 }

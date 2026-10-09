@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy email field-boundary repairs
+
+Follow-up independent review at documentation head 91b27b88af7c40702ad06bf35cf1946557011667 found two additional P2 cases despite the earlier clean review. Both compose UI and email API now validate subject and body separately so a first-line placeholder cannot lose its boundary when fields are concatenated. Next-step presentation now masks explicit workflow/dispatch failures and HTTP gateway errors instead of ordinary instructions containing workflow, dispatch or an address number. Twelve targeted regressions pass, including the real email API with a fictional sender stub proving rejection happens before delivery. No live email was sent.
+
+The signed-in preview title form displayed Unsaved changes during a local-only draft check. Cloud-browser credential protection then blocked Back navigation and its canonical recovery attempt, so Back-button acceptance remains UNVERIFIED; no live save was submitted. Browser access requires manual recovery before additional signed-in inspection. The preview visual walkthrough already completed remains valid for the unchanged layout. Fresh CI and independent review of these functional corrections are required. The earlier clean-review evidence is historical; the current release is not yet cleared or published.
+
 ## 2026-10-09 — Peggy implementation independently cleared
 
 Configured Codex review completed cleanly on exact implementation 2aaf359e1fa0899383f8c21b2a00c7a07ae640f6 (PR #166 comment 6090339963). All prior findings are repaired and resolved. Its frontend preview dpl_FWZtoEF8SfGAV537VkcAvUpoGeqA is READY. A full reload of the signed-in cloud preview confirms the simplified home next action. The property walkthrough confirms light reading surfaces, section navigation, missing-number guidance, truthful current-page state, title/signature save feedback, explicit closeout prompt and document-evidence guidance. No live form was saved, message sent, paid search run or signature recorded. Actual phone-width and Peggy-role acceptance remain UNVERIFIED; the observed desktop operator walkthrough passed.

@@ -732,7 +732,7 @@ export function DealEngineDealDetailView({
 
   async function sendEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (draftNeedsReview(emailSubject + " " + emailBody)) { setStatus("Review this draft: remove missing-value placeholders and internal technical messages before sending."); return; }
+    if (draftNeedsReview(emailSubject) || draftNeedsReview(emailBody)) { setStatus("Review this draft: remove missing-value placeholders and internal technical messages before sending."); return; }
     if (!window.confirm(`Send this email to ${emailTo}? Review the recipient and message before confirming.`)) return;
     setWorking("email");
     setStatus(null);

@@ -112,3 +112,21 @@ test('ordinary customer language and reference IDs are allowed while technical p
  for (const text of ['Please dispatch the documents tomorrow.', 'Your reference is 12345678-1234-1234-1234-123456789abc.', 'The inspection has not captured all repairs.', 'The address was not entered in the report.']) assert.equal(draftNeedsReview(text),false);
  for (const text of ['Blackspire is packaging a unknown opportunity at this address.', 'Your acquisition activity in Market still resolving suggests a fit.', 'Hello {{seller_name}}', '502 Bad Gateway', 'Dispatch failed: upstream error', 'Address: Not captured', '<!DOCTYPE html><html>error</html>']) assert.equal(draftNeedsReview(text),true);
 });
+
+
+test('next-step display preserves ordinary workflow instructions and masks explicit failures only', () => {
+ for (const text of ['Dispatch signed contract to title', 'Review the closing workflow', 'Call the owner of 502 Main St']) assert.equal(readableNextStep(text),text);
+ for (const text of ['Workflow returned 502 Bad Gateway', 'The external Buyer Engine workflow did not start cleanly.', 'Dispatch failed: upstream error']) assert.match(readableNextStep(text), /needs attention/);
+});
+
+test('email API checks subject and body boundaries before sending', async () => {
+ let sends=0;
+ const route=fs.readFileSync('frontend/src/app/api/deal-engine/send-email/route.ts','utf8');
+ const code=route.slice(route.indexOf('export async function POST'));
+ const post=vm.runInNewContext(stripTypeScriptTypes(code).replaceAll('export ', '')+'\nPOST', {guardAdminApi:async()=>null,draftNeedsReview,NextResponse:{json:(body,opts)=>({body,status:opts?.status??200})},sendDealEmail:async()=>{sends++;return {ok:true};}});
+ for (const [subject,body] of [['Property follow-up','Address: Not captured'],['Price: Not entered','Please call me']]) {
+  const result=await post({json:async()=>({dealId:'fictional',to:'test@example.com',subject,body})});assert.equal(result.status,400);
+ }
+ assert.equal(sends,0);
+ const result=await post({json:async()=>({dealId:'fictional',to:'test@example.com',subject:'Dispatch documents',body:'The inspection has not captured every repair.'})});assert.equal(result.status,200);assert.equal(sends,1);
+});
