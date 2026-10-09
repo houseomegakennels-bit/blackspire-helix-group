@@ -6,7 +6,7 @@ import { stripTypeScriptTypes } from 'node:module';
 
 const source = fs.readFileSync('frontend/src/lib/deal-engine-server.ts', 'utf8');
 const start = source.indexOf('export async function listWorkspaceDealPage(');
-const end = source.indexOf('\nexport async function listDealEngineSellerSignals(', start);
+const end = source.indexOf('\n// Division totals', start);
 const functionSource = stripTypeScriptTypes(source.slice(start, end).replace('export ', ''));
 
 function reader({ count = 31, failure, missing = false } = {}) {
@@ -60,4 +60,50 @@ test('empty results and unavailable reads are distinct', async () => {
     assert.equal(unavailable.pagination.total, null);
     assert.equal(unavailable.leads.length, 0);
   }
+});
+
+const summaryStart = source.indexOf('export async function getDealEnginePipelineSummary(');
+const summaryEnd = source.indexOf('\nexport async function listDealEngineSellerSignals(', summaryStart);
+const summarySource = stripTypeScriptTypes(source.slice(summaryStart, summaryEnd).replace('export ', ''));
+
+test('division totals include properties and fees past both UI and database page boundaries', async () => {
+  const rows = Array.from({ length: 1001 }, (_, index) => ({ id: `DE-${index}`, status: index === 1000 ? 'Marketed' : 'Needs Analysis', deal_analysis: [{ assignment_fee_target: index >= 24 ? 1 : null }] }));
+  const ranges = [];
+  let failSecondPage = false;
+  const db = { from() { const q = {
+    select(fields, options) { q.head = options?.head; return q; }, order() { return q; },
+    then(resolve) { return Promise.resolve({ count: rows.length, error: null }).then(resolve); },
+    async range(first, last) { ranges.push([first, last]); return failSecondPage && first > 0 ? { error: {} } : { data: rows.slice(first, last + 1), error: null }; },
+  }; return q; } };
+  const summary = vm.runInNewContext(summarySource + '\ngetDealEnginePipelineSummary', {
+    getSupabaseAdmin: () => db, normalizeStage: status => status === 'Marketed' ? 'Buyer Follow-Up' : 'Underwriting',
+    asSingle: value => value[0], nullableMoney: value => value == null ? null : Number(value),
+    formatCurrency: value => value == null ? 'Not entered' : `$${value}`,
+  });
+  const result = await summary();
+  assert.equal(result.totalDeals, 1001);
+  assert.equal(result.projectedAssignmentFees, '$977');
+  assert.equal(result.buyerFollowUps, 1);
+  assert.deepEqual(ranges, [[0, 999], [1000, 1999]]);
+  failSecondPage = true;
+  assert.equal(await summary(), null, 'never publish partial totals when a later page fails');
+});
+
+test('division dashboard consumes pipeline totals independently of the operator page', async () => {
+  const divisionSource = fs.readFileSync('frontend/src/lib/real-estate-intelligence.ts', 'utf8');
+  const body = stripTypeScriptTypes(divisionSource.slice(divisionSource.indexOf('export async function getRealEstateDivisionSnapshot(')).replace('export ', ''));
+  let totals = { totalDeals: 31, projectedAssignmentFees: '$500', buyerFollowUps: 7 };
+  const dashboard = vm.runInNewContext(body + '\ngetRealEstateDivisionSnapshot', {
+    getHarvesterWorkspaceSnapshot: async () => null, listSellerLeads: async () => [], getNexusSnapshot: async () => null,
+    getDealEnginePipelineSummary: async () => totals, listAllBuyerReports: async () => ({ reports: [] }), realEstateEngines: [], ecosystemProjects: [],
+  });
+  const values = () => dashboard().then(result => Object.fromEntries(result.metrics.map(metric => [metric.label, metric.value])));
+  let metrics = await values();
+  assert.equal(metrics['Properties in Deal Engine'], '31');
+  assert.equal(metrics['Projected Assignment Fees'], '$500');
+  assert.equal(metrics['Buyer Follow-Ups'], '07');
+  totals = null;
+  metrics = await values();
+  assert.equal(metrics['Properties in Deal Engine'], 'Unavailable');
+  assert.equal(metrics['Projected Assignment Fees'], 'Unavailable');
 });

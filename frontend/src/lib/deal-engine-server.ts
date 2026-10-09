@@ -1267,6 +1267,39 @@ export async function listWorkspaceDealPage(requestedPage = 1) {
   }
 }
 
+// Division totals must not depend on the operator's current page.
+export async function getDealEnginePipelineSummary() {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+  let totalDeals = 0;
+  let assignmentFees = 0;
+  let knownFees = 0;
+  let buyerFollowUps = 0;
+  const pageSize = 1000;
+  try {
+    const countResult = await supabase.from("deal_leads").select("id", { count: "exact", head: true });
+    if (countResult.error || countResult.count == null) return null;
+    for (let offset = 0; offset < countResult.count; ) {
+      const { data, error } = await supabase.from("deal_leads")
+        .select("id,status,deal_analysis(assignment_fee_target)")
+        .order("id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+      if (error || !data?.length) return null;
+      for (const row of data) {
+        totalDeals += 1;
+        if (normalizeStage(String(row.status ?? "")) === "Buyer Follow-Up") buyerFollowUps += 1;
+        const analysis = asSingle(row.deal_analysis);
+        const amount = nullableMoney(analysis?.assignment_fee_target);
+        if (amount != null) { assignmentFees += amount; knownFees += 1; }
+      }
+      offset += data.length;
+    }
+    return { totalDeals, buyerFollowUps, projectedAssignmentFees: formatCurrency(knownFees ? assignmentFees : null) };
+  } catch {
+    return null;
+  }
+}
+
 export async function listDealEngineSellerSignals(limit = 4): Promise<DealEngineSellerSignal[]> {
   try {
     const leads = await listSellerLeads();
