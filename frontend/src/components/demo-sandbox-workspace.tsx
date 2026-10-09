@@ -1,16 +1,17 @@
 "use client";
 
 import "./deal-workspace.css";
+import { useUnsavedWorkWarning } from "@/components/workspace-save-state";
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { analyzeDemoDeal, demoStages, type DemoLead, type DemoState } from "@/lib/demo-sandbox";
 import type { DemoSnapshot } from "@/lib/demo-access-server";
 
 const money = (n: number | null | undefined) => n == null ? "Unknown" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
-const input = "mt-2 w-full rounded-xl border border-white/30 bg-zinc-950 p-3 text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200";
-const button = "min-h-11 rounded-xl bg-amber-300 px-4 py-3 font-semibold text-black disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
-const secondary = "min-h-11 rounded-xl border border-white/30 px-4 py-3 text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200";
-const card = "rounded-2xl border border-white/20 bg-zinc-900/60 p-5";
+const input = "mt-2 w-full rounded-xl border border-[#78939f] bg-white p-3 text-base text-[#182f3a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200";
+const button = "min-h-11 rounded-xl bg-[#11695f] px-4 py-3 font-semibold text-white disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
+const secondary = "min-h-11 rounded-xl border border-[#b9ccd4] bg-white px-4 py-3 text-[#183b46] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200";
+const card = "rounded-2xl border border-[#ccd8de] bg-white p-5";
 type Draft = Record<string, string>;
 
 function AmountField({ name, label, help, value }: { name: string; label: string; help: string; value?: number | string | null }) {
@@ -49,6 +50,11 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [followUpCapture, setFollowUpCapture] = useState<Draft>({});
+  const [followUpVersion, setFollowUpVersion] = useState(0);
+  const unsaved = Object.values(drafts).some(draft => Object.keys(draft).length > 0) || Object.keys(capture).length > 0 || Object.keys(followUpCapture).length > 0;
+  useUnsavedWorkWarning(unsaved || busy);
   async function load() {
     const r = await fetch("/api/demo/workspace", { cache: "no-store" }); const b = await r.json();
     if (!r.ok) throw Error(b.error); setData(b);
@@ -67,7 +73,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
       const r = await fetch("/api/demo/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, revision: data.revision }) });
       const b = await r.json();
       if (!r.ok) { if (r.status === 409) await load(); throw Error(r.status === 409 ? "Someone saved a newer version. Your draft is retained; review the latest record before saving again." : b.error); }
-      setData(b); setNotice("Saved in your practice workspace."); return true;
+      setData(b); setLastSaved(new Date()); setNotice("Saved in your practice workspace."); return true;
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); return false; }
     finally { setBusy(false); }
   }
@@ -84,7 +90,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
   const lead = data?.state.leads.find(l => l.id === selected);
   const draft = lead ? drafts[lead.id] ?? {} : {};
   const value = (key: keyof DemoLead) => draft[key] ?? lead?.[key] as string | number | null | undefined;
-  return <main className="deal-workspace min-h-screen bg-[#050505] px-4 py-8 text-white"><div className="mx-auto max-w-6xl space-y-6">
+  return <main className="deal-workspace workspace-home practice-workspace min-h-screen px-4 py-8 text-[#182f3a]"><div className="mx-auto max-w-6xl space-y-6">
     <header className={card}>
       <p className="text-sm text-amber-200">Blackspire · Private practice workspace</p>
       <h1 className="mt-3 text-3xl font-bold">Review a property. Know your next step.</h1>
@@ -94,8 +100,10 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
     </header>
     <nav aria-label="Workspace tools" className="flex flex-wrap gap-2">{["Properties", "Follow-ups", "Activity", "Buyer reference", "Live snapshot"].map(t => <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t} className={tab === t ? button : secondary}>{t}</button>)}</nav>
     {error && <p role="alert" className="rounded-xl border border-red-400 p-4 text-red-200">{error}</p>}
+    {unsaved && <p role="status" className="rounded-xl border border-[#ddc392] bg-[#fff0d9] p-4">You have unsaved entries. They stay here while you switch sections; save before leaving.</p>}
+    {lastSaved && <p className="text-sm">Last saved at <time dateTime={lastSaved.toISOString()}>{lastSaved.toLocaleTimeString()}</time></p>}
     {notice && <p role="status" className="workspace-feedback text-sm">{notice}</p>}
-    {!data ? <p>Opening your workspace…</p> : <>
+    {!data ? <div><p>{error ? "Your workspace could not be opened." : "Opening your workspace…"}</p>{error && <button className={button} onClick={() => { setError(""); void load().catch(e => setError(e.message)); }}>Try again</button>}</div> : <>
       {tab === "Properties" && !lead && <section className="space-y-5">
         <h2 className="text-2xl font-semibold">Add or review a property</h2>
         <form className={card + " grid gap-4 sm:grid-cols-2"} onChange={e => setCapture(Object.fromEntries(new FormData(e.currentTarget)) as Draft)} onSubmit={async e => {
@@ -108,6 +116,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
           <AmountField name="asking" label="Seller's asking price ($)" help="The price in the listing or conversation." value={capture.asking} />
           <div className="sm:col-span-2"><p className="mb-3 text-sm text-zinc-300">You can save now without a resale value or repair estimate.</p><button disabled={busy} className={button}>{busy ? "Saving…" : "Save property"}</button></div>
         </fieldset></form>
+        {data.state.leads.length === 0 && <p className={card}>No saved properties yet. Add an address above to get started.</p>}
         {data.state.leads.map(l => <article key={l.id} className={card}><h3 className="text-xl font-semibold">{l.name}</h3><p className="mt-2 text-zinc-300">{l.city} · {l.stage} · Asking {money(l.asking)}</p><button className={button + " mt-4"} onClick={() => openProperty(l.id)}>Review property</button></article>)}
       </section>}
       {tab === "Properties" && lead && <section className="space-y-5">
@@ -153,13 +162,13 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
         {section === "Numbers" && <Analysis lead={lead} />}
         {section === "Notes & next steps" && <><button disabled={busy || Object.keys(draft).length > 0} className={secondary} onClick={() => act({ action: "runPipeline", id: lead.id })}>Create next step from saved numbers</button>{data.state.tasks.filter(t => t.leadId === lead.id).map(t => <p className={card} key={t.id}>{t.done ? "Completed: " : "Next step: "}{t.text}</p>)}</>}
       </section>}
-      {tab === "Follow-ups" && <section className="space-y-5"><h2 className="text-2xl font-semibold">Who needs to do what next?</h2><form className={card + " grid gap-4 sm:grid-cols-2"} onSubmit={e => { e.preventDefault(); void act({ action: "addTask", ...Object.fromEntries(new FormData(e.currentTarget)) }); }}>
-        <label className="sm:col-span-2">Next action<input name="text" required maxLength={500} className={input} /></label><label>Person responsible<input name="owner" maxLength={200} className={input} /></label><label>Due date<input name="dueDate" type="date" className={input} /></label><label>Property<select name="leadId" className={input}><option value="">General task</option>{data.state.leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><button disabled={busy} className={button}>Add follow-up</button>
+      {tab === "Follow-ups" && <section className="space-y-5"><h2 className="text-2xl font-semibold">Who needs to do what next?</h2><form key={followUpVersion} className={card + " grid gap-4 sm:grid-cols-2"} onChange={e => setFollowUpCapture(Object.fromEntries(new FormData(e.currentTarget)) as Draft)} onSubmit={async e => { e.preventDefault(); if (await act({ action: "addTask", ...Object.fromEntries(new FormData(e.currentTarget)) })) { setFollowUpCapture({}); setFollowUpVersion(v => v + 1); } }}><fieldset disabled={busy} className="contents">
+        <label className="sm:col-span-2">Next action<input name="text" defaultValue={followUpCapture.text} required maxLength={500} className={input} /></label><label>Person responsible<input name="owner" defaultValue={followUpCapture.owner} maxLength={200} className={input} /></label><label>Due date<input name="dueDate" defaultValue={followUpCapture.dueDate} type="date" className={input} /></label><label>Property<select name="leadId" defaultValue={followUpCapture.leadId ?? ""} className={input}><option value="">General task</option>{data.state.leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label><button disabled={busy} className={button}>Add follow-up</button></fieldset>
       </form>{data.state.tasks.map(t => <label key={t.id} className={card + " flex items-start gap-4"}><input type="checkbox" className="mt-1 h-6 w-6" checked={t.done} disabled={busy} onChange={() => act({ action: "toggleTask", id: t.id })} /><span className={t.done ? "line-through text-zinc-300" : ""}>{t.text}<span className="mt-2 block text-sm text-zinc-300">{t.owner || "Unassigned"}{t.dueDate ? " · Due " + t.dueDate : ""}</span></span></label>)}</section>}
       {tab === "Activity" && <section className="space-y-3"><h2 className="text-2xl font-semibold">Saved activity</h2>{data.state.activity.map((a, i) => <p key={i} className={card}>{a}</p>)}</section>}
       {tab === "Buyer reference" && <section className="space-y-5"><h2 className="text-2xl font-semibold">Historical buyer activity</h2><p className="leading-7 text-zinc-200">Read-only snapshot captured {new Date(snapshot.capturedAt).toLocaleString()}. Activity is not a confirmed fit, available funding or commitment to purchase your property. Contact details are excluded.</p>{snapshot.buyers.length ? snapshot.buyers.map((b, i) => <article key={i} className={card}><h3 className="text-lg font-semibold">{b.name}</h3><p className="mt-3 text-zinc-300">{b.purchases} recorded purchases · Activity score {b.score} · {b.cash ? "Historical cash signal" : "No historical cash signal"}</p></article>) : <p>No buyer reference data available.</p>}</section>}
       {tab === "Live snapshot" && <section><h2 className="text-2xl font-semibold">Live system · read-only reference</h2><p className="mt-3 text-zinc-200">Your practice edits do not change these live records.</p><div className="mt-5 grid gap-4 sm:grid-cols-3">{Object.entries(snapshot.metrics).map(([k, v]) => <div key={k} className={card}><p className="text-3xl text-amber-200">{v}</p><p className="mt-3">{k.replace(/([A-Z])/g, " $1")}</p></div>)}</div></section>}
-      <footer className="flex flex-wrap gap-3 border-t border-white/20 pt-6"><button className={secondary} onClick={exportRecords}>Download saved practice records</button><button disabled={busy} className={secondary} onClick={async () => { if (confirm("Reset only your practice records? Unsaved drafts will be cleared.")) { if (await act({ action: "reset" })) { setSelected(null); setDrafts({}); setCapture({}); setCaptureVersion(current => current + 1); } } }}>Reset practice workspace</button></footer>
+      <footer className="flex flex-wrap gap-3 border-t border-white/20 pt-6"><button className={secondary} onClick={exportRecords}>Download saved practice records</button><button disabled={busy} className={secondary} onClick={async () => { if (confirm("Reset only your practice records? Unsaved drafts will be cleared.")) { if (await act({ action: "reset" })) { setSelected(null); setDrafts({}); setCapture({}); setFollowUpCapture({}); setCaptureVersion(current => current + 1); } } }}>Reset practice workspace</button></footer>
     </>}
   </div></main>;
 }

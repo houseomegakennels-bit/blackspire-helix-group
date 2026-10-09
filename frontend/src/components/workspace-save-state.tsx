@@ -1,6 +1,33 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const unsavedForms = new Map<object, boolean>();
+function protectUnload(event: BeforeUnloadEvent) {
+  if ([...unsavedForms.values()].some(Boolean)) { event.preventDefault(); event.returnValue = ""; }
+}
+function protectLink(event: MouseEvent) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target instanceof Element ? event.target.closest("a") : null;
+  if (!link || link.hasAttribute("download") || link.target === "_blank") return;
+  const target = new URL(link.href, window.location.href);
+  if (target.pathname === window.location.pathname && target.search === window.location.search) return;
+  if ([...unsavedForms.values()].some(Boolean) && !window.confirm("You have unsaved changes. Leave this page and discard them?")) { event.preventDefault(); event.stopPropagation(); }
+}
+
+export function useUnsavedWorkWarning(dirty: boolean) {
+  const identity = useRef({});
+  useEffect(() => {
+    const key = identity.current;
+    unsavedForms.set(key, dirty);
+    window.addEventListener("beforeunload", protectUnload);
+    document.addEventListener("click", protectLink, true);
+    return () => {
+      unsavedForms.delete(key);
+      if (!unsavedForms.size) { window.removeEventListener("beforeunload", protectUnload); document.removeEventListener("click", protectLink, true); }
+    };
+  }, [dirty]);
+}
 
 /** Compare the current form with the exact snapshot accepted by its last save. */
 export function useWorkspaceSaveState(values: unknown) {
@@ -10,6 +37,7 @@ export function useWorkspaceSaveState(values: unknown) {
   const [failed, setFailed] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const inFlight = useRef(false);
+  useUnsavedWorkWarning(current !== saved || pending);
 
   function begin() {
     if (inFlight.current) return null;
@@ -27,13 +55,15 @@ export function useWorkspaceSaveState(values: unknown) {
     inFlight.current = false;
   }
 
+  function load(values: unknown) { setSaved(JSON.stringify(values)); setSavedAt(null); setFailed(false); }
+
   function fail() {
     setFailed(true);
     setPending(false);
     inFlight.current = false;
   }
 
-  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail };
+  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail, load };
 }
 
 export function WorkspaceSaveState({ state, label }: {

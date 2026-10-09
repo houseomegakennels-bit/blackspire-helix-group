@@ -187,3 +187,16 @@
 .deal-workspace .property-section-nav { top: 68px; }
 .deal-workspace .workspace-home-content .workspace-feedback { background: #e4f2ee; color: #163e35; box-shadow: 0 4px 16px #183b461a; }
 .deal-workspace .workspace-home-content .workspace-connection-notice { background: #fff0d9; border-color: #ddc392; color: #624311; }
+
+/* Task sections keep edits mounted while displaying one purpose at a time. */
+.deal-workspace [hidden] { display: none !important; }
+.deal-workspace .property-section-nav { position: static; background: #fff; box-shadow: none; }
+.deal-workspace .property-section-nav [aria-pressed="true"] { background: #11695f; color: #fff; border-color: #11695f; }
+.deal-workspace .workspace-home-content .workspace-save-state { background: #eaf1f3; color: #183b46; }
+.deal-workspace .workspace-home-content [role="alert"] { background: #ffe8e7; color: #8f2c2c; }
+
+.practice-workspace :is(.text-zinc-200, .text-zinc-300) { color: #405863; }
+.practice-workspace .text-amber-200 { color: #765012; }
+.practice-workspace [role="alert"] { background: #ffe8e7; color: #8f2c2c; }
+.practice-workspace .workspace-feedback { background: #e4f2ee; color: #163e35; }
+.practice-workspace :is(button, a, input, select, textarea):focus-visible { outline-color: #11695f; }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 
+import { WorkspaceSaveState, useWorkspaceSaveState } from "@/components/workspace-save-state";
 import { Panel, StatusPill } from "@/components/buyer-shell";
 import type {
   DealAssignmentFeeTrackerRecord,
@@ -134,6 +135,9 @@ export function DealTransactionCommand({
   const [status, setStatus] = useState<string | null>(null);
   const [working, setWorking] = useState<string | null>(null);
 
+  const draftSave = useWorkspaceSaveState(contractDraft);
+  const depositSave = useWorkspaceSaveState(emdTracker);
+  const assignmentSave = useWorkspaceSaveState(assignmentTracker);
   const selectedTemplate = useMemo<DealContractTemplateRecord | null>(
     () => snapshot.contractTemplates.find((template) => template.templateKey === selectedTemplateKey) ?? null,
     [selectedTemplateKey, snapshot.contractTemplates],
@@ -170,6 +174,7 @@ export function DealTransactionCommand({
 
   async function generateContractDraft() {
     if (!selectedTemplate) return;
+    if (draftSave.dirty && !window.confirm("Replace your unsaved contract edits with a newly generated draft?")) return;
     setWorking("contracts");
     setStatus(null);
     try {
@@ -187,6 +192,7 @@ export function DealTransactionCommand({
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Contract generation failed.");
       setContractDraft(payload.draft);
+      draftSave.load(payload.draft);
       setTemplateValidation(payload.validation ?? null);
       setSnapshot((current) => ({
         ...current,
@@ -205,6 +211,8 @@ export function DealTransactionCommand({
 
   async function saveContractDraft() {
     if (!contractDraft || !selectedTemplate) return;
+    const submitted = draftSave.begin();
+    if (submitted === null) return;
     setWorking("contract-save");
     setStatus(null);
     try {
@@ -229,12 +237,14 @@ export function DealTransactionCommand({
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Contract save failed.");
       const savedDraft = { ...contractDraft, id: payload.draftId };
       setContractDraft(savedDraft);
+      draftSave.succeed(JSON.stringify(savedDraft));
       setSnapshot((current) => ({
         ...current,
         contracts: [savedDraft, ...current.contracts.filter((item) => item.id !== contractDraft.id && item.id !== savedDraft.id)],
       }));
       setStatus("Contract draft saved.");
     } catch (error) {
+      draftSave.fail();
       setStatus(error instanceof Error ? error.message : "Contract save failed.");
     } finally {
       setWorking(null);
@@ -345,6 +355,8 @@ export function DealTransactionCommand({
   }
 
   async function saveEmdTracker() {
+    const submitted = depositSave.begin();
+    if (submitted === null) return;
     setWorking("emd");
     setStatus(null);
     try {
@@ -356,8 +368,10 @@ export function DealTransactionCommand({
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "EMD save failed.");
       setEmdTracker(payload.tracker);
+      depositSave.succeed(JSON.stringify(payload.tracker));
       setStatus("Purchase deposit record updated.");
     } catch (error) {
+      depositSave.fail();
       setStatus(error instanceof Error ? error.message : "EMD save failed.");
     } finally {
       setWorking(null);
@@ -365,6 +379,8 @@ export function DealTransactionCommand({
   }
 
   async function saveAssignmentTracker() {
+    const submitted = assignmentSave.begin();
+    if (submitted === null) return;
     setWorking("assignment");
     setStatus(null);
     try {
@@ -386,8 +402,10 @@ export function DealTransactionCommand({
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Assignment fee save failed.");
       setAssignmentTracker(payload.tracker);
+      assignmentSave.succeed(JSON.stringify(payload.tracker));
       setStatus("Assignment tracker updated.");
     } catch (error) {
+      assignmentSave.fail();
       setStatus(error instanceof Error ? error.message : "Assignment fee save failed.");
     } finally {
       setWorking(null);
@@ -493,6 +511,7 @@ export function DealTransactionCommand({
       description="Review contract drafts, track the purchase deposit, record signatures and organize closing documents for this property."
     >
       <p className="mb-4 text-sm leading-6 text-[var(--copy-soft)]">Proposed terms and saved drafts do not mean a contract is executed. Signature status is an operator record: record sent or signed only after checking the actual provider packet. Preparing a packet does not send it.</p>
+      <fieldset disabled={Boolean(working)} className="min-w-0 border-0 p-0">
       <div className="mb-5 flex flex-wrap gap-2">
         {tabs.map((tab) => (
           <button
@@ -531,6 +550,7 @@ export function DealTransactionCommand({
         </div>
       ) : null}
 
+      {activeTab === "contracts" ? <WorkspaceSaveState state={draftSave} label="Contract draft" /> : null}
       {activeTab === "contracts" ? (
         <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">
           <div className="space-y-4">
@@ -616,7 +636,7 @@ export function DealTransactionCommand({
                 <button
                   key={draft.id}
                   type="button"
-                  onClick={() => setContractDraft(draft)}
+                  onClick={() => { if (draftSave.dirty && !window.confirm("Discard unsaved contract edits and open this draft?")) return; setContractDraft(draft); draftSave.load(draft); }}
                   className="brand-card block w-full p-4 text-left transition hover:border-[var(--line-strong)]"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -691,6 +711,8 @@ export function DealTransactionCommand({
         </div>
       ) : null}
 
+      {activeTab === "emd" ? <WorkspaceSaveState state={depositSave} label="Purchase deposit" /> : null}
+      {activeTab === "assignment" ? <WorkspaceSaveState state={assignmentSave} label="Assignment fee" /> : null}
       {activeTab === "emd" ? (
         <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
           <div className="brand-card p-4">
@@ -705,7 +727,7 @@ export function DealTransactionCommand({
           <div className="brand-card p-4">
             <div className="grid gap-3 md:grid-cols-2">
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit (USD)</span><input type="number" inputMode="decimal" min="0" step="any" value={String(emdTracker.emdAmount ?? "")} onChange={(event) => setEmdTracker({ ...emdTracker, emdAmount: event.target.value === "" ? null : Number(event.target.value) })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD amount" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Earnest money purchase deposit. Use 0 only if no deposit is required; confirm the agreed amount.</span></label>
-              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit due date</span><input value={emdTracker.emdDueDate} onChange={(event) => setEmdTracker({ ...emdTracker, emdDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Purchase deposit due date</span><input type={!emdTracker.emdDueDate || /^\d{4}-\d{2}-\d{2}$/.test(emdTracker.emdDueDate) ? "date" : "text"} value={emdTracker.emdDueDate} onChange={(event) => setEmdTracker({ ...emdTracker, emdDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder</span><input value={emdTracker.emdHolder} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolder: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="EMD holder" /></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deposit holder type</span><select value={emdTracker.emdHolderType} onChange={(event) => setEmdTracker({ ...emdTracker, emdHolderType: event.target.value as DealEmdTrackerRecord["emdHolderType"] })} className="brand-input px-3 py-3 text-sm outline-none">
                 <option value="title_company">Title company</option>
@@ -758,7 +780,7 @@ export function DealTransactionCommand({
                 <option value="paid">Paid</option>
                 <option value="delayed">Delayed</option>
               </select></label>
-              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout due date</span><input value={assignmentTracker.payoutDueDate} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout due date</span><input type={!assignmentTracker.payoutDueDate || /^\d{4}-\d{2}-\d{2}$/.test(assignmentTracker.payoutDueDate) ? "date" : "text"} value={assignmentTracker.payoutDueDate} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutDueDate: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)] md:col-span-2"><span>Payout received at</span><input value={assignmentTracker.payoutReceivedAt} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutReceivedAt: event.target.value })} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout received at" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use an ISO date and time, for example 2026-10-08T15:00:00-04:00. Record actual receipt or completion.</span></label>
             </div>
             <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout notes</span><textarea value={assignmentTracker.payoutNotes} onChange={(event) => setAssignmentTracker({ ...assignmentTracker, payoutNotes: event.target.value })} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Payout notes" /></label>
@@ -784,7 +806,7 @@ export function DealTransactionCommand({
                   <option value="blocked">Blocked</option>
                 </select></label>
                 <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Assigned owner</span><input value={item.assignedOwner} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, assignedOwner: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assigned owner" /></label>
-                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input value={item.dueDate} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, dueDate: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input type={!item.dueDate || /^\d{4}-\d{2}-\d{2}$/.test(item.dueDate) ? "date" : "text"} value={item.dueDate} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, dueDate: event.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
               </div>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes</span><textarea value={item.notes} onChange={(event) => setTitleChecklist((current) => current.map((entry) => entry.id === item.id ? { ...entry, notes: event.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" /></label>
               <button type="button" onClick={() => void updateChecklistItem(titleChecklist.find((entry) => entry.id === item.id)!)} disabled={working === `title-${item.id}`} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
@@ -810,7 +832,7 @@ export function DealTransactionCommand({
                   <option value="delayed">Delayed</option>
                   <option value="blocked">Blocked</option>
                 </select></label>
-                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input value={event.dueDate} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, dueDate: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
+                <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input type={!event.dueDate || /^\d{4}-\d{2}-\d{2}$/.test(event.dueDate) ? "date" : "text"} value={event.dueDate} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, dueDate: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use YYYY-MM-DD. Record the date agreed for this transaction.</span></label>
                 <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Completed at</span><input value={event.completedAt} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, completedAt: e.target.value } : entry))} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Completed at" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Use an ISO date and time, for example 2026-10-08T15:00:00-04:00. Record actual receipt or completion.</span></label>
               </div>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes</span><textarea value={event.notes} onChange={(e) => setTimeline((current) => current.map((entry) => entry.id === event.id ? { ...entry, notes: e.target.value } : entry))} className="brand-input mt-3 min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Notes" /></label>
@@ -894,7 +916,7 @@ export function DealTransactionCommand({
             <div className="mt-3 space-y-3 text-sm leading-6 text-[var(--copy-soft)]">
               <div>{titleChecklist.filter((item) => item.status === "complete").length} title checklist items complete.</div>
               <div>{timeline.filter((item) => item.status === "complete").length} timeline events marked complete.</div>
-              <div>{documents.length} documents in the vault.</div>
+              <div>{documents.length} files in the transaction vault. Property uploads are listed separately in Documents; counts do not establish document completeness.</div>
               <div>{assignmentTracker.closingWarning ?? "No payout warning recorded. This does not confirm readiness to close."}</div>
             </div>
           </div>
@@ -906,6 +928,7 @@ export function DealTransactionCommand({
           {status}
         </div>
       ) : null}
+      </fieldset>
     </Panel>
   );
 }

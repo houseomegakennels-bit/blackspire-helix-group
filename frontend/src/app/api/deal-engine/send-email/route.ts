@@ -1,3 +1,4 @@
+import { draftNeedsReview } from "@/lib/property-client-guidance";
 import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -24,6 +25,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (draftNeedsReview(body.subject + " " + body.body)) {
+      return NextResponse.json({ ok: false, error: "Remove missing-value placeholders and internal technical messages before sending." }, { status: 400 });
+    }
     const result = await sendDealEmail({
       dealId: body.dealId.trim(),
       to: body.to.trim(),

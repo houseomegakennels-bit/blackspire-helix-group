@@ -943,7 +943,7 @@ function rankBuyerSignalsForLead(
   return buyerSignals
     .map((signal) => {
       const market = signal.market.toLowerCase();
-      const countyMatch = countyNeedle.length > 0 && market.includes(countyNeedle);
+      const countyMatch = countyNeedle.length > 0 && market.split(",")[0].replace(/\bcounty\b/g, "").trim() === countyNeedle.replace(/\bcounty\b/g, "").trim();
       const stateMatch = /\bnc\b/.test(market);
       const buyerLane = normalizeBuyerSignalLane(signal.propertyType);
       const laneMatch =
@@ -958,11 +958,11 @@ function rankBuyerSignalsForLead(
         + Math.min(signal.purchaseCount * 4, 20)
         + (/llc|holdings|capital|partners|properties|trust/i.test(signal.buyerName) ? 6 : 0);
 
-      const matchReason = countyMatch
-        ? `Active ${lead.county} lane with a ${signal.propertyType.toLowerCase()} search profile.`
-        : stateMatch
-          ? `Strong North Carolina buyer signal while ${lead.county}-specific buyer inventory is still building.`
-          : "Fallback buyer lane from the broader live Buyer Engine inventory.";
+      const matchReason = !laneMatch
+        ? `Property-type fit is not established: this candidate's profile is ${signal.propertyType}. Verify criteria before outreach.`
+        : countyMatch
+          ? `County candidate for ${lead.county}; verify current property criteria and funding.`
+          : `Broader candidate from ${signal.market}; ${lead.county} coverage and current criteria are not verified.`;
 
       return {
         ...signal,
@@ -1155,7 +1155,7 @@ function buildContractDrafts(
         || "Lead with speed, certainty, and a clean as-is close path.",
       buyerDispositionNote:
         buyerSignal
-          ? `${buyerSignal.buyerName} already fits this lane. ${buyerSignal.outreachAngle}`
+          ? `${buyerSignal.buyerName} is a potential candidate; verify location, property type, current criteria and funding. ${buyerSignal.outreachAngle}`
           : "Prepare a buyer-facing packet and activate the strongest matching investor cohort.",
       nextSteps: [
         lead.nextAction,
@@ -2391,30 +2391,25 @@ function buildSellerContactWorkflow(
 
 function buildSellerOutreach(
   lead: DealEngineLead,
-  sellerSignal: DealEngineSellerSignal | null,
+  _sellerSignal: DealEngineSellerSignal | null,
   sellerContact: DealEngineDealDetail["sellerContact"],
-  contractDraft: DealEngineContractDraft | null,
+  _contractDraft: DealEngineContractDraft | null,
 ): DealEngineDealDetail["sellerOutreach"] {
   const ownerName = sellerContact.ownerName || lead.ownerName;
   const address = lead.propertyAddress;
-  const summary =
-    sellerSignal?.summary
-    || "We help sellers who want a simpler direct-sale path without repair prep or listing friction.";
-  const action =
-    sellerSignal?.recommendedAction
-    || lead.nextAction
-    || "Lead with certainty, as-is terms, and a simple close path.";
-  const pricing = contractDraft?.offerWindow || `around ${lead.mao}`;
-  const closeAngle = contractDraft?.outreachLead || "clean close, as-is terms, and clear next steps";
+  void _contractDraft;
+  // External copy must not incorporate internal notes, error messages or inferred prices.
+  const greeting = /heirs|estate|unknown|not captured|not entered|\b(llc|trust|inc)\b/i.test(ownerName)
+    ? "Hello" : `Hi ${ownerName}`;
 
   return {
-    firstTouchSms: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group. I’m reaching out about ${address}. If you’d ever consider selling it as-is instead of fixing it up or listing it, I’d be happy to share what a simple direct offer could look like.`,
-    followUpSms: `Hi ${ownerName}, just following up on ${address}. Depending on condition and timing, we may be able to make a straightforward offer ${pricing ? `somewhere ${pricing}` : ""}. If it helps, I can keep it simple and just give you a quick idea of how we work.`,
+    firstTouchSms: `${greeting}, this is Carlos with Blackspire Helix Group. I’m reaching out about ${address}. Would you be open to discussing a possible as-is sale?`,
+    followUpSms: `${greeting}, just following up on ${address}. If you are considering selling, what timing and price would work for you? We can review the details together before discussing an offer.`,
     emailSubject: `Quick question about ${address}`,
-    emailBody: `Hi ${ownerName},\n\nThis is Carlos Pearson with Blackspire Helix Group. I wanted to reach out about ${address}.\n\nWe work with owners who would rather sell a property as-is than spend time on repairs, showings, or listing prep. ${summary}\n\nIf selling is something you would consider, I can walk you through a simple next step and let you decide whether it makes sense. From our side, the goal is usually ${closeAngle}.\n\nNo pressure either way. If now is not the right time, I completely understand.\n\nBest,\nCarlos Pearson\nBlackspire Helix Group`,
-    objectionReply: `That makes sense, and I appreciate you saying that. A lot of owners are comparing a direct sale with fixing the property up or listing it. The only thing I’d want to offer is a simpler option with fewer moving parts. ${action} If it’s not a fit right now, no problem at all.`,
-    voicemailScript: `Hi ${ownerName}, this is Carlos with Blackspire Helix Group calling about ${address}. I just wanted to see if you’d ever consider selling the property as-is. If you want, you can call or text me back whenever it’s convenient.`,
-    callOpener: `Hi ${ownerName}, this is Carlos Pearson with Blackspire Helix Group. I’m calling about ${address}. Do you have a quick minute for one question about the property?`,
+    emailBody: `${greeting},\n\nThis is Carlos Pearson with Blackspire Helix Group. I’m reaching out about ${address}.\n\nWould you be open to discussing a possible as-is sale? If so, I would like to understand your priorities, timing and the property’s condition before discussing terms.\n\nNo pressure if now is not the right time.\n\nBest,\nCarlos Pearson\nBlackspire Helix Group`,
+    objectionReply: "Thank you for explaining. What would need to change for a sale to make sense for you? I’m happy to answer questions, and there is no obligation to proceed.",
+    voicemailScript: `${greeting}, this is Carlos with Blackspire Helix Group calling about ${address}. If you are considering selling, please return my call at your convenience.`,
+    callOpener: `${greeting}, this is Carlos Pearson with Blackspire Helix Group. I’m calling about ${address}. Is this a good time for a quick question?`,
   };
 }
 
@@ -2527,13 +2522,15 @@ function normalizeClosingDocuments(
 
 function normalizeStage(status: string) {
   const value = status.toLowerCase();
+  if (/closed|cancelled|archived/.test(value)) return "Completed / Archived";
+  if (value.includes("closing")) return "Contract / Packet";
   if (value.includes("under contract") || value.includes("packet")) return "Contract / Packet";
   if (value.includes("buyer interest") || value.includes("marketed") || value.includes("disposition")) {
     return "Buyer Follow-Up";
   }
   if (value.includes("negotiating")) return "Negotiating";
   if (value.includes("offer ready")) return "Offer Ready";
-  if (value.includes("analysis") || value.includes("review")) return "Underwriting";
+  if (value.includes("analysis") || value.includes("review") || value.includes("underwriting")) return "Underwriting";
   return "New Intake";
 }
 
@@ -2563,6 +2560,7 @@ function buildStageBoard(leads: DealEngineLead[]) {
       label: "Buyer Follow-Up",
       detail: "Investor responses are in and the disposition lane now needs active follow-up.",
     },
+    { label: "Completed / Archived", detail: "Finished or archived property records." },
   ] as const;
 
   return lanes.map((lane) => {

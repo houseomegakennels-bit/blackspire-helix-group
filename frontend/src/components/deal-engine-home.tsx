@@ -1,3 +1,4 @@
+import { readableNextStep } from "@/lib/property-client-guidance";
 import { DealEngineActions } from "@/components/deal-engine-actions";
 import Link from "next/link";
 
@@ -107,7 +108,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
                   </div>
                   <div className="mt-4 rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-4">
                     <div className="text-[11px] uppercase tracking-[0.24em] text-[var(--copy-muted)]">Next action</div>
-                    <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{lead.nextAction}</div>
+                    <div className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">{readableNextStep(lead.nextAction)}</div>
                   </div>
                   <div className="mt-4">
                     <Link

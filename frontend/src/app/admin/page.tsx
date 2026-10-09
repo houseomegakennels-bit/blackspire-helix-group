@@ -38,9 +38,9 @@ export default async function AdminPage() {
     >
       {accessError ? (
         <Panel
-          eyebrow="Restricted"
-          title="Admin access only"
-          description="This page is reserved for the bootstrap owner account."
+          eyebrow="Analytics unavailable"
+          title="Your admin access is active"
+          description="The analytics service could not load this report. Your admin permissions have not changed. Use the admin navigation to continue with other tools."
         >
           <div className="brand-card p-4 text-sm leading-6 text-[hsl(22_100%_72%)]">
             {accessError}

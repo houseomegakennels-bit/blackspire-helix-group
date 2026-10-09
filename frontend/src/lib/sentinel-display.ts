@@ -76,6 +76,7 @@ export type DealCoordinationLike = {
   closingDate?: string;
   payoutStatus?: string;
   closingChecklist?: Array<{ status?: string }>;
+  closingDocuments?: Array<{ name?: string; title?: string; status?: string }>;
 };
 
 /** Compute Deal Readiness from a DealEngineDealDetail.coordination block. */
@@ -84,20 +85,24 @@ export function dealReadinessFromCoordination(
   options?: { hasDocuments?: boolean },
 ): DealReadinessResult {
   const checklist = coordination.closingChecklist ?? [];
-  const done = checklist.filter((item) => /done|complete|verified|ready|sent|signed|received/i.test(item.status ?? "")).length;
+  const done = checklist.filter((item) => /^(done|complete|verified)$/i.test(item.status ?? "")).length;
   const titleProgress = checklist.length ? done / checklist.length : 0;
-  const buyerAssigned = /assigned|matched|locked|under contract|disposition/i.test(coordination.buyerAssignmentStatus ?? "");
-  const emdReceived = /received|collected|deposited|funded|cleared/i.test(coordination.earnestMoneyStatus ?? "");
+  const buyerAssigned = /^(assigned|locked|under contract)$/i.test(coordination.buyerAssignmentStatus ?? "");
+  const emdReceived = /^(received|collected|deposited|funded|cleared)$/i.test(coordination.earnestMoneyStatus ?? "");
 
+  const documents = coordination.closingDocuments ?? [];
+  const reviewed = documents.filter((doc) => /^(reviewed|final)$/i.test(doc.status ?? ""));
+  const documentCompleteness = documents.length ? reviewed.length / documents.length : 0;
+  const titleCompany = (coordination.titleCompany ?? "").trim();
   return calculateDealReadinessScore({
     contractSigned: Boolean(coordination.contractSigned),
     buyerAssigned,
     emdReceived,
-    titleCompanyAssigned: Boolean((coordination.titleCompany ?? "").trim()),
+    titleCompanyAssigned: Boolean(titleCompany) && !/unassigned|not set|partner|tbd|unknown/i.test(titleCompany),
     titleChecklistProgress: titleProgress,
-    documentCompleteness: options?.hasDocuments ? 1 : checklist.length ? 0.5 : 0,
+    documentCompleteness: options?.hasDocuments ? documentCompleteness : 0,
     closingDateSet: Boolean((coordination.closingDate ?? "").trim()),
-    assignmentAgreementReady: buyerAssigned || Boolean((coordination.payoutStatus ?? "").trim()),
+    assignmentAgreementReady: reviewed.some((doc) => /assignment agreement/i.test(doc.name ?? doc.title ?? "")),
     signatureComplete: Boolean(coordination.contractSigned),
   });
 }
