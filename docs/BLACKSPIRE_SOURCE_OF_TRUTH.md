@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy navigation and evidence follow-up
+
+The next independent review of head 49d38048e90bf0b46c35f83e9b7ee348b6a1af27 identified three additional P2 edge cases. The follow-up tracks history positions from the root and intercepts Back/Forward before Next soft navigation, restores the current entry on cancellation, validates closeout dates by format and calendar round-trip, and acknowledges persisted stage/coordination fields after quick actions while preserving other unsaved fields and newer edits. Fresh review and exact-head CI remain required; hosted visual acceptance remains UNVERIFIED.
+
+Command reconnected as Blackspire-command (56c1ef70-7ea7-48f6-a008-3a30519284e0). Its existing Vercel CLI account can list frontend environment metadata even though the connector cannot. The user explicitly approved connecting Peggy's preview to live Supabase for a read-only walkthrough, acknowledging that the preview could modify live records. This is a scoped exception to the repository's no-automatic-production-credential-loading rule. No values were exposed or changed: the five required Supabase settings are Production-only sensitive variables, the supported retrieval API does not return their values, and a branch-specific addition to a Production variable was rejected with HTTP400 because gitBranch requires preview-only target. The known Command application config contains none of the needed keys. The original values must be re-entered as preview-only variables for polish/peggy-calm-workspace-20261009. Cloud Vercel settings currently require sign-in. No production credential copy, environment mutation, merge, live record write or publication occurred.
+
 ## 2026-10-09 — Peggy review findings repaired
 
 The independent review of PR #166 head 2142562d1ce5074ae71bed6d985cd967597cfce7 completed with two P2 findings; exact-head CI 37983740308 passed. The follow-up includes stageNote in the unsaved snapshot, clears only the note actually submitted after success, and acknowledges a blank saved note without erasing newer in-flight text. Closeout now has an explicit disabled blank prompt, keeping displayed and controlled outcomes consistent. Both findings are corrected in source; fresh exact-head review and CI remain required.

@@ -815,7 +815,8 @@ export function DealEngineDealDetailView({
           coordinationPayload({ contractSent: true }),
           "Contract marked as sent.",
         );
-        setContractSent(true);
+        setContractSent((current) => current === contractSent ? true : current);
+        coordinationSave.acknowledgeFields({ ...coordinationPayload(), dealId: undefined, contractSent: true });
         setStatus("Contract marked as sent. Next: collect seller signature and confirm title cadence.");
       }
 
@@ -825,6 +826,9 @@ export function DealEngineDealDetailView({
           coordinationPayload({ contractSent: true, contractSigned: true }),
           "Contract marked as signed.",
         );
+        setContractSent((current) => current === contractSent ? true : current);
+        setContractSigned((current) => current === contractSigned ? true : current);
+        coordinationSave.acknowledgeFields({ ...coordinationPayload(), dealId: undefined, contractSent: true, contractSigned: true });
         await postJson(
           "/api/deal-engine/update-stage",
           {
@@ -835,10 +839,11 @@ export function DealEngineDealDetailView({
           },
           "Deal moved under contract.",
         );
-        setContractSent(true);
-        setContractSigned(true);
-        setStageStatus("Under Contract");
-        setStageNextAction("Build buyer packet, launch buyer outreach, and coordinate walkthrough access.");
+        setContractSent((current) => current === contractSent ? true : current);
+        setContractSigned((current) => current === contractSigned ? true : current);
+        stageSave.acknowledgeFields({ stageStatus: "Under Contract", stageNextAction: "Build buyer packet, launch buyer outreach, and coordinate walkthrough access." });
+        setStageStatus((current) => current === stageStatus ? "Under Contract" : current);
+        setStageNextAction((current) => current === stageNextAction ? "Build buyer packet, launch buyer outreach, and coordinate walkthrough access." : current);
         setStatus("Deal is now marked under contract. Next: save packet and activate buyer outreach.");
       }
 
@@ -868,8 +873,9 @@ export function DealEngineDealDetailView({
           },
           "Deal moved into closing.",
         );
-        setStageStatus("Closing");
-        setStageNextAction("Complete title, EMD, assignment, final docs, and payout coordination.");
+        stageSave.acknowledgeFields({ stageStatus: "Closing", stageNextAction: "Complete title, EMD, assignment, final docs, and payout coordination." });
+        setStageStatus((current) => current === stageStatus ? "Closing" : current);
+        setStageNextAction((current) => current === stageNextAction ? "Complete title, EMD, assignment, final docs, and payout coordination." : current);
         setStatus("Deal moved into closing. Next: finish checklist, documents, EMD, assignment, and payout posture.");
       }
 

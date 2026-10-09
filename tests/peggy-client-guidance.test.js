@@ -61,3 +61,29 @@ test('technical errors and incomplete customer drafts are recognized without exp
  assert.equal(suspectedTestRecord('Diagnostic Buyer buyer@example.com'),true);
  assert.equal(suspectedTestRecord('Proof of funds received from Acme LLC'),false);
 });
+
+test('closeout calendar dates reject malformed values and impossible days', () => {
+ const valid = vm.runInNewContext(stripTypeScriptTypes(guidance).replaceAll('export ', '') + '\nvalidCalendarDate');
+ for (const value of ['tomorrow', '2026-02-30', '2026-13-01', '2025-02-29', '', null, 123]) assert.equal(valid(value), false);
+ for (const value of ['2024-02-29', '2026-10-09']) assert.equal(valid(value), true);
+});
+
+test('history cancellation restores the current property without discarding forward entries', () => {
+ const saveSource = fs.readFileSync('frontend/src/components/workspace-save-state.tsx', 'utf8');
+ const code = saveSource.slice(saveSource.indexOf('const unsavedForms'), saveSource.indexOf('export function useUnsavedWorkWarning'));
+ const entries = [{ url: '/home', state: {} }]; let position = 0; let handler; let allow = false; let confirmations = 0; let routed = 0;
+ const history = { get state() { return entries[position].state; },
+  pushState(state, _, url) { entries.splice(position+1); entries.push({state,url}); position++; },
+  replaceState(state, _, url) { entries[position] = {state,url:url??entries[position].url}; },
+  go(delta) { position += delta; let stopped = false; handler({state:this.state,stopImmediatePropagation(){stopped=true;}}); if(!stopped) routed++; }
+ };
+ const window = { history, confirm(){confirmations++;return allow;}, addEventListener(_,fn){handler=fn;},removeEventListener(){} };
+ const guard = vm.runInNewContext(stripTypeScriptTypes(code).replaceAll('export ', '')+'\n({WorkspaceHistoryGuard,unsavedForms})', {window,useEffect:fn=>fn()});
+ guard.WorkspaceHistoryGuard({children:null});
+ history.pushState({next:'retained'}, '', '/property');
+ guard.unsavedForms.set({},true);
+ history.go(-1);
+ assert.equal(position,1); assert.equal(entries[position].url,'/property'); assert.equal(confirmations,1); assert.equal(routed,0);
+ allow=true; history.go(-1); assert.equal(position,0); assert.equal(routed,1);
+ history.go(1); assert.equal(position,1); assert.equal(entries[position].state.next,'retained'); assert.equal(routed,2);
+});

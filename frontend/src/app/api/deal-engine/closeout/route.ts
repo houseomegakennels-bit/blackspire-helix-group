@@ -1,3 +1,4 @@
+import { validCalendarDate } from "@/lib/property-client-guidance";
 import { guardAdminApi } from "@/lib/operator-access";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!["Closed Won", "Closed Lost", "Cancelled"].includes(body.outcome) || !body.closedAt?.trim() || typeof body.assignmentFeeCollected !== "number" || !Number.isFinite(body.assignmentFeeCollected) || body.assignmentFeeCollected < 0) {
+  if (!["Closed Won", "Closed Lost", "Cancelled"].includes(body.outcome) || !validCalendarDate(body.closedAt) || typeof body.assignmentFeeCollected !== "number" || !Number.isFinite(body.assignmentFeeCollected) || body.assignmentFeeCollected < 0) {
     return NextResponse.json({ ok: false, error: "Choose a valid outcome, provide the close date and confirm the collected fee (0 if none)." }, { status: 400 });
   }
   const result = await saveDealCloseout({

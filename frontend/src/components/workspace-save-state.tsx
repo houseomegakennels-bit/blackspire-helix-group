@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const unsavedForms = new Map<object, boolean>();
 function protectUnload(event: BeforeUnloadEvent) {
@@ -13,6 +13,48 @@ function protectLink(event: MouseEvent) {
   const target = new URL(link.href, window.location.href);
   if (target.pathname === window.location.pathname && target.search === window.location.search) return;
   if ([...unsavedForms.values()].some(Boolean) && !window.confirm("You have unsaved changes. Leave this page and discard them?")) { event.preventDefault(); event.stopPropagation(); }
+}
+
+/** Install at the root so every same-document history entry has a position. */
+export function WorkspaceHistoryGuard({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    const indexKey = "__blackspireHistoryIndex";
+    const push = window.history.pushState;
+    const replace = window.history.replaceState;
+    let current = Number(window.history.state?.[indexKey] ?? 0);
+    let restoring = false;
+    replace.call(window.history, { ...window.history.state, [indexKey]: current }, "");
+    const pushTracked: History["pushState"] = function(this: History, state, unused, url) {
+      const next = current + 1;
+      push.call(this, { ...state, [indexKey]: next }, unused, url);
+      current = next;
+    };
+    const replaceTracked: History["replaceState"] = function(this: History, state, unused, url) {
+      replace.call(this, { ...state, [indexKey]: current }, unused, url);
+    };
+    window.history.pushState = pushTracked;
+    window.history.replaceState = replaceTracked;
+    function guardHistory(event: PopStateEvent) {
+      if (restoring) { restoring = false; event.stopImmediatePropagation(); return; }
+      const next = event.state?.[indexKey];
+      // Entries from other documents use beforeunload, not Next's soft navigation.
+      if (typeof next !== "number" || next === current) return;
+      if ([...unsavedForms.values()].some(Boolean) && !window.confirm("You have unsaved changes. Leave this page and discard them?")) {
+        event.stopImmediatePropagation();
+        restoring = true;
+        window.history.go(current - next);
+        return;
+      }
+      current = next;
+    }
+    window.addEventListener("popstate", guardHistory, true);
+    return () => {
+      window.removeEventListener("popstate", guardHistory, true);
+      if (window.history.pushState === pushTracked) window.history.pushState = push;
+      if (window.history.replaceState === replaceTracked) window.history.replaceState = replace;
+    };
+  }, []);
+  return children;
 }
 
 export function useUnsavedWorkWarning(dirty: boolean) {
@@ -55,6 +97,11 @@ export function useWorkspaceSaveState(values: unknown) {
     inFlight.current = false;
   }
 
+  function acknowledgeFields(fields: Record<string, unknown>) {
+    setSaved((previous) => JSON.stringify({ ...JSON.parse(previous), ...fields }));
+    setSavedAt(new Date());
+  }
+
   function load(values: unknown) { setSaved(JSON.stringify(values)); setSavedAt(null); setFailed(false); }
 
   function fail() {
@@ -63,7 +110,7 @@ export function useWorkspaceSaveState(values: unknown) {
     inFlight.current = false;
   }
 
-  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail, load };
+  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail, load, acknowledgeFields };
 }
 
 export function WorkspaceSaveState({ state, label }: {
