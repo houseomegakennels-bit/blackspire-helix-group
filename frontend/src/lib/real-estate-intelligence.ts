@@ -129,7 +129,7 @@ export async function getRealEstateDivisionSnapshot() {
     {
       label: "Properties in Deal Engine",
       value: dealCount == null ? "Unavailable" : String(dealCount).padStart(2, "0"),
-      detail: "Saved properties across the full Deal Engine pipeline.",
+      detail: "Saved properties across the full pipeline; totals refresh about every five minutes.",
     },
     {
       label: "Buyer Matches",
@@ -139,12 +139,12 @@ export async function getRealEstateDivisionSnapshot() {
     {
       label: "Projected Assignment Fees",
       value: projectedAssignmentFees,
-      detail: "Known assignment fee targets across the full pipeline.",
+      detail: "Known fee targets across the full pipeline; totals refresh about every five minutes.",
     },
     {
       label: "Buyer Follow-Ups",
       value: buyerFollowUps == null ? "Unavailable" : String(buyerFollowUps).padStart(2, "0"),
-      detail: "Properties in the buyer follow-up stage across the full pipeline.",
+      detail: "Properties in buyer follow-up; totals refresh about every five minutes.",
     },
   ];
 

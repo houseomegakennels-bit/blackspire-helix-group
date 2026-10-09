@@ -1,5 +1,6 @@
 import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 import { analyzeInvestment, parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
@@ -1268,7 +1269,7 @@ export async function listWorkspaceDealPage(requestedPage = 1) {
 }
 
 // Division totals must not depend on the operator's current page.
-export async function getDealEnginePipelineSummary() {
+async function loadDealEnginePipelineSummary() {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
   let totalDeals = 0;
@@ -1278,12 +1279,13 @@ export async function getDealEnginePipelineSummary() {
   const pageSize = 1000;
   try {
     const countResult = await supabase.from("deal_leads").select("id", { count: "exact", head: true });
-    if (countResult.error || countResult.count == null) return null;
-    for (let offset = 0; offset < countResult.count; ) {
+    if (countResult.error || countResult.count == null || countResult.count > 5000) return null;
+    // Bound cold-cache work to one count and at most five data reads.
+    for (let offset = 0, batches = 0; offset < countResult.count && batches < 5; batches += 1) {
       const { data, error } = await supabase.from("deal_leads")
         .select("id,status,deal_analysis(assignment_fee_target)")
         .order("id", { ascending: true })
-        .range(offset, offset + pageSize - 1);
+        .range(offset, Math.min(offset + pageSize, countResult.count) - 1);
       if (error || !data?.length) return null;
       for (const row of data) {
         totalDeals += 1;
@@ -1294,11 +1296,19 @@ export async function getDealEnginePipelineSummary() {
       }
       offset += data.length;
     }
+    if (totalDeals !== countResult.count) return null;
     return { totalDeals, buyerFollowUps, projectedAssignmentFees: formatCurrency(knownFees ? assignmentFees : null) };
   } catch {
     return null;
   }
 }
+// A public dashboard can reuse these aggregate-only values for five minutes.
+export async function getDealEnginePipelineSummary() {
+  return unstable_cache(loadDealEnginePipelineSummary,
+    ["deal-engine-public-summary-v1", process.env.SUPABASE_URL ?? "unconfigured"],
+    { revalidate: 300 })();
+}
+
 
 export async function listDealEngineSellerSignals(limit = 4): Promise<DealEngineSellerSignal[]> {
   try {

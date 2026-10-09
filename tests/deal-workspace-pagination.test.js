@@ -62,8 +62,8 @@ test('empty results and unavailable reads are distinct', async () => {
   }
 });
 
-const summaryStart = source.indexOf('export async function getDealEnginePipelineSummary(');
-const summaryEnd = source.indexOf('\nexport async function listDealEngineSellerSignals(', summaryStart);
+const summaryStart = source.indexOf('async function loadDealEnginePipelineSummary(');
+const summaryEnd = source.indexOf('// A public dashboard', summaryStart);
 const summarySource = stripTypeScriptTypes(source.slice(summaryStart, summaryEnd).replace('export ', ''));
 
 test('division totals include properties and fees past both UI and database page boundaries', async () => {
@@ -75,7 +75,7 @@ test('division totals include properties and fees past both UI and database page
     then(resolve) { return Promise.resolve({ count: rows.length, error: null }).then(resolve); },
     async range(first, last) { ranges.push([first, last]); return failSecondPage && first > 0 ? { error: {} } : { data: rows.slice(first, last + 1), error: null }; },
   }; return q; } };
-  const summary = vm.runInNewContext(summarySource + '\ngetDealEnginePipelineSummary', {
+  const summary = vm.runInNewContext(summarySource + '\nloadDealEnginePipelineSummary', {
     getSupabaseAdmin: () => db, normalizeStage: status => status === 'Marketed' ? 'Buyer Follow-Up' : 'Underwriting',
     asSingle: value => value[0], nullableMoney: value => value == null ? null : Number(value),
     formatCurrency: value => value == null ? 'Not entered' : `$${value}`,
@@ -84,7 +84,7 @@ test('division totals include properties and fees past both UI and database page
   assert.equal(result.totalDeals, 1001);
   assert.equal(result.projectedAssignmentFees, '$977');
   assert.equal(result.buyerFollowUps, 1);
-  assert.deepEqual(ranges, [[0, 999], [1000, 1999]]);
+  assert.deepEqual(ranges, [[0, 999], [1000, 1000]]);
   failSecondPage = true;
   assert.equal(await summary(), null, 'never publish partial totals when a later page fails');
 });
@@ -106,4 +106,36 @@ test('division dashboard consumes pipeline totals independently of the operator 
   metrics = await values();
   assert.equal(metrics['Properties in Deal Engine'], 'Unavailable');
   assert.equal(metrics['Projected Assignment Fees'], 'Unavailable');
+});
+
+test('public summary rejects oversized pipelines and has a strict query budget', async () => {
+  let count = 5001, reads = 0;
+  const db = { from() { const q = {
+    select() { return q; }, order() { return q; },
+    then(resolve) { return Promise.resolve({ count, error: null }).then(resolve); },
+    async range() { reads += 1; return { data: [{ status: 'Needs Analysis', deal_analysis: null }], error: null }; },
+  }; return q; } };
+  const summary = vm.runInNewContext(summarySource + '\nloadDealEnginePipelineSummary', {
+    getSupabaseAdmin: () => db, normalizeStage: () => 'Underwriting', asSingle: () => null,
+    nullableMoney: () => null, formatCurrency: () => 'Not entered',
+  });
+  assert.equal(await summary(), null);
+  assert.equal(reads, 0, 'oversized pipeline must not start transferring rows');
+  count = 20;
+  assert.equal(await summary(), null);
+  assert.equal(reads, 5, 'a reduced server row cap must not cause unbounded requests');
+});
+
+test('public summary configures a five-minute cache scoped to its data source', async () => {
+  const start = source.indexOf('export async function getDealEnginePipelineSummary(');
+  const end = source.indexOf('\nexport async function listDealEngineSellerSignals(', start);
+  let options, keys;
+  const loader = async () => ({ totalDeals: 12 });
+  const summary = vm.runInNewContext(stripTypeScriptTypes(source.slice(start, end).replace('export ', '')) + '\ngetDealEnginePipelineSummary', {
+    process: { env: { SUPABASE_URL: 'https://fictional.invalid' } }, loadDealEnginePipelineSummary: loader,
+    unstable_cache: (fn, cacheKeys, config) => { assert.equal(fn, loader); keys = cacheKeys; options = config; return fn; },
+  });
+  assert.equal((await summary()).totalDeals, 12);
+  assert.equal(options.revalidate, 300);
+  assert.equal(keys[1], 'https://fictional.invalid');
 });
