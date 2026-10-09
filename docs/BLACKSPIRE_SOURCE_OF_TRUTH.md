@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-08 — Peggy start screen and save clarity
+
+User requested the prioritized follow-up: simplify the first screen, clarify saving, and check signed-in use where available. Home now emphasizes property intake and continuing active properties with their stored next actions; supplementary workspace links and operational forms remain available lower on the page. Analysis, offer terms and packet forms show unsaved, saving, failed and successful save states with a session-local success time. An accepted save tracks the submitted snapshot so edits made during the request remain unsaved; duplicate saves for the same form are blocked. Packet form and command shortcut share the same save state.
+
+This follows published PR #164 on main639ff05d. Command is responding; its original dirty Peggy worktree was inspected and preserved, and a separate worktree at /mnt/blackspire-builds/peggy-start-save-20261009 was created. The scratch checkout was refreshed after its runtime reset. Browser connector reauthentication blocks signed-in production acceptance, which remains UNVERIFIED. Build, browser acceptance, independent review and full CI are pending for this follow-up. Standing Peggy publication authority remains in force; VPS/Zola HELD boundaries remain unchanged. No production mutation or deployment has occurred for this follow-up.
+
 ## 2026-10-08 — Peggy workspace visual polish published
 
 User requested the final visual pass and has standing publication authority for the Peggy scope. Scoped Deal Engine styles simplify typography and card hierarchy, standardize buttons and 16px form controls, expose compact mobile navigation, prioritize the packet action, and provide sticky accessible save feedback. Empty states explain the next action. Existing teal/silver/gold division identity and all calculations, access controls and production boundaries are preserved.

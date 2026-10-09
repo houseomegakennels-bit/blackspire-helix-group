@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { WorkspaceSaveState, useWorkspaceSaveState } from "@/components/workspace-save-state";
 import { InvestmentAmountField } from "@/components/investment-amount-field";
 import { parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
 
@@ -160,6 +161,10 @@ export function DealEngineDealDetailView({
   const [status, setStatus] = useState<string | null>(null);
   const [working, setWorking] = useState<"analysis" | "buyer" | "contract" | "coordination" | "execute" | "packet" | "response" | "search" | "seller-draft" | "stage" | "task" | "outreach" | "closeout" | "document" | "email" | "arv" | null>(null);
 
+  const analysisSave = useWorkspaceSaveState({ strategy, monthlyExpenses, monthlyDebtService, estimatedArv, sellerAskingPrice, repairEstimate, closingCosts, holdingCosts, buyerProfitTarget, assignmentFeeTarget, rentalEstimate, flipEstimate });
+  const contractSave = useWorkspaceSaveState({ contractType, offerLow, offerHigh, earnestMoney });
+  const packetSave = useWorkspaceSaveState({ propertyNotes, investorSummary, buyerEmailBlast, buyerSmsAlert, contactInstructions, deadlineToSubmitOffer, comps });
+
   function syncInvestorFollowUp(email: string) {
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
     setSelectedInvestorEmail(email);
@@ -223,6 +228,8 @@ export function DealEngineDealDetailView({
   async function saveContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!offerLow.trim() || !offerHigh.trim() || !earnestMoney.trim()) { setStatus("Enter the proposed offer range and deposit for this property before saving."); return; }
+    const submitted = contractSave.begin();
+    if (submitted === null) return;
     setWorking("contract");
     setStatus(null);
     try {
@@ -240,8 +247,10 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Contract save failed.");
       setStatus(payload.message ?? "Contract posture saved.");
+      contractSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      contractSave.fail();
       setStatus(error instanceof Error ? error.message : "Contract save failed.");
     } finally {
       setWorking(null);
@@ -250,6 +259,8 @@ export function DealEngineDealDetailView({
 
   async function saveAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = analysisSave.begin();
+    if (submitted === null) return;
     setWorking("analysis");
     setStatus(null);
     try {
@@ -276,8 +287,10 @@ export function DealEngineDealDetailView({
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Underwriting save failed.");
 
       setStatus(payload.message ?? "Underwriting saved.");
+      analysisSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      analysisSave.fail();
       setStatus(error instanceof Error ? error.message : "Underwriting save failed.");
     } finally {
       setWorking(null);
@@ -369,6 +382,8 @@ export function DealEngineDealDetailView({
 
   async function savePacket(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = packetSave.begin();
+    if (submitted === null) return;
     setWorking("packet");
     setStatus(null);
     try {
@@ -389,8 +404,10 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Packet save failed.");
       setStatus(payload.message ?? "Deal packet saved.");
+      packetSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      packetSave.fail();
       setStatus(error instanceof Error ? error.message : "Packet save failed.");
     } finally {
       setWorking(null);
@@ -706,6 +723,8 @@ export function DealEngineDealDetailView({
   async function executeDealCommand(command: "send-contract" | "mark-signed" | "save-packet" | "buyer-draft" | "move-closing") {
     if (command === "send-contract" && !window.confirm("Confirm the contract was actually sent and its delivery evidence is saved. This button only records that event; it does not send a contract.")) return;
     if (command === "mark-signed" && !window.confirm("Confirm the required parties have actually signed and the executed contract is saved. This button records the status; it does not collect signatures.")) return;
+    const packetSubmitted = command === "save-packet" ? packetSave.begin() : null;
+    if (command === "save-packet" && packetSubmitted === null) return;
     setWorking("execute");
     setStatus(null);
     try {
@@ -744,6 +763,7 @@ export function DealEngineDealDetailView({
 
       if (command === "save-packet") {
         await postJson("/api/deal-engine/save-packet", packetPayload(), "Deal packet saved.");
+        packetSave.succeed(packetSubmitted!);
         setStatus("Disposition packet saved. Next: open the investor room or download the PDF packet.");
       }
 
@@ -774,6 +794,7 @@ export function DealEngineDealDetailView({
 
       router.refresh();
     } catch (error) {
+      if (command === "save-packet") packetSave.fail();
       setStatus(error instanceof Error ? error.message : "Deal execution action failed.");
     } finally {
       setWorking(null);
@@ -986,13 +1007,13 @@ export function DealEngineDealDetailView({
           <div className="brand-card p-5">
             <div className="text-sm font-semibold text-white">Fast actions</div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <button type="button" onClick={() => void executeDealCommand("send-contract")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+              <button type="button" onClick={() => void executeDealCommand("send-contract")} disabled={working === "execute" || packetSave.pending} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Mark contract sent
               </button>
-              <button type="button" onClick={() => void executeDealCommand("mark-signed")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+              <button type="button" onClick={() => void executeDealCommand("mark-signed")} disabled={working === "execute" || packetSave.pending} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Mark signed / under contract
               </button>
-              <button type="button" onClick={() => void executeDealCommand("save-packet")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+              <button type="button" onClick={() => void executeDealCommand("save-packet")} disabled={working === "execute" || packetSave.pending} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Save buyer packet
               </button>
               <button type="button" onClick={() => void launchBuyerSearch()} disabled={working === "search"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
@@ -1001,7 +1022,7 @@ export function DealEngineDealDetailView({
               <button type="button" onClick={() => void executeDealCommand("buyer-draft")} disabled={working === "execute" || !selectedBuyerSignalId} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Generate buyer draft
               </button>
-              <button type="button" onClick={() => void executeDealCommand("move-closing")} disabled={working === "execute"} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
+              <button type="button" onClick={() => void executeDealCommand("move-closing")} disabled={working === "execute" || packetSave.pending} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition disabled:opacity-60">
                 Move into closing
               </button>
               <Link href={`/deal-room/${encodeURIComponent(detail.room.slug)}`} className="brand-button justify-center px-4 py-3 text-sm uppercase tracking-[0.16em] transition">
@@ -1356,7 +1377,7 @@ export function DealEngineDealDetailView({
                 ))}
               </div>
             </div>
-            <button type="submit" disabled={working === "coordination"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+            <button type="submit" disabled={working === "coordination"} className="brand-button inline-flex px-4 py-3 text-sm transition disabled:opacity-60">
               {working === "coordination" ? "Saving coordination..." : "Save closing coordination"}
             </button>
           </form>
@@ -1544,6 +1565,7 @@ export function DealEngineDealDetailView({
             </div>
           </div>
           <form onSubmit={saveAnalysis} className="grid gap-4">
+            <WorkspaceSaveState state={analysisSave} label="Analysis" />
             <label className="block text-sm text-white">What are you evaluating?
               <select value={strategy} onChange={(event) => setStrategy(event.target.value as InvestmentStrategy)} className="brand-input mt-2 min-h-11 w-full px-3 py-3 text-base">
                 <option value="flip">Buy and resell (flip)</option><option value="rental">Buy and rent</option><option value="assignment">Assign my purchase contract</option>
@@ -1571,8 +1593,8 @@ export function DealEngineDealDetailView({
               <InvestmentAmountField label="Monthly operating expenses" help="Monthly taxes, insurance, maintenance, vacancy, management and HOA costs. Exclude loan payments." value={monthlyExpenses} onChange={setMonthlyExpenses} />
               <InvestmentAmountField label="Monthly loan payment" help="Expected monthly debt service. Enter a confirmed 0 for an all-cash purchase." value={monthlyDebtService} onChange={setMonthlyDebtService} />
             </div> : null}
-            <button type="submit" disabled={working === "analysis"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              {working === "analysis" ? "Saving underwriting..." : "Save underwriting"}
+            <button type="submit" disabled={analysisSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {analysisSave.pending ? "Saving underwriting..." : "Save underwriting"}
             </button>
           </form>
         </Panel>
@@ -1602,13 +1624,14 @@ export function DealEngineDealDetailView({
             </div>
           </div>
           <form onSubmit={saveContract} className="grid gap-4">
+            <WorkspaceSaveState state={contractSave} label="Offer terms" />
             <label className="grid gap-2 text-sm text-white"><span>Contract type</span><input value={contractType} onChange={(event) => setContractType(event.target.value)} className="brand-input min-h-11 w-full px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" /></label>
             <div className="grid gap-3 md:grid-cols-3">
               <InvestmentAmountField label="Offer range — lower amount" help="Enter your own proposed amount. Saving a draft does not send an offer." value={offerLow} onChange={setOfferLow} required />
               <InvestmentAmountField label="Offer range — upper amount" help="Enter your own upper amount after reviewing the analysis and seller terms." value={offerHigh} onChange={setOfferHigh} required />
               <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
             </div>
-            <button type="submit" disabled={working === "contract"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+            <button type="submit" disabled={contractSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "contract" ? "Saving..." : "Save contract posture"}
             </button>
           </form>
@@ -1916,6 +1939,7 @@ export function DealEngineDealDetailView({
       >
           <span id="property-packet" className="scroll-mt-6" />
         <form onSubmit={savePacket} className="grid gap-6 xl:grid-cols-2">
+            <WorkspaceSaveState state={packetSave} label="Property packet" />
           <div className="space-y-4">
             <textarea value={propertyNotes} onChange={(event) => setPropertyNotes(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Property notes" />
             <textarea value={investorSummary} onChange={(event) => setInvestorSummary(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Investor summary" />
@@ -1926,8 +1950,8 @@ export function DealEngineDealDetailView({
             <textarea value={contactInstructions} onChange={(event) => setContactInstructions(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Contact instructions" />
             <textarea value={buyerEmailBlast} onChange={(event) => setBuyerEmailBlast(event.target.value)} className="brand-input min-h-28 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer email blast" />
             <textarea value={buyerSmsAlert} onChange={(event) => setBuyerSmsAlert(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer SMS alert" />
-            <button type="submit" disabled={working === "packet"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              {working === "packet" ? "Saving packet..." : "Save disposition packet"}
+            <button type="submit" disabled={packetSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
+              {packetSave.pending ? "Saving packet..." : "Save disposition packet"}
             </button>
           </div>
         </form>

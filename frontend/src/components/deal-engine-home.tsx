@@ -16,6 +16,7 @@ function statusTone(status: string) {
 }
 
 export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnapshot }) {
+  const activeDeals = snapshot.leads.filter((lead) => !/^(closed|dead|lost)(?:\b|$)/i.test(lead.status));
   const hasLiveDeals = snapshot.leads.length > 0;
   const hasSellerSignals = snapshot.sellerSignals.length > 0;
   const hasBuyerSignals = snapshot.buyerSignals.length > 0;
@@ -35,91 +36,36 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
 
   return (
     <DealEngineShell>
-      <header className="brand-panel overflow-hidden px-6 py-7">
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-[38%] bg-[radial-gradient(circle_at_center,hsl(193_100%_60%/.08),transparent_72%)]" />
-        <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-          <div className="relative space-y-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Wholesale Command Deck</p>
-              <h2 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
-                Your property pipeline.
-              </h2>
-              <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
-                Review qualified properties, compare the numbers, and prepare offers and buyer packets.
-              </p>
-            </div>
-
-            <div className="workspace-actions flex flex-wrap gap-3">
-              <Link href="/seller-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
-                Review seller pipeline
-              </Link>
-              <Link href="/workspace/nexus" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
-                Open Nexus
-              </Link>
-              <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
-                Open buyer workspace
-              </Link>
-              <Link href="/ecosystem/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.2em] transition">
-                Public division page
-              </Link>
-            </div>
-          </div>
-
-          <div className="relative grid gap-4 content-start">
-            <div className="brand-card overflow-hidden p-5">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.3em] text-[var(--gold-soft)]">
-                    Helix flow
-                  </div>
-                  <div className="mt-3 text-2xl font-semibold text-white">Seller to buyer relay</div>
-                </div>
-                <StatusPill tone={hasLiveDeals ? "good" : "warn"} label={hasLiveDeals ? "live deals" : "no live deals"} />
-              </div>
-              <div className="mt-5 space-y-3">
-                {snapshot.heroSignals.map((signal) => (
-                  <div
-                    key={signal}
-                    className="flex items-center gap-3 rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-3 text-sm text-[var(--copy-soft)]"
-                  >
-                    <span className="h-2 w-2 rounded-full bg-[hsl(193_100%_60%)] shadow-[0_0_14px_hsl(193_100%_60%/.4)]" />
-                    <span>{signal}</span>
-                  </div>
-                ))}
-                {dealEngineFlow.map((step) => (
-                  <Link
-                    key={step.label}
-                    href={step.href}
-                    className="block rounded-[16px] border border-[var(--line)] bg-[hsl(0_0%_100%/.02)] px-4 py-4 transition hover:-translate-y-[1px] hover:border-[var(--line-strong)]"
-                  >
-                    <div className="text-base font-semibold text-white">{step.label}</div>
-                    <div className="mt-1 text-sm leading-6 text-[var(--copy-soft)]">{step.detail}</div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
+      <header className="brand-panel px-6 py-7">
+        <h2 className="brand-display text-4xl leading-tight text-white lg:text-5xl">Your property workspace.</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">Add a property or pick up an existing deal. Each property keeps its numbers, offer terms and next steps together.</p>
+        <div className="workspace-actions mt-5 flex flex-wrap gap-3">
+          <Link href="/workspace/harvester" className="workspace-primary brand-button inline-flex px-5 py-3 text-sm">Add property</Link>
+          {hasLiveDeals ? <a href="#continue-working" className="brand-button inline-flex px-5 py-3 text-sm">Continue working</a> : <Link href="/seller-engine" className="brand-button inline-flex px-5 py-3 text-sm">Review seller leads</Link>}
         </div>
+        <p className="mt-3 text-sm text-[var(--copy-soft)]">New properties start in intake, then move through seller qualification into this workspace.</p>
       </header>
+
+      <section id="continue-working" aria-labelledby="continue-heading" className="workspace-continue space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="continue-heading" className="text-2xl font-semibold text-white">Continue working</h2>
+          {hasLiveDeals ? <a href="#property-queue" className="brand-button inline-flex px-4 py-3 text-sm">View all properties ({snapshot.leads.length})</a> : null}
+        </div>
+        {activeDeals.length ? <div className="grid gap-4 xl:grid-cols-3">
+          {activeDeals.slice(0, 3).map((lead) => <article key={lead.id} className="brand-card flex min-w-0 flex-col gap-3 p-5">
+            <StatusPill tone={statusTone(lead.status)} label={lead.status} />
+            <h3 className="text-lg font-semibold text-white">{lead.propertyAddress}</h3>
+            <p className="text-sm leading-6 text-[var(--copy-soft)]"><span className="font-semibold text-white">Next step: </span>{lead.nextAction || "Open this property to review the details and choose a next step."}</p>
+            <Link href={`/workspace/deal-engine/${encodeURIComponent(lead.id)}`} className="brand-button mt-auto inline-flex px-4 py-3 text-sm" aria-label={`Continue working on ${lead.propertyAddress}`}>Open property</Link>
+          </article>)}
+        </div> : <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{hasLiveDeals ? "No active properties to continue. View all properties to review completed deals, or add another property above." : "Your first property will appear here after seller qualification. Start with Add property, or review existing seller leads."}</div>}
+      </section>
 
       <section className="grid gap-4 md:grid-cols-4">
         {snapshot.metrics.map((metric) => (
           <Metric key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
         ))}
       </section>
-
-      <Panel
-        eyebrow="Action Console"
-        title="Push the deal forward"
-        description="Move a seller lead into Deal Engine, save contract posture, and generate buyer outreach drafts without leaving the Helix command surface."
-      >
-        <DealEngineActions
-          sellerSignals={snapshot.sellerSignals}
-          buyerSignals={snapshot.buyerSignals}
-          contractDrafts={snapshot.contractDrafts}
-          persistence={snapshot.persistence}
-        />
-      </Panel>
 
       <Panel
         eyebrow="Pipeline Board"
@@ -164,7 +110,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
         </div>
       </Panel>
 
-      <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+      <div id="property-queue" className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <Panel
           eyebrow="Pipeline"
           title="Live deal queue"
@@ -350,6 +296,19 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
       </div>
 
       <Panel
+        eyebrow="Action Console"
+        title="Push the deal forward"
+        description="Move a seller lead into Deal Engine, save contract posture, and generate buyer outreach drafts without leaving the Helix command surface."
+      >
+        <DealEngineActions
+          sellerSignals={snapshot.sellerSignals}
+          buyerSignals={snapshot.buyerSignals}
+          contractDrafts={snapshot.contractDrafts}
+          persistence={snapshot.persistence}
+        />
+      </Panel>
+
+      <Panel
         eyebrow="Assembly"
         title="Contract and outreach workbench"
         description="This is the synthesis layer: Deal Engine can now read seller context and buyer momentum together, then turn that into contract-ready posture and outreach sequencing."
@@ -406,6 +365,15 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
           </div>
         )}
       </Panel>
+      <details className="brand-card p-5">
+        <summary className="min-h-11 cursor-pointer py-3 text-lg font-semibold text-white">More workspace tools</summary>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {dealEngineFlow.map((step) => <Link key={step.label} href={step.href} className="brand-button inline-flex px-4 py-3 text-sm">{step.label}</Link>)}
+          <Link href="/workspace/nexus" className="brand-button inline-flex px-4 py-3 text-sm">Open Nexus</Link>
+          <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-4 py-3 text-sm">Open buyer workspace</Link>
+          <Link href="/ecosystem/deal-engine" className="brand-button inline-flex px-4 py-3 text-sm">Public division page</Link>
+        </div>
+      </details>
     </DealEngineShell>
   );
 }
