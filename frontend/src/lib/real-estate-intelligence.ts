@@ -2,7 +2,7 @@ import "server-only";
 
 import { getHarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
 import { listAllBuyerReports } from "@/lib/buyer-engine-server";
-import { getDealEngineWorkspaceSnapshot } from "@/lib/deal-engine-server";
+import { getDealEnginePipelineSummary } from "@/lib/deal-engine-server";
 import { ecosystemProjects } from "@/lib/ecosystem";
 import { getNexusSnapshot } from "@/lib/nexus-server";
 import { listSellerLeads } from "@/lib/seller-engine-server";
@@ -98,17 +98,17 @@ export async function getRealEstateDivisionSnapshot() {
     getHarvesterWorkspaceSnapshot().catch(() => null),
     listSellerLeads().catch(() => []),
     getNexusSnapshot().catch(() => null),
-    getDealEngineWorkspaceSnapshot().catch(() => null),
+    getDealEnginePipelineSummary().catch(() => null),
     listAllBuyerReports({ limit: 200, offset: 0 }).then((result) => result.reports).catch(() => []),
   ]);
 
   const harvesterIntakes = harvesterSnapshot?.intakes.length ?? 0;
   const sellerLeadCount = sellerLeads.length;
   const contactsEnriched = nexusSnapshot?.contacts.length ?? 0;
-  const dealsAnalyzed = dealSnapshot?.leads.length ?? 0;
+  const dealCount = dealSnapshot?.totalDeals;
   const buyerMatches = buyerReports.length;
-  const projectedAssignmentFees = dealSnapshot?.metrics.find((item) => item.label === "Projected Assignment Fees")?.value ?? "$0";
-  const closedTransactions = dealSnapshot?.stageBoard.find((item) => item.label === "Buyer Follow-Up")?.count ?? 0;
+  const projectedAssignmentFees = dealSnapshot?.projectedAssignmentFees ?? "Unavailable";
+  const buyerFollowUps = dealSnapshot?.buyerFollowUps;
 
   const metrics: RealEstateDashboardMetric[] = [
     {
@@ -127,9 +127,9 @@ export async function getRealEstateDivisionSnapshot() {
       detail: "Owner records with verified phone or contact posture in Nexus.",
     },
     {
-      label: "Deals Analyzed",
-      value: String(dealsAnalyzed).padStart(2, "0"),
-      detail: "Active opportunities modeled inside Deal Engine.",
+      label: "Properties in Deal Engine",
+      value: dealCount == null ? "Unavailable" : String(dealCount).padStart(2, "0"),
+      detail: "Saved properties across the full pipeline; totals refresh about every five minutes.",
     },
     {
       label: "Buyer Matches",
@@ -139,12 +139,12 @@ export async function getRealEstateDivisionSnapshot() {
     {
       label: "Projected Assignment Fees",
       value: projectedAssignmentFees,
-      detail: "Modeled spread across the current deal queue.",
+      detail: "Known fee targets across the full pipeline; totals refresh about every five minutes.",
     },
     {
-      label: "Closed Transactions",
-      value: String(closedTransactions).padStart(2, "0"),
-      detail: "Pipeline proxy until close-state automation is expanded.",
+      label: "Buyer Follow-Ups",
+      value: buyerFollowUps == null ? "Unavailable" : String(buyerFollowUps).padStart(2, "0"),
+      detail: "Properties in buyer follow-up; totals refresh about every five minutes.",
     },
   ];
 

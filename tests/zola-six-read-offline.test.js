@@ -59,7 +59,7 @@ test('transport rejects unexpected origins, methods, and routes without network'
 test('strict Deal records rejects missing configuration, ordinary SQL errors and missing relation, preserving UI fallback', async () => {
   const source = fs.readFileSync(new URL('../frontend/src/lib/deal-engine-server.ts', import.meta.url), 'utf8');
   const start = source.indexOf('export async function listDealEngineLeads(');
-  const end = source.indexOf('\nexport async function listDealEngineSellerSignals', start);
+  const end = source.indexOf('\nexport ', start + 'export '.length);
   const body = stripTypeScriptTypes(source.slice(start, end).replace('export ', ''));
   for (const scenario of ['unconfigured', 'query-error', 'missing-relation', 'empty', 'rows']) {
     let fallbackCalls = 0;

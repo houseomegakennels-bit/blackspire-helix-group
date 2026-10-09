@@ -1,5 +1,6 @@
 import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { BuyerDispatchAuthority } from "@/lib/buyer-dispatch-authority";
 import { scopedBuyerWriterEnabled } from "@/lib/buyer-scoped-dispatch";
 import { analyzeInvestment, parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
@@ -124,6 +125,7 @@ export type DealEngineWorkspaceSnapshot = {
     detail: string;
   };
   leads: DealEngineLead[];
+  pagination?: { page: number; pageSize: number; total: number | null; available: boolean };
   metrics: DealEngineMetric[];
   heroSignals: string[];
   stageBoard: Array<{
@@ -1240,6 +1242,73 @@ export async function listDealEngineLeads(limit = 6, { readOnly = false, readCli
   if (error || !data?.length) return [];
   return (data as unknown as DealLeadJoin[]).map(toLead);
 }
+
+// The operator list is paginated independently of bounded capability/summary reads.
+export async function listWorkspaceDealPage(requestedPage = 1) {
+  const pageSize = 24;
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 && requestedPage <= 1_000_000 ? requestedPage : 1;
+  const supabase = getSupabaseAdmin();
+  const unavailable = { leads: [] as DealEngineLead[], pagination: { page: 1, pageSize, total: null as number | null, available: false } };
+  if (!supabase) return unavailable;
+  try {
+    const countResult = await supabase.from("deal_leads").select("id", { count: "exact", head: true });
+    if (countResult.error || countResult.count == null) return unavailable;
+    const total = countResult.count;
+    const resolvedPage = Math.min(page, Math.max(1, Math.ceil(total / pageSize)));
+    if (total === 0) return { leads: [], pagination: { page: 1, pageSize, total, available: true } };
+    const result = await supabase.from("deal_leads")
+      .select("id,owner_name,property_address,county,status,motivation_score,recommended_next_action,deal_analysis(maximum_allowable_offer,assignment_fee_target),seller_conversations(next_action),buyer_matches(exit_strategy)")
+      .order("motivation_score", { ascending: false })
+      .order("id", { ascending: true })
+      .range((resolvedPage - 1) * pageSize, resolvedPage * pageSize - 1);
+    if (result.error) return unavailable;
+    return { leads: ((result.data ?? []) as unknown as DealLeadJoin[]).map(toLead), pagination: { page: resolvedPage, pageSize, total, available: true } };
+  } catch {
+    return unavailable;
+  }
+}
+
+// Division totals must not depend on the operator's current page.
+async function loadDealEnginePipelineSummary() {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+  let totalDeals = 0;
+  let assignmentFees = 0;
+  let knownFees = 0;
+  let buyerFollowUps = 0;
+  const pageSize = 1000;
+  try {
+    const countResult = await supabase.from("deal_leads").select("id", { count: "exact", head: true });
+    if (countResult.error || countResult.count == null || countResult.count > 5000) return null;
+    // Bound cold-cache work to one count and at most five data reads.
+    for (let offset = 0, batches = 0; offset < countResult.count && batches < 5; batches += 1) {
+      const { data, error } = await supabase.from("deal_leads")
+        .select("id,status,deal_analysis(assignment_fee_target)")
+        .order("id", { ascending: true })
+        .range(offset, Math.min(offset + pageSize, countResult.count) - 1);
+      if (error || !data?.length) return null;
+      for (const row of data) {
+        totalDeals += 1;
+        if (normalizeStage(String(row.status ?? "")) === "Buyer Follow-Up") buyerFollowUps += 1;
+        const analysis = asSingle(row.deal_analysis);
+        const amount = nullableMoney(analysis?.assignment_fee_target);
+        if (amount != null) { assignmentFees += amount; knownFees += 1; }
+      }
+      offset += data.length;
+    }
+    if (totalDeals !== countResult.count) return null;
+    return { totalDeals, buyerFollowUps, projectedAssignmentFees: formatCurrency(knownFees ? assignmentFees : null) };
+  } catch {
+    return null;
+  }
+}
+// A public dashboard can reuse these aggregate-only values for five minutes.
+export async function getDealEnginePipelineSummary() {
+  return unstable_cache(loadDealEnginePipelineSummary,
+    ["deal-engine-public-summary-v1", process.env.SUPABASE_URL ?? "unconfigured"],
+    { revalidate: 300 })();
+}
+
 
 export async function listDealEngineSellerSignals(limit = 4): Promise<DealEngineSellerSignal[]> {
   try {
@@ -4425,14 +4494,15 @@ export async function getDealEngineDealRoomBySlug(slug: string) {
   return getDealEngineDealDetail(matchedLead.id);
 }
 
-export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorkspaceSnapshot> {
+export async function getDealEngineWorkspaceSnapshot(page = 1): Promise<DealEngineWorkspaceSnapshot> {
   const env = getEnvState();
-  const [leads, sellerSignals, buyerSignals, persistence] = await Promise.all([
-    listDealEngineLeads(6),
+  const [propertyPage, sellerSignals, buyerSignals, persistence] = await Promise.all([
+    listWorkspaceDealPage(page),
     listDealEngineSellerSignals(4),
     listDealEngineBuyerSignals(4),
     getDealEnginePersistenceStatus(),
   ]);
+  const { leads, pagination } = propertyPage;
   const liveCount = leads.length;
   const offerReadyCount = leads.filter((lead) => lead.status === "Offer Ready").length;
   const negotiatingCount = leads.filter((lead) => lead.status === "Negotiating").length;
@@ -4441,6 +4511,7 @@ export async function getDealEngineWorkspaceSnapshot(): Promise<DealEngineWorksp
     env,
     persistence,
     leads,
+    pagination,
     metrics: buildMetrics(leads),
     heroSignals: [
       persistence.ready

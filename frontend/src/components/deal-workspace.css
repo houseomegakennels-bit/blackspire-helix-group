@@ -122,3 +122,8 @@
 @media (prefers-reduced-motion: reduce) {
   .deal-workspace *, .deal-workspace *::before, .deal-workspace *::after { animation: none !important; transition: none !important; }
 }
+
+.deal-workspace .workspace-save-state { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 12px 14px; border-left: 3px solid #849ba8; border-radius: 8px; background: #132027; color: #edf3f5; font-size: 14px; line-height: 1.5; }
+.deal-workspace .workspace-save-state[data-state="unsaved"] { border-left-color: #f4d48a; }
+.deal-workspace .workspace-save-state[data-state="error"] { border-left-color: #ff9d9d; }
+.deal-workspace .workspace-continue { scroll-margin-top: 24px; }
