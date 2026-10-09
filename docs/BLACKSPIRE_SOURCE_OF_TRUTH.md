@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy calm workspace polish prepared
+
+The authorized follow-up simplifies the Deal Engine shell to Today, Your properties, People and More, with other workspaces retained in a disclosure. The home page uses a light reading area with teal actions and a compact dark sidebar. Saved properties precede the stage board; stage counts, seller/buyer activity and connection details are expandable. Labels are plainer, navigation targets remain at least 44px, and a visible connection warning remains above the home content whenever saving is unavailable. Detail pages keep their existing forms, calculations and dark workbench palette; the redundant navigation rails are removed and the sticky property navigation clears the workspace header.
+
+The branch is `polish/peggy-calm-workspace-20261009` in `/workspace/scratch/70261599c2c0/blackspire-peggy-followup`, based on freshly fetched main `6f8f0cbfb0bd783e89a2781b430eb4e6dc2e1667`. Node22.23.1 deterministic frontend install, production build/typecheck, 21 focused pagination/exact-ID/access-boundary tests, secret scan and living-memory check passed. Final frontend lint also passed with six inherited warnings. Pre-existing pruned skill symlink deletions are preserved and excluded from the change.
+
+The signed-in cloud browser now reaches both the existing home and property detail screens in production; no production forms were submitted. The cloud browser rejected opening a local static visual fixture, so visual acceptance of the new layout is UNVERIFIED pending the hosted preview. Command reports offline. Exact-head CI, independent review and hosted-preview acceptance remain required before publication. No database writes, paid lookups, outreach, signing, permission changes or VPS/Zola release occurred.
+
 ## 2026-10-08 — Peggy start screen and save clarity
 
 Published the user-authorized follow-up: the home page emphasizes Add property and Continue working, shows stored next actions, and provides a counted 24-property paginated list with explicit empty/unavailable states. Analysis, offer terms and packet forms show unsaved, saving, failed and saved states with a session-local success time. Successful saves acknowledge only the submitted snapshot, so edits made in flight remain unsaved; the packet form and shortcut share a lock and status. Packet feedback spans both desktop columns. Division totals are separate from operator pagination and cached for five minutes, scoped to the data source, with at most one count plus five row reads and a 5000-property ceiling. Larger or incomplete summaries show Unavailable instead of partial totals. Labels describe saved properties and buyer follow-ups accurately.
