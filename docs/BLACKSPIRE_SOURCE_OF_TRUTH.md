@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy implementation independently cleared
+
+Configured Codex review completed cleanly on exact implementation 2aaf359e1fa0899383f8c21b2a00c7a07ae640f6 (PR #166 comment 6090339963). All prior findings are repaired and resolved. Its frontend preview dpl_FWZtoEF8SfGAV537VkcAvUpoGeqA is READY. A full reload of the signed-in cloud preview confirms the simplified home next action. The property walkthrough confirms light reading surfaces, section navigation, missing-number guidance, truthful current-page state, title/signature save feedback, explicit closeout prompt and document-evidence guidance. No live form was saved, message sent, paid search run or signature recorded. Actual phone-width and Peggy-role acceptance remain UNVERIFIED; the observed desktop operator walkthrough passed.
+
+The genuine reviewed implementation anchor advances to 2aaf359e1fa0899383f8c21b2a00c7a07ae640f6; the checker remains unchanged. As with prior reviewed branch anchors, it is not yet an ancestor of trusted main before the ancestry-preserving merge. Exact-head CI 37999519453 is still running, and the documentation successor also requires CI before publication. Production is unchanged at this checkpoint. User publication authority and the Peggy-only preview configuration exception remain in force.
+
 ## 2026-10-09 — Peggy signed-in preview walkthrough and final edge cases
 
 The configured preview now reports AUTH READY and accepts the existing operator sign-in. Read-only walkthrough reaches the property home, live property list and DE-1931 detail; the guided missing-numbers action opens the correct section. Desktop form labels, spacing and contrast render clearly with no horizontal overflow at the observed 1363px viewport. No form save, outreach, paid lookup or signing action was submitted. Phone-width and actual Peggy-role acceptance remain UNVERIFIED.
@@ -1232,7 +1238,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `5b0f1d2f2b7262308f51c0c5776d0a55d1ceb769`
+- Last verified implementation commit: `2aaf359e1fa0899383f8c21b2a00c7a07ae640f6`
 
 ## 2026-09-04 — Activation recovery delta
 
