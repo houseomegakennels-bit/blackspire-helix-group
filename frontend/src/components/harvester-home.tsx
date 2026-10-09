@@ -39,10 +39,10 @@ export function HarvesterHome({ snapshot }: { snapshot: HarvesterWorkspaceSnapsh
                 <div className="min-w-0">
                   <div className="text-[10px] uppercase tracking-[0.4em] text-[var(--gold-soft)]">Harvester Workspace</div>
                   <h1 className="mt-3 text-2xl font-black tracking-[0.05em] text-white sm:text-4xl">
-                    Extract. Analyze. Acquire.
+                    Add and review properties
                   </h1>
                   <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--copy-soft)]">
-                    Capture raw marketplace chatter, structure it into Blackspire opportunity records, and push the approved deals into Seller Engine, Nexus, Deal Engine, and Buyer Engine without leaving the command surface.
+                    Add an address, screenshot or listing text. Review the details, then open the saved property to continue.
                   </p>
                 </div>
 

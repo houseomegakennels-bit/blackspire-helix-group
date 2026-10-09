@@ -34,6 +34,7 @@ export type DealEngineSellerSignal = {
 };
 
 export type DealEngineBuyerSignal = {
+  matchReason?: string;
   id: string;
   buyerName: string;
   mailingAddress: string;

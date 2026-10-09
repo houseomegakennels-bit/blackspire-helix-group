@@ -4,84 +4,50 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { DivisionWatermark } from "@/components/division-watermark";
-import { RealEstateWorkflowRail } from "@/components/real-estate-workflow-rail";
 import { brandAssets } from "@/lib/brand-assets";
 
-const navItems = [
-  { href: "/workspace/deal-engine", label: "Command Deck" },
-  { href: "/seller-engine", label: "Seller Engine" },
-  { href: "/workspace/nexus", label: "Nexus" },
-  { href: "/workspace/buyer-engine", label: "Buyer Engine" },
-  { href: "/ecosystem/deal-engine", label: "Public Division Page" },
-  { href: "/ecosystem", label: "Ecosystem" },
-  { href: "/", label: "Blackspire Helix" },
-];
-
-/**
- * Deal Engine surface uses the shared `theme-deal-engine` class (defined in
- * globals.css) as the single source of truth for its logo palette: teal/cyan
- * primary ("D" + "DEAL ENGINE" wordmark), silver/platinum structure, and gold
- * accents (helix sword, gear, "CLOSE"). The class remaps the --gold/--line and
- * --project-* token families so every brand-* component inherits the right
- * color instead of the amber root default.
- */
-export function DealEngineShell({ children }: { children: ReactNode }) {
+/** Keep the property workspace focused on everyday work; other divisions remain in More. */
+export function DealEngineShell({ children, home = false, light = home }: { children: ReactNode; home?: boolean; light?: boolean }) {
   return (
-    <main
-      className="deal-workspace theme-deal-engine relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_-2%,hsl(190_92%_56%/.22),transparent_44%),radial-gradient(circle_at_88%_8%,hsl(44_82%_60%/.15),transparent_38%),radial-gradient(circle_at_50%_122%,hsl(196_80%_38%/.16),transparent_54%),linear-gradient(180deg,hsl(206_30%_5%)_0%,hsl(208_28%_3%)_46%,hsl(210_26%_4%)_100%)] text-foreground"
-    >
-      <DivisionWatermark logoSrc={brandAssets.dealEngine.logo} />
-      <div className="workspace-layout relative z-10 mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-5">
-        <aside className="workspace-sidebar brand-panel h-fit overflow-hidden p-5 lg:sticky lg:top-3">
-          <div className="pointer-events-none absolute inset-x-8 top-0 h-36 rounded-b-[42px] bg-[radial-gradient(circle_at_top,hsl(193_100%_60%/.14),transparent_74%)]" />
-          <div className="workspace-brand relative border-b border-[var(--line)] pb-5">
-            <div className="workspace-logo mb-4 overflow-hidden rounded-[24px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(0_0%_2%/.96))] px-3 py-4">
-              <div className="relative mx-auto h-[110px] w-full max-w-[140px] sm:h-[172px] sm:max-w-[218px]">
-                <Image
-                  src={brandAssets.dealEngine.logo}
-                  alt={brandAssets.dealEngine.name}
-                  fill
-                  priority
-                  className="object-contain"
-                  sizes="(max-width: 640px) 140px, 218px"
-                />
+    <main className={`deal-workspace theme-deal-engine relative min-h-screen ${light ? "workspace-home" : "bg-[#0b1217]"}`}>
+      <a href="#workspace-content" className="workspace-skip">Skip to property workspace</a>
+      <div className="workspace-layout relative mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:px-5">
+        <aside className="workspace-sidebar brand-panel h-fit p-5 lg:sticky lg:top-20">
+          <div className="workspace-identity">
+            <Image src={brandAssets.dealEngine.logo} alt="" width={64} height={64} priority className="rounded-xl object-contain" />
+            <div>
+              <p className="text-sm text-[var(--copy-soft)]">Blackspire</p>
+              <h1 className="text-xl font-semibold text-white">Property workspace</h1>
+            </div>
+          </div>
+          <p className="workspace-introduction mt-4 text-sm leading-6 text-[var(--copy-soft)]">A place for your properties, people and next steps.</p>
+          <nav aria-label="Property workspace" className="workspace-nav workspace-simple-nav mt-5">
+            <Link href="/workspace/deal-engine" aria-current={home ? "page" : undefined}>Today</Link>
+            <Link href="/workspace/deal-engine#property-queue">Your properties</Link>
+            <details>
+              <summary>People</summary>
+              <div className="workspace-subnav">
+                <Link href="/seller-engine">Seller leads</Link>
+                <Link href="/workspace/nexus">Contact details</Link>
+                <Link href="/workspace/buyer-engine">Buyer contacts</Link>
               </div>
-            </div>
-            <p className="text-[10px] uppercase tracking-[0.48em] text-[var(--gold-soft)]">Blackspire Helix Group</p>
-            <h1 className="brand-display mt-3 text-2xl text-white sm:text-3xl">{brandAssets.dealEngine.name}</h1>
-            <p className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">
-              Acquisition, underwriting, contracts, buyer handoff, and disposition packaging, with Nexus handling contact-resolution gaps upstream.
-            </p>
-            <div className="mt-4 flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-cyan-300">
-              <span className="live-dot" /> Wholesale command surface online
-            </div>
-          </div>
-
-          <nav className="workspace-nav mt-5 lg:space-y-2">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="block rounded-[16px] border border-[var(--line)] bg-[linear-gradient(180deg,hsl(0_0%_6%/.92),hsl(214_20%_9%/.92))] px-4 py-3 text-sm text-[var(--copy-soft)] transition hover:-translate-y-[1px] hover:border-[var(--line-strong)] hover:text-white hover:shadow-[0_16px_30px_hsl(0_0%_0%/.28)]"
-              >
-                {item.label}
-              </Link>
-            ))}
+            </details>
+            <details>
+              <summary>More</summary>
+              <div className="workspace-subnav">
+                <Link href="/workspace/harvester">Add a property</Link>
+                <Link href="/workspace/property">Property research</Link>
+                <Link href="/workspace/sentinel">Tasks and activity</Link>
+                <Link href="/workspaces">All workspaces</Link>
+                <Link href="/ecosystem/deal-engine">About Deal Engine</Link>
+                <Link href="/ecosystem">Explore Blackspire</Link>
+                <Link href="/">Blackspire home</Link>
+              </div>
+            </details>
           </nav>
-
-          <div className="brand-card mt-6 hidden p-4 lg:block">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--gold)]">Mission Boundary</div>
-            <p className="mt-2 text-sm leading-6 text-[var(--copy-soft)]">
-              Deal Engine starts after seller qualification and ends with a buyer-ready packet, contract posture, and disposition path.
-            </p>
-          </div>
-          <div className="hidden lg:block">
-            <RealEstateWorkflowRail active="deal" compact />
-          </div>
+          <p className="workspace-introduction mt-6 border-t border-[var(--line)] pt-4 text-sm leading-6 text-[var(--copy-soft)]">Open a property to review its numbers, save your progress or prepare the next step.</p>
         </aside>
-
-        <section className="min-w-0 space-y-5">{children}</section>
+        <section id="workspace-content" tabIndex={-1} className={`min-w-0 space-y-5 ${light ? "workspace-home-content" : ""}`}>{children}</section>
       </div>
     </main>
   );
