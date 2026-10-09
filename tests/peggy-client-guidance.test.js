@@ -124,7 +124,7 @@ test('email API checks subject and body boundaries before sending', async () => 
  const route=fs.readFileSync('frontend/src/app/api/deal-engine/send-email/route.ts','utf8');
  const code=route.slice(route.indexOf('export async function POST'));
  const post=vm.runInNewContext(stripTypeScriptTypes(code).replaceAll('export ', '')+'\nPOST', {guardAdminApi:async()=>null,draftNeedsReview,NextResponse:{json:(body,opts)=>({body,status:opts?.status??200})},sendDealEmail:async()=>{sends++;return {ok:true};}});
- for (const [subject,body] of [['Property follow-up','Address: Not captured'],['Price: Not entered','Please call me']]) {
+ for (const [subject,body] of [['Property follow-up','Address: Not captured'],['Property follow-up','Address: Not captured.'],['Property follow-up','Price: Not entered (TBD)'],['Property follow-up','Price: Not entered (confirm with seller).'],['Price: Not entered','Please call me']]) {
   const result=await post({json:async()=>({dealId:'fictional',to:'test@example.com',subject,body})});assert.equal(result.status,400);
  }
  assert.equal(sends,0);
