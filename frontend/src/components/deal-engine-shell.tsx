@@ -7,9 +7,9 @@ import type { ReactNode } from "react";
 import { brandAssets } from "@/lib/brand-assets";
 
 /** Keep the property workspace focused on everyday work; other divisions remain in More. */
-export function DealEngineShell({ children, home = false }: { children: ReactNode; home?: boolean }) {
+export function DealEngineShell({ children, home = false, light = home }: { children: ReactNode; home?: boolean; light?: boolean }) {
   return (
-    <main className={`deal-workspace theme-deal-engine relative min-h-screen ${home ? "workspace-home" : "bg-[#0b1217]"}`}>
+    <main className={`deal-workspace theme-deal-engine relative min-h-screen ${light ? "workspace-home" : "bg-[#0b1217]"}`}>
       <a href="#workspace-content" className="workspace-skip">Skip to property workspace</a>
       <div className="workspace-layout relative mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:px-5">
         <aside className="workspace-sidebar brand-panel h-fit p-5 lg:sticky lg:top-20">
@@ -47,7 +47,7 @@ export function DealEngineShell({ children, home = false }: { children: ReactNod
           </nav>
           <p className="workspace-introduction mt-6 border-t border-[var(--line)] pt-4 text-sm leading-6 text-[var(--copy-soft)]">Open a property to review its numbers, save your progress or prepare the next step.</p>
         </aside>
-        <section id="workspace-content" tabIndex={-1} className={`min-w-0 space-y-5 ${home ? "workspace-home-content" : ""}`}>{children}</section>
+        <section id="workspace-content" tabIndex={-1} className={`min-w-0 space-y-5 ${light ? "workspace-home-content" : ""}`}>{children}</section>
       </div>
     </main>
   );

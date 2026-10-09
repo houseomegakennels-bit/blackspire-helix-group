@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-09 — Peggy preview configuration connected
+
+All five required Supabase variables now exist only for preview branch polish/peggy-calm-workspace-20261009, verified in the refreshed Vercel UI. Existing original project keys were entered directly through authorized cloud settings; server service-role key remains Secret and only public-prefixed anon/URL settings are Config. Production and Zola variables remain unchanged. Vercel bulk save partially succeeds when a public-prefix Secret is rejected; the refreshed inventory confirms all five scoped entries after the public settings were saved separately. No key values were logged or committed. Supabase sign-in succeeded; its dashboard shows an outstanding-invoice notice, with no billing action taken.
+
+Exact-head CI 37997478244 passed on 783ab6b519c947c097b24f9bb03642c95aa03d3d. Its independent review found one additional accessibility issue: the property detail shell incorrectly marked Today as the current page. Light-surface styling now has its own prop, preserving the visual design without that false navigation announcement. TypeScript passes. A new preview build, final exact-head CI/review, and signed-in visual acceptance remain required; production publication remains UNVERIFIED. No live application records, outreach, permissions or signatures were changed.
+
 ## 2026-10-09 — Peggy remaining save-state review repairs
 
 Independent review of PR #166 head 9eb8dd31ff09895f21105a65d73d1dfbba9352fb found four P2 save-state issues. Closeout now returns the actual persisted stage and next action, synchronizes those client fields without clearing a separate stage note or newer edits, and acknowledges their saved baseline. Signature, title checklist and timeline editors now register unsaved changes and save feedback; saving one row acknowledges only that row. Successful partial acknowledgements clear stale failure feedback without releasing another active save lock. Resetting practice records also remounts the follow-up form so cleared drafts cannot remain visibly populated.

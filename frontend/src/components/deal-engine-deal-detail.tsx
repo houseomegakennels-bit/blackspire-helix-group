@@ -917,7 +917,7 @@ export function DealEngineDealDetailView({
   });
 
   return (
-    <PropertySectionContext.Provider value={section}><DealEngineShell home>
+    <PropertySectionContext.Provider value={section}><DealEngineShell light>
       {(detail.uploadedDocuments.some((item) => suspectedTestRecord(JSON.stringify(item))) || detail.investorResponses.some((item) => suspectedTestRecord(JSON.stringify(item)))) ? <div role="status" className="workspace-connection-notice rounded-xl border p-4">This property contains records that appear to be tests. Review Documents and Buyers before relying on completion badges or response counts. Existing records are preserved.</div> : null}
       <header className="brand-panel overflow-hidden px-6 py-7">
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
