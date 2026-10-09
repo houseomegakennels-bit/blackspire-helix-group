@@ -1150,7 +1150,7 @@ export function DealEngineDealDetailView({
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Recommended handoff action</div>
               <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                {detail.sellerSignal?.recommendedAction ?? detail.lead.nextAction}
+                {readableNextStep(detail.sellerSignal?.recommendedAction ?? detail.lead.nextAction)}
               </div>
             </div>
             <div className="brand-card p-5">

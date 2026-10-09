@@ -6,7 +6,8 @@ export function readableNextStep(value: string) {
 }
 
 export function draftNeedsReview(value: string) {
-  return /not entered|not captured|market still resolving|unknown opportunity|workflow trigger|dispatch|bad gateway|<html|[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i.test(value);
+  return /\{\{[^}]+\}\}|<html\b|<!doctype\s+html|\b(?:workflow trigger|dispatch)\s+(?:failed|error|returned)\b|\b(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway timeout)\b/i.test(value)
+    || /(?:^|\n)\s*(?:price|offer|address|owner|seller|buyer|market|property|closing date)\s*:\s*(?:not entered|not captured|market still resolving|unknown opportunity)\s*(?:$|\n)/i.test(value);
 }
 
 export function suspectedTestRecord(value: string) {

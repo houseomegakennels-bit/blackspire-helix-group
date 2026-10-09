@@ -60,7 +60,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
           {activeDeals.slice(0, 3).map((lead) => <article key={lead.id} className="brand-card flex min-w-0 flex-col gap-3 p-5">
             <StatusPill tone={statusTone(lead.status)} label={lead.status} />
             <h3 className="text-lg font-semibold text-white">{lead.propertyAddress}</h3>
-            <p className="text-sm leading-6 text-[var(--copy-soft)]"><span className="font-semibold text-white">Next step: </span>{lead.nextAction || "Open this property to review the details and choose a next step."}</p>
+            <p className="text-sm leading-6 text-[var(--copy-soft)]"><span className="font-semibold text-white">Next step: </span>{readableNextStep(lead.nextAction) || "Open this property to review the details and choose a next step."}</p>
             <Link href={`/workspace/deal-engine/${encodeURIComponent(lead.id)}`} className="brand-button mt-auto inline-flex px-4 py-3 text-sm" aria-label={`Continue working on ${lead.propertyAddress}`}>Open property</Link>
           </article>)}
         </div> : <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{listUnavailable ? "The property list could not be loaded. Refresh the page to try again; your saved properties have not been removed." : hasLiveDeals ? "No active properties on this page. Browse the property list below to review other pages or completed deals." : "Your first property will appear here after seller qualification. Start with Add property, or review existing seller leads."}</div>}

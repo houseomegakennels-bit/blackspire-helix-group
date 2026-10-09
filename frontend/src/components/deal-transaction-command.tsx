@@ -300,6 +300,7 @@ export function DealTransactionCommand({
         generatedPdfUrl: payload.documentUrl ?? contractDraft.generatedPdfUrl,
       };
       setContractDraft(nextDraft);
+      draftSave.acknowledgeFields({ generatedPdfUrl: nextDraft.generatedPdfUrl });
       setSnapshot((current) => ({
         ...current,
         contracts: current.contracts.map((entry) => (entry.id === nextDraft.id ? nextDraft : entry)),

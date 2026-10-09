@@ -55,7 +55,7 @@ test('upload presence alone does not establish complete documents or assignment 
  assert.equal(reviewed.factors.find(x=>x.key==='assignmentAgreementReady').met,true);
 });
 test('technical errors and incomplete customer drafts are recognized without exposing raw errors', () => {
- assert.equal(draftNeedsReview('An offer somewhere Not entered'),true);
+ assert.equal(draftNeedsReview('Price: Not entered'),true);
  assert.equal(draftNeedsReview('Workflow trigger failed: <html>'),true);
  assert.doesNotMatch(readableNextStep('Workflow returned 502 Bad Gateway <html>'),/502|html|gateway/i);
  assert.equal(suspectedTestRecord('Diagnostic Buyer buyer@example.com'),true);
@@ -105,4 +105,10 @@ test('partial saves clear failures while retaining other dirty rows and the acti
  state=render({a:'edited',b:'edited'});assert.equal(state.pending,false);assert.equal(state.dirty,true);
  state.begin();state.succeedFields({b:'edited'});
  state=render({a:'edited',b:'edited'});assert.equal(state.dirty,false);assert.equal(state.failed,false);
+});
+
+
+test('ordinary customer language and reference IDs are allowed while technical placeholders are blocked', () => {
+ for (const text of ['Please dispatch the documents tomorrow.', 'Your reference is 12345678-1234-1234-1234-123456789abc.', 'The inspection has not captured all repairs.', 'The address was not entered in the report.']) assert.equal(draftNeedsReview(text),false);
+ for (const text of ['Hello {{seller_name}}', '502 Bad Gateway', 'Dispatch failed: upstream error', 'Address: Not captured', '<!DOCTYPE html><html>error</html>']) assert.equal(draftNeedsReview(text),true);
 });
