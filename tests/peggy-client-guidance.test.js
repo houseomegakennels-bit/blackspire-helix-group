@@ -110,5 +110,5 @@ test('partial saves clear failures while retaining other dirty rows and the acti
 
 test('ordinary customer language and reference IDs are allowed while technical placeholders are blocked', () => {
  for (const text of ['Please dispatch the documents tomorrow.', 'Your reference is 12345678-1234-1234-1234-123456789abc.', 'The inspection has not captured all repairs.', 'The address was not entered in the report.']) assert.equal(draftNeedsReview(text),false);
- for (const text of ['Hello {{seller_name}}', '502 Bad Gateway', 'Dispatch failed: upstream error', 'Address: Not captured', '<!DOCTYPE html><html>error</html>']) assert.equal(draftNeedsReview(text),true);
+ for (const text of ['Blackspire is packaging a unknown opportunity at this address.', 'Your acquisition activity in Market still resolving suggests a fit.', 'Hello {{seller_name}}', '502 Bad Gateway', 'Dispatch failed: upstream error', 'Address: Not captured', '<!DOCTYPE html><html>error</html>']) assert.equal(draftNeedsReview(text),true);
 });

@@ -6,7 +6,7 @@ export function readableNextStep(value: string) {
 }
 
 export function draftNeedsReview(value: string) {
-  return /\{\{[^}]+\}\}|<html\b|<!doctype\s+html|\b(?:workflow trigger|dispatch)\s+(?:failed|error|returned)\b|\b(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway timeout)\b/i.test(value)
+  return /packaging an? unknown opportunity|acquisition activity in market still resolving|\{\{[^}]+\}\}|<html\b|<!doctype\s+html|\b(?:workflow trigger|dispatch)\s+(?:failed|error|returned)\b|\b(?:502|503|504)\s+(?:bad gateway|service unavailable|gateway timeout)\b/i.test(value)
     || /(?:^|\n)\s*(?:price|offer|address|owner|seller|buyer|market|property|closing date)\s*:\s*(?:not entered|not captured|market still resolving|unknown opportunity)\s*(?:$|\n)/i.test(value);
 }
 
