@@ -17,6 +17,9 @@ function statusTone(status: string) {
 
 export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnapshot }) {
   const activeDeals = snapshot.leads.filter((lead) => !/^(closed|dead|lost)(?:\b|$)/i.test(lead.status));
+  const pagination = snapshot.pagination;
+  const pageCount = pagination?.total != null ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : 1;
+  const listUnavailable = pagination?.available === false;
   const hasLiveDeals = snapshot.leads.length > 0;
   const hasSellerSignals = snapshot.sellerSignals.length > 0;
   const hasBuyerSignals = snapshot.buyerSignals.length > 0;
@@ -49,7 +52,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
       <section id="continue-working" aria-labelledby="continue-heading" className="workspace-continue space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="continue-heading" className="text-2xl font-semibold text-white">Continue working</h2>
-          {hasLiveDeals ? <a href="#property-queue" className="brand-button inline-flex px-4 py-3 text-sm">View all properties ({snapshot.leads.length})</a> : null}
+          {hasLiveDeals ? <a href="#property-queue" className="brand-button inline-flex px-4 py-3 text-sm">Browse properties{pagination?.total != null ? ` (${pagination.total})` : ""}</a> : null}
         </div>
         {activeDeals.length ? <div className="grid gap-4 xl:grid-cols-3">
           {activeDeals.slice(0, 3).map((lead) => <article key={lead.id} className="brand-card flex min-w-0 flex-col gap-3 p-5">
@@ -58,10 +61,11 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
             <p className="text-sm leading-6 text-[var(--copy-soft)]"><span className="font-semibold text-white">Next step: </span>{lead.nextAction || "Open this property to review the details and choose a next step."}</p>
             <Link href={`/workspace/deal-engine/${encodeURIComponent(lead.id)}`} className="brand-button mt-auto inline-flex px-4 py-3 text-sm" aria-label={`Continue working on ${lead.propertyAddress}`}>Open property</Link>
           </article>)}
-        </div> : <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{hasLiveDeals ? "No active properties to continue. View all properties to review completed deals, or add another property above." : "Your first property will appear here after seller qualification. Start with Add property, or review existing seller leads."}</div>}
+        </div> : <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{listUnavailable ? "The property list could not be loaded. Refresh the page to try again; your saved properties have not been removed." : hasLiveDeals ? "No active properties on this page. Browse the property list below to review other pages or completed deals." : "Your first property will appear here after seller qualification. Start with Add property, or review existing seller leads."}</div>}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section aria-label="Property metrics for this page" className="grid gap-4 md:grid-cols-4">
+        <p className="md:col-span-4 text-sm text-[var(--copy-soft)]">Overview of properties on this page</p>
         {snapshot.metrics.map((metric) => (
           <Metric key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
         ))}
@@ -113,9 +117,14 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
       <div id="property-queue" className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
         <Panel
           eyebrow="Pipeline"
-          title="Live deal queue"
-          description="Only persisted Deal Engine records are shown here. If no deals have been created yet, this queue stays empty."
+          title="Your properties"
+          description="Browse saved properties and open one to continue working. Figures and stage counts above reflect the current page."
         >
+          {pagination?.available ? <nav aria-label="Property pages" className="mb-4 flex flex-wrap items-center gap-3 text-sm text-[var(--copy-soft)]">
+            <span>Page {pagination.page} of {pageCount} · {pagination.total} properties</span>
+            {pagination.page > 1 ? <Link href={`/workspace/deal-engine?page=${pagination.page - 1}#property-queue`} className="brand-button inline-flex px-4 py-3">Previous page</Link> : null}
+            {pagination.page < pageCount ? <Link href={`/workspace/deal-engine?page=${pagination.page + 1}#property-queue`} className="brand-button inline-flex px-4 py-3">Next page</Link> : null}
+          </nav> : null}
           {hasLiveDeals ? (
             <div className="space-y-4">
               {snapshot.leads.map((lead) => (
@@ -162,7 +171,7 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
             </div>
           ) : (
             <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">
-              <p>No properties are in your pipeline yet. Review the seller leads below, or capture a property in Harvester and qualify it in Seller Engine first.</p>
+              <p>{listUnavailable ? "The property list is unavailable. Refresh to try again." : "No properties are in your pipeline yet. Review the seller leads below, or capture a property in Harvester and qualify it in Seller Engine first."}</p>
               <Link href="/workspace/harvester" className="brand-button mt-4 inline-flex px-4 py-3 text-sm">Open property intake</Link>
             </div>
           )}

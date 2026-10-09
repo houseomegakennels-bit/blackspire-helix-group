@@ -1632,7 +1632,7 @@ export function DealEngineDealDetailView({
               <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
             </div>
             <button type="submit" disabled={contractSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              {working === "contract" ? "Saving..." : "Save contract posture"}
+              {contractSave.pending ? "Saving..." : "Save contract posture"}
             </button>
           </form>
         </Panel>
@@ -1939,7 +1939,7 @@ export function DealEngineDealDetailView({
       >
           <span id="property-packet" className="scroll-mt-6" />
         <form onSubmit={savePacket} className="grid gap-6 xl:grid-cols-2">
-            <WorkspaceSaveState state={packetSave} label="Property packet" />
+            <div className="xl:col-span-2"><WorkspaceSaveState state={packetSave} label="Property packet" /></div>
           <div className="space-y-4">
             <textarea value={propertyNotes} onChange={(event) => setPropertyNotes(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Property notes" />
             <textarea value={investorSummary} onChange={(event) => setInvestorSummary(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Investor summary" />
