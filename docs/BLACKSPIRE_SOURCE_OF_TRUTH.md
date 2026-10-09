@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-09 — Peggy corrected implementation cleared
+
+Configured independent Codex review found no major issues on c57a93184e110bb8f6c6c6a8007294cc2efe7c2f (PR #166 comment 6090527926). This supersedes the earlier clean-review checkpoint and includes separate subject/body validation, explicit failure-only next-step masking, and structured placeholder punctuation/annotation handling. All 12 targeted guidance/API regressions pass without sending live email. The genuine reviewed implementation anchor advances to this commit; the living-memory checker is unchanged.
+
+The previously completed signed-in desktop preview walkthrough covers the unchanged visual layout. Browser Back confirmation, phone-width and actual Peggy-role acceptance remain UNVERIFIED; native credential protection still requires manual browser recovery for further signed-in inspection. No live record save, outreach, paid search or signing occurred. Exact-head CI 38000754786 is in progress; the documentation successor requires its own passing CI. Production is unchanged until the authorized ancestry-preserving merge and deployment are verified. Peggy-only publication authority remains in force.
+
 ## 2026-10-09 — Peggy email field-boundary repairs
 
 Follow-up independent review at documentation head 91b27b88af7c40702ad06bf35cf1946557011667 found two additional P2 cases despite the earlier clean review. Both compose UI and email API now validate subject and body separately so a first-line placeholder cannot lose its boundary when fields are concatenated. Next-step presentation now masks explicit workflow/dispatch failures and HTTP gateway errors instead of ordinary instructions containing workflow, dispatch or an address number. Twelve targeted regressions pass, including the real email API with a fictional sender stub proving rejection happens before delivery. No live email was sent.
@@ -1244,7 +1250,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `2aaf359e1fa0899383f8c21b2a00c7a07ae640f6`
+- Last verified implementation commit: `c57a93184e110bb8f6c6c6a8007294cc2efe7c2f`
 
 ## 2026-09-04 — Activation recovery delta
 
