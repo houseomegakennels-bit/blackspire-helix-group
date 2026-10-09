@@ -4195,7 +4195,7 @@ export async function saveDealCloseout(input: SaveDealCloseoutInput) {
     return { ok: false as const, error };
   }
 
-  return { ok: true as const };
+  return { ok: true as const, stageStatus: "Closed", stageNextAction: closeoutSummary };
 }
 
 // The internal read capability needs only persisted underwriting inputs. Keep it

@@ -87,3 +87,22 @@ test('history cancellation restores the current property without discarding forw
  allow=true; history.go(-1); assert.equal(position,0); assert.equal(routed,1);
  history.go(1); assert.equal(position,1); assert.equal(entries[position].state.next,'retained'); assert.equal(routed,2);
 });
+
+test('partial saves clear failures while retaining other dirty rows and the active save lock', () => {
+ const source = fs.readFileSync('frontend/src/components/workspace-save-state.tsx', 'utf8');
+ const code = source.slice(source.indexOf('export function useWorkspaceSaveState('), source.indexOf('export function WorkspaceSaveState('));
+ const slots = []; let cursor = 0;
+ const useState = initial => { const index = cursor++; if (!(index in slots)) slots[index] = initial; return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }]; };
+ const useRef = initial => { const index = cursor++; if (!(index in slots)) slots[index] = {current:initial}; return slots[index]; };
+ const hook = vm.runInNewContext(stripTypeScriptTypes(code).replaceAll('export ', '')+'\nuseWorkspaceSaveState', {useState,useRef,useUnsavedWorkWarning(){},Date});
+ const render = value => {cursor=0;return hook(value);};
+ render({a:'old',b:'old'});
+ let state=render({a:'edited',b:'edited'});state.begin();state.fail();
+ state=render({a:'edited',b:'edited'});assert.equal(state.failed,true);
+ state.begin();state.acknowledgeFields({a:'edited'});
+ state=render({a:'edited',b:'edited'});assert.equal(state.failed,false);assert.equal(state.pending,true);assert.equal(state.begin(),null);assert.equal(state.dirty,true);
+ state.succeedFields({a:'edited'});
+ state=render({a:'edited',b:'edited'});assert.equal(state.pending,false);assert.equal(state.dirty,true);
+ state.begin();state.succeedFields({b:'edited'});
+ state=render({a:'edited',b:'edited'});assert.equal(state.dirty,false);assert.equal(state.failed,false);
+});

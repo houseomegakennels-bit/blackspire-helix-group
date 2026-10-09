@@ -138,6 +138,9 @@ export function DealTransactionCommand({
   const draftSave = useWorkspaceSaveState(contractDraft);
   const depositSave = useWorkspaceSaveState(emdTracker);
   const assignmentSave = useWorkspaceSaveState(assignmentTracker);
+  const signatureSave = useWorkspaceSaveState(signaturePacket);
+  const titleSave = useWorkspaceSaveState(Object.fromEntries(titleChecklist.map(item => [item.id, item])));
+  const timelineSave = useWorkspaceSaveState(Object.fromEntries(timeline.map(item => [item.id, item])));
   const selectedTemplate = useMemo<DealContractTemplateRecord | null>(
     () => snapshot.contractTemplates.find((template) => template.templateKey === selectedTemplateKey) ?? null,
     [selectedTemplateKey, snapshot.contractTemplates],
@@ -316,6 +319,7 @@ export function DealTransactionCommand({
       return;
     }
     if (!prepare && payload.signatureStatus && !window.confirm("Have you checked the actual signature packet and confirmed this send or signature? This only records status; it does not send or sign a document.")) return;
+    if (signatureSave.begin() === null) return;
     setWorking("signature");
     setStatus(null);
     try {
@@ -345,9 +349,17 @@ export function DealTransactionCommand({
         ...payload,
         signaturePacketUrl: body.packetUrl ?? payload.signaturePacketUrl ?? signaturePacket.signaturePacketUrl,
       };
+      if (prepare) {
+        next.signatureStatus = "prepared";
+        next.signatureProvider = (payload.signatureProvider ?? signaturePacket.signatureProvider).trim() || "DocuSign";
+      }
+      next.signerEmail = next.signerEmail.trim();
+      next.signerRole = next.signerRole.trim();
       setSignaturePacket(next);
+      signatureSave.succeed(JSON.stringify(next));
       setStatus(prepare ? "Signature packet prepared." : "Signature status updated.");
     } catch (error) {
+      signatureSave.fail();
       setStatus(error instanceof Error ? error.message : "Signature update failed.");
     } finally {
       setWorking(null);
@@ -413,6 +425,7 @@ export function DealTransactionCommand({
   }
 
   async function updateChecklistItem(item: DealTitleChecklistItemRecord) {
+    if (titleSave.begin() === null) return;
     setWorking(`title-${item.id}`);
     setStatus(null);
     try {
@@ -429,8 +442,10 @@ export function DealTransactionCommand({
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Checklist update failed.");
+      titleSave.succeedFields({ [item.id]: item });
       setStatus("Title checklist item updated.");
     } catch (error) {
+      titleSave.fail();
       setStatus(error instanceof Error ? error.message : "Checklist update failed.");
     } finally {
       setWorking(null);
@@ -438,6 +453,7 @@ export function DealTransactionCommand({
   }
 
   async function updateTimelineEvent(item: DealClosingTimelineEventRecord) {
+    if (timelineSave.begin() === null) return;
     setWorking(`timeline-${item.id}`);
     setStatus(null);
     try {
@@ -455,8 +471,10 @@ export function DealTransactionCommand({
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Timeline update failed.");
+      timelineSave.succeedFields({ [item.id]: item });
       setStatus("Timeline event updated.");
     } catch (error) {
+      timelineSave.fail();
       setStatus(error instanceof Error ? error.message : "Timeline update failed.");
     } finally {
       setWorking(null);
@@ -550,6 +568,9 @@ export function DealTransactionCommand({
         </div>
       ) : null}
 
+      {activeTab === "overview" || activeTab === "contracts" ? <WorkspaceSaveState state={signatureSave} label="Signature packet" /> : null}
+      {activeTab === "title" ? <WorkspaceSaveState state={titleSave} label="Title checklist" /> : null}
+      {activeTab === "timeline" ? <WorkspaceSaveState state={timelineSave} label="Closing timeline" /> : null}
       {activeTab === "contracts" ? <WorkspaceSaveState state={draftSave} label="Contract draft" /> : null}
       {activeTab === "contracts" ? (
         <div className="grid gap-6 xl:grid-cols-[0.88fr_1.12fr]">

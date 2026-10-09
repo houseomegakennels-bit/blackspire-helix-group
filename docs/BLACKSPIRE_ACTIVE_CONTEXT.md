@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-09 — Peggy remaining save-state review repairs
+
+Independent review of PR #166 head 9eb8dd31ff09895f21105a65d73d1dfbba9352fb found four P2 save-state issues. Closeout now returns the actual persisted stage and next action, synchronizes those client fields without clearing a separate stage note or newer edits, and acknowledges their saved baseline. Signature, title checklist and timeline editors now register unsaved changes and save feedback; saving one row acknowledges only that row. Successful partial acknowledgements clear stale failure feedback without releasing another active save lock. Resetting practice records also remounts the follow-up form so cleared drafts cannot remain visibly populated.
+
+Recovery checkout was restored from the published GitHub branch after scratch cleanup; Command remains offline. Node22.23.1 deterministic install, 54 focused regressions and frontend production build/typecheck passed. Fresh exact-head CI and independent review remain required. Vercel cloud sign-in is confirmed, but production secrets are write-only and no environment changes occurred. The canonical Supabase project is confirmed from existing records; its dashboard requires a separate sign-in to retrieve original settings for the already-approved Peggy-only preview. Signed-in preview/mobile acceptance and production publication remain UNVERIFIED. No live data writes, outreach, signing, permissions changes or merge occurred.
+
 ## 2026-10-09 — Peggy navigation and evidence follow-up
 
 The next independent review of head 49d38048e90bf0b46c35f83e9b7ee348b6a1af27 identified three additional P2 edge cases. The follow-up tracks history positions from the root and intercepts Back/Forward before Next soft navigation, restores the current entry on cancellation, validates closeout dates by format and calendar round-trip, and acknowledges persisted stage/coordination fields after quick actions while preserving other unsaved fields and newer edits. Fresh review and exact-head CI remain required; hosted visual acceptance remains UNVERIFIED.

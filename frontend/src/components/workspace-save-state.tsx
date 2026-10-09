@@ -100,6 +100,13 @@ export function useWorkspaceSaveState(values: unknown) {
   function acknowledgeFields(fields: Record<string, unknown>) {
     setSaved((previous) => JSON.stringify({ ...JSON.parse(previous), ...fields }));
     setSavedAt(new Date());
+    setFailed(false);
+  }
+
+  function succeedFields(fields: Record<string, unknown>) {
+    acknowledgeFields(fields);
+    setPending(false);
+    inFlight.current = false;
   }
 
   function load(values: unknown) { setSaved(JSON.stringify(values)); setSavedAt(null); setFailed(false); }
@@ -110,7 +117,7 @@ export function useWorkspaceSaveState(values: unknown) {
     inFlight.current = false;
   }
 
-  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail, load, acknowledgeFields };
+  return { dirty: current !== saved, pending, failed, savedAt, begin, succeed, fail, load, acknowledgeFields, succeedFields };
 }
 
 export function WorkspaceSaveState({ state, label }: {

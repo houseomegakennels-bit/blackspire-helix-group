@@ -682,9 +682,11 @@ export function DealEngineDealDetailView({
           notes: closeoutNotes,
         }),
       });
-      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; stageStatus: string; stageNextAction: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Deal closeout failed.");
-      setStageStatus("Closed");
+      setStageStatus((current) => current === stageStatus ? payload.stageStatus : current);
+      setStageNextAction((current) => current === stageNextAction ? payload.stageNextAction : current);
+      stageSave.acknowledgeFields({ stageStatus: payload.stageStatus, stageNextAction: payload.stageNextAction });
       setStatus(payload.message ?? "Deal closeout recorded.");
       closeoutSave.succeed(submitted);
       router.refresh();

@@ -39,5 +39,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, message: "Deal closeout recorded." });
+  return NextResponse.json({ ok: true, stageStatus: result.stageStatus, stageNextAction: result.stageNextAction, message: "Deal closeout recorded." });
 }
