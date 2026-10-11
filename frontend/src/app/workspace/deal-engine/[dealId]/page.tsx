@@ -21,5 +21,5 @@ export default async function DealEngineDetailPage({
     notFound();
   }
 
-  return <DealEngineDealDetailView dealId={dealId} detail={detail} commanderInsight={commanderInsight} transactionCenter={transactionCenter} />;
+  return <DealEngineDealDetailView key={dealId} dealId={dealId} detail={detail} commanderInsight={commanderInsight} transactionCenter={transactionCenter} />;
 }

@@ -1,7 +1,8 @@
 "use client";
 
+import { WorkspaceSaveState, useWorkspaceSaveState } from "@/components/workspace-save-state";
 import Link from "next/link";
-import { startTransition, useMemo, useState } from "react";
+import { startTransition, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { HarvesterSourceType, HarvesterWorkspaceSnapshot } from "@/lib/harvester-server";
@@ -147,7 +148,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
     }
   }
   const [form, setForm] = useState({
-    sourceType: "facebook_group" as HarvesterSourceType,
+    sourceType: "manual" as HarvesterSourceType,
     sourceName: "",
     sourceUrl: "",
     posterName: "",
@@ -160,7 +161,21 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
     originalText: "",
   });
 
+  const intakeSave = useWorkspaceSaveState({ form, selectedFile });
+  const pendingIntake = useRef<{ fingerprint: string; id: string; extracted?: boolean } | null>(null);
   const pending = Boolean(busyLabel);
+  const [advanced, setAdvanced] = useState(false);
+  async function approveAndOpen(intakeId: string) {
+    if (pending) return;
+    setBusyLabel("Saving your property...");
+    try {
+      await postJson("/api/harvester/approve", { intakeId });
+      const result = await postJson<{ dealId: string }>("/api/harvester/create-deal", { intakeId });
+      router.push(`/workspace/deal-engine/${encodeURIComponent(result.dealId)}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save the property. Your reviewed intake is still available; try again.");
+    } finally { setBusyLabel(null); }
+  }
   const supportedSources = useMemo(
     () => sourceTypeOptions.map((option) => option.label).join(" / "),
     [],
@@ -168,9 +183,20 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
 
   async function handleIntakeSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusyLabel("Extracting opportunity...");
+    if (pending) return;
+    if (!form.propertyAddress.trim() && !form.originalText.trim() && !selectedFile?.dataUrl) { setStatus("Enter an address, paste listing text, or choose an image. PDFs require pasted text."); return; }
+    const submitted = intakeSave.begin();
+    if (submitted === null) return;
+    const fingerprint = JSON.stringify({ form, selectedFile });
+    if (pendingIntake.current?.fingerprint === fingerprint && pendingIntake.current.extracted) {
+      intakeSave.succeed(submitted);
+      setActiveTab("deals");
+      setStatus("These property details are already saved. Review them below.");
+      return;
+    }
+    setBusyLabel("Reading property details...");
     try {
-      const intake = await postJson<{ intake: { id: string } }>(
+      const intake = pendingIntake.current?.fingerprint === fingerprint ? { intake: { id: pendingIntake.current.id } } : await postJson<{ intake: { id: string } }>(
         "/api/harvester/intake",
         {
           ...form,
@@ -179,6 +205,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
         },
       );
 
+      pendingIntake.current = { fingerprint, id: intake.intake.id };
       await postJson("/api/harvester/extract", {
         intakeId: intake.intake.id,
         imageDataUrl: selectedFile?.dataUrl ?? undefined,
@@ -194,24 +221,13 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
         },
       });
 
-      setStatus("Harvester intake captured and extracted. Review the deal card below, then approve the record.");
-      setForm({
-        sourceType: "facebook_group",
-        sourceName: "",
-        sourceUrl: "",
-        posterName: "",
-        propertyAddress: "",
-        county: "",
-        city: "",
-        state: "NC",
-        zip: "",
-        notes: "",
-        originalText: "",
-      });
-      setSelectedFile(null);
+      intakeSave.succeed(submitted);
+      pendingIntake.current = { fingerprint, id: intake.intake.id, extracted: true };
+      setStatus("Details extracted. Review the property below, then choose Approve and open property.");
       startTransition(() => router.refresh());
       setActiveTab("deals");
     } catch (error) {
+      intakeSave.fail();
       setStatus(error instanceof Error ? error.message : "Unable to create Harvester intake.");
     } finally {
       setBusyLabel(null);
@@ -274,7 +290,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <details><summary className="min-h-11 cursor-pointer py-3">Intake totals</summary><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {snapshot.metrics.map((metric) => (
           <div key={metric.label} className="brand-panel harvester-panel p-5">
             <div className="text-[10px] uppercase tracking-[0.28em] text-[var(--copy-muted)]">{metric.label}</div>
@@ -284,7 +300,8 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
         ))}
       </div>
 
-      <div className="harvester-status-bar">
+      </details>
+      <div className="harvester-status-bar" role="status" aria-live="polite">
         <div className="min-w-0 flex-1">
           <div className="text-[10px] uppercase tracking-[0.3em] text-[var(--copy-muted)]">Command Status</div>
           <div className="mt-2 text-sm text-white">{pending ? busyLabel : status}</div>
@@ -295,7 +312,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] snap-x snap-mandatory [&::-webkit-scrollbar]:hidden">
-        {snapshot.tabs.map((tab) => {
+        {snapshot.tabs.filter((tab) => advanced || tab.id === "intake" || tab.id === "deals").map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button
@@ -308,24 +325,26 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                   : "border-[var(--line)] bg-black/20 text-[var(--copy-soft)] hover:border-[var(--line-strong)] hover:text-white"
               }`}
             >
-              {tab.label} <span className="ml-2 text-[var(--gold-soft)]">{String(tab.count).padStart(2, "0")}</span>
+              {tab.id === "intake" ? "1. Add property" : tab.id === "deals" ? "2. Review details" : tab.label} <span className="ml-2 text-[var(--gold-soft)]">{String(tab.count).padStart(2, "0")}</span>
             </button>
           );
         })}
       </div>
 
+      <button type="button" className="brand-button min-h-11 px-4 py-3" aria-expanded={advanced} onClick={() => { setAdvanced(!advanced); setActiveTab("intake"); }}>{advanced ? "Hide extra tools" : "More intake tools"}</button>
       {activeTab === "intake" ? (
         <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <form onSubmit={handleIntakeSubmit} className="brand-panel harvester-panel harvester-upload-zone space-y-5 p-6">
             <div>
               <div className="text-[10px] uppercase tracking-[0.34em] text-[var(--gold-soft)]">Intake</div>
-              <h2 className="mt-3 text-2xl font-black tracking-[0.06em] text-white">Capture unstructured opportunity data</h2>
+              <h2 className="mt-3 text-2xl font-black tracking-[0.06em] text-white">Add a property</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">
-                Upload screenshot metadata, paste text from Facebook, SMS, email, or flyers, and let Harvester structure the opportunity into Blackspire records.
+                Start with an address, a screenshot, or pasted listing text. Review the extracted details before adding the property to your workspace.
               </p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <WorkspaceSaveState state={intakeSave} label="Property intake" />
+            <details><summary className="min-h-11 cursor-pointer py-3">Where did you find it? (optional)</summary><div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm text-[var(--copy-soft)]">
                 <span>Source type</span>
                 <select
@@ -369,6 +388,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
               </label>
             </div>
 
+            </details>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2 text-sm text-[var(--copy-soft)]">
                 <span>Property address</span>
@@ -421,7 +441,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
             </div>
 
             <label className="block space-y-2 text-sm text-[var(--copy-soft)]">
-              <span>Upload screenshot, flyer, or PDF metadata</span>
+              <span>Choose a screenshot or flyer image</span>
               <div className="harvester-file-field">
                 <input
                   type="file"
@@ -441,9 +461,9 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                   id="harvester-file-input"
                 />
                 <label htmlFor="harvester-file-input" className="cursor-pointer">
-                  <span className="block text-sm font-semibold text-white">Drop a file or tap to select</span>
+                  <span className="block text-sm font-semibold text-white">Tap to choose an image or PDF</span>
                   <span className="mt-2 block text-xs leading-6 text-[var(--copy-soft)]">
-                    AI vision OCR is live for images (JPG, PNG, WEBP). Drop a screenshot of a post, listing, or flyer and Harvester reads the price, address, beds/baths, and contact details automatically. PDFs store metadata only for now.
+                    Images can be read automatically. For PDFs, paste the relevant text below; the PDF contents are not read automatically. Review all extracted details.
                   </span>
                   {selectedFile ? (
                     <span className="mt-3 inline-flex rounded-full border border-[var(--line-strong)] px-3 py-1 text-xs uppercase tracking-[0.18em] text-[var(--gold-soft)]">
@@ -478,7 +498,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
 
             <div className="flex flex-wrap items-center gap-3">
               <button disabled={pending} className="brand-button px-6 py-3 text-xs uppercase tracking-[0.22em]" type="submit">
-                {pending ? busyLabel ?? "Working..." : "Extract Opportunity"}
+                {pending ? busyLabel ?? "Working..." : "Review property details"}
               </button>
               <div className="text-xs leading-6 text-[var(--copy-soft)]">
                 Only upload content you have permission to use. Do not scrape private platforms or violate group rules.
@@ -491,13 +511,9 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
               <div className="text-[10px] uppercase tracking-[0.34em] text-[var(--gold-soft)]">Pipeline</div>
               <div className="mt-4 grid gap-3">
                 {[
-                  "Upload or paste opportunity",
-                  "Extract structured deal data",
-                  "Approve and classify the record",
-                  "Send to Seller Engine",
-                  "Run Nexus enrichment",
-                  "Create Deal Engine record",
-                  "Rank Buyer Engine matches",
+                  "Enter an address, upload an image or paste listing text",
+                  "Review the extracted property details",
+                  "Approve and open your saved property",
                 ].map((step, index) => (
                   <div key={step} className="harvester-pipeline-step">
                     <span className="harvester-pipeline-index">{String(index + 1).padStart(2, "0")}</span>
@@ -595,7 +611,8 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 </div>
               ) : null}
 
-              <div className="mt-5 flex flex-wrap gap-3">
+              <button type="button" disabled={pending || !intake.opportunity} className="brand-button mt-5 min-h-11 px-5 py-3" onClick={() => approveAndOpen(intake.id)}>Approve and open property</button>
+              <details className="mt-4"><summary className="min-h-11 cursor-pointer py-3">Other actions</summary><div className="mt-5 flex flex-wrap gap-3">
                 <button
                   type="button"
                   className="harvester-action-button"
@@ -659,7 +676,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                 >
                   Delete
                 </button>
-              </div>
+              </div></details>
 
               {buyerResults[intake.id] ? (
                 <div className="mt-5 rounded-[18px] border border-[var(--line-strong)] bg-black/25 p-4">

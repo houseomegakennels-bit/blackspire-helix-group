@@ -1,3 +1,4 @@
+import { WorkspaceHistoryGuard } from "@/components/workspace-save-state";
 import type { Metadata, Viewport } from "next";
 import {
   Cormorant_Garamond,
@@ -50,7 +51,7 @@ export default function RootLayout({
       className={`${displayFont.variable} ${bodyFont.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
-        {children}
+        <WorkspaceHistoryGuard>{children}</WorkspaceHistoryGuard>
       </body>
     </html>
   );

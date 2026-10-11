@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { createContext, useContext, useEffect, useState, type ComponentProps, type FormEvent } from "react";
 
 import { WorkspaceSaveState, useWorkspaceSaveState } from "@/components/workspace-save-state";
 import { InvestmentAmountField } from "@/components/investment-amount-field";
 import { parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
 
-import { Metric, Panel, StatusPill } from "@/components/buyer-shell";
+import { Metric, Panel as BasePanel, StatusPill } from "@/components/buyer-shell";
 import { DealCommanderPanel } from "@/components/deal-commander-panel";
 import { DealTransactionCommand } from "@/components/deal-transaction-command";
 import { DealEngineShell } from "@/components/deal-engine-shell";
 import type { DealCommanderInsight, DealEngineDealDetail, DealTransactionCenterSnapshot } from "@/lib/deal-engine-server";
 import { dealReadinessFromCoordination, readinessColor } from "@/lib/sentinel-display";
+
+import { buyerCandidateLabel, draftNeedsReview, readableNextStep, suspectedTestRecord } from "@/lib/property-client-guidance";
 
 type ChecklistItem = DealEngineDealDetail["coordination"]["closingChecklist"][number];
 type ClosingDocument = DealEngineDealDetail["coordination"]["closingDocuments"][number];
@@ -48,6 +50,28 @@ function executionTone(status: string) {
   return "neutral";
 }
 
+const PropertySectionContext = createContext("overview");
+const panelSections: Record<string, string> = {
+  "Future-deal automation path": "activity", "Saved numbers and results": "numbers",
+  "Wholesale guardrails attached to underwriting": "offer", "One command band for the next deal move": "activity",
+  "Acquisition brief": "overview", "Draft seller-side messages": "conversations",
+  "Move the deal through the pipeline": "activity", "Internal execution checklist": "activity",
+  "Create or update a deal task": "activity", "Title and close-table coordination": "closing",
+  "Current coordination posture": "closing", "Upload signed and closing files": "documents",
+  "Saved deal files": "documents", "Send deal emails from inside the workflow": "conversations",
+  "Run the numbers": "numbers", "Save underwriting and terms": "offer",
+  "Triage buyer interest from the external deal room": "buyers", "Create and review investor drafts": "buyers",
+  "Assign owner and next move": "buyers", "Saved seller outreach artifacts": "conversations",
+  "Saved outreach artifacts": "buyers", "Live deal timeline": "activity",
+  "Record real outreach from inside the deal": "conversations", "Saved outreach attempts": "conversations",
+  "Edit buyer-facing packet sections": "packet", "Record the final deal outcome": "closing",
+  "Latest recorded outcome": "closing",
+};
+function Panel(props: ComponentProps<typeof BasePanel>) {
+  const section = useContext(PropertySectionContext);
+  return <div hidden={section !== panelSections[props.title]}><BasePanel {...props} /></div>;
+}
+
 export function DealEngineDealDetailView({
   dealId,
   detail,
@@ -60,6 +84,17 @@ export function DealEngineDealDetailView({
   transactionCenter: DealTransactionCenterSnapshot | null;
 }) {
   const router = useRouter();
+  const [section, setSection] = useState("overview");
+  useEffect(() => {
+    const onHash = () => {
+      const sections: Record<string, string> = { "property-research": "overview", "property-numbers": "numbers", "property-terms": "offer", "property-closing": "closing", "property-documents": "documents", "property-conversations": "conversations", "property-packet": "packet" };
+      const target = sections[window.location.hash.slice(1)];
+      if (target) setSection(target);
+    };
+    onHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [contractType, setContractType] = useState(
     detail.contractDraft?.contractType ?? "Assignable purchase agreement",
   );
@@ -143,7 +178,7 @@ export function DealEngineDealDetailView({
   const [outreachOutcome, setOutreachOutcome] = useState("");
   const [outreachNextStep, setOutreachNextStep] = useState("Await response and schedule the next follow-up if needed.");
   const [outreachNotes, setOutreachNotes] = useState("");
-  const [closeoutOutcome, setCloseoutOutcome] = useState(detail.closeout?.outcome ?? "Closed Won");
+  const [closeoutOutcome, setCloseoutOutcome] = useState(detail.closeout?.outcome ?? "");
   const [closeoutDate, setCloseoutDate] = useState(detail.closeout?.closedAt ?? "");
   const [closeoutFee, setCloseoutFee] = useState(String(detail.closeout?.assignmentFeeCollected ?? ""));
   const [closeoutBuyerName, setCloseoutBuyerName] = useState(detail.closeout?.buyerName ?? "");
@@ -165,7 +200,21 @@ export function DealEngineDealDetailView({
   const contractSave = useWorkspaceSaveState({ contractType, offerLow, offerHigh, earnestMoney });
   const packetSave = useWorkspaceSaveState({ propertyNotes, investorSummary, buyerEmailBlast, buyerSmsAlert, contactInstructions, deadlineToSubmitOffer, comps });
 
+  const stageSave = useWorkspaceSaveState({ stageStatus, stageNextAction, stageNote });
+  const coordinationSave = useWorkspaceSaveState({ titleCompany, titleOfficer, walkthroughAt, inspectionEndsOn, closingDate, buyerAssignmentStatus, earnestMoneyStatus, payoutStatus, contractSent, contractSigned, coordinationNotes, closingChecklist, closingDocuments });
+  const taskSave = useWorkspaceSaveState({ taskId, taskTitle, taskOwner, taskDueDate, taskPriority, taskStatus, taskNotes });
+  const followUpSave = useWorkspaceSaveState({ selectedInvestorEmail, followUpStatus, followUpOwner, followUpNextStep, followUpNotes });
+  const closeoutSave = useWorkspaceSaveState({ closeoutOutcome, closeoutDate, closeoutFee, closeoutBuyerName, closeoutNotes });
+
+  const firstTouchSave = useWorkspaceSaveState(sellerFirstTouchSms);
+  const followMessageSave = useWorkspaceSaveState(sellerFollowUpSms);
+  const sellerEmailSave = useWorkspaceSaveState({sellerEmailSubject, sellerEmailBody});
+  const callSave = useWorkspaceSaveState(sellerCallOpener);
+  const voicemailSave = useWorkspaceSaveState(sellerVoicemailScript);
+  const replySave = useWorkspaceSaveState(sellerObjectionReply);
+  const sellerDraftSaves: Record<string, ReturnType<typeof useWorkspaceSaveState>> = { "First-touch SMS": firstTouchSave, "Follow-up SMS": followMessageSave, "Seller Email": sellerEmailSave, "Call Opener": callSave, "Voicemail Script": voicemailSave, "Objection Reply": replySave };
   function syncInvestorFollowUp(email: string) {
+    if (followUpSave.dirty && !window.confirm("Discard unsaved follow-up edits and select another buyer?")) return;
     const investor = detail.investorResponses.find((item) => item.investorEmail === email);
     setSelectedInvestorEmail(email);
     if (!investor) return;
@@ -173,9 +222,11 @@ export function DealEngineDealDetailView({
     setFollowUpOwner(investor.followUpOwner);
     setFollowUpNextStep(investor.nextStep);
     setFollowUpNotes(investor.notes);
+    followUpSave.load({ selectedInvestorEmail: email, followUpStatus: investor.followUpStatus, followUpOwner: investor.followUpOwner, followUpNextStep: investor.nextStep, followUpNotes: investor.notes });
   }
 
   function syncTask(selectedTaskId: string) {
+    if (taskSave.dirty && !window.confirm("Discard unsaved task edits and open this task?")) return;
     const task = detail.operatorTasks.find((item) => item.id === selectedTaskId);
     setTaskId(selectedTaskId);
     if (!task) return;
@@ -185,6 +236,7 @@ export function DealEngineDealDetailView({
     setTaskPriority(task.priority);
     setTaskStatus(task.status);
     setTaskNotes(task.notes);
+    taskSave.load({ taskId: selectedTaskId, taskTitle: task.title, taskOwner: task.owner, taskDueDate: task.dueDate, taskPriority: task.priority, taskStatus: task.status, taskNotes: task.notes });
   }
 
   function updateChecklistItem(id: string, field: keyof ChecklistItem, value: string) {
@@ -416,6 +468,8 @@ export function DealEngineDealDetailView({
 
   async function saveStageUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = stageSave.begin();
+    if (submitted === null) return;
     setWorking("stage");
     setStatus(null);
     try {
@@ -432,9 +486,11 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Stage update failed.");
       setStatus(payload.message ?? "Deal stage updated.");
-      setStageNote("");
+      setStageNote((current) => current === stageNote ? "" : current);
+      stageSave.succeed(JSON.stringify({ ...JSON.parse(submitted), stageNote: "" }));
       router.refresh();
     } catch (error) {
+      stageSave.fail();
       setStatus(error instanceof Error ? error.message : "Stage update failed.");
     } finally {
       setWorking(null);
@@ -443,6 +499,8 @@ export function DealEngineDealDetailView({
 
   async function saveInvestorResponse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = followUpSave.begin();
+    if (submitted === null) return;
     setWorking("response");
     setStatus(null);
     try {
@@ -461,8 +519,10 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Investor follow-up failed.");
       setStatus(payload.message ?? "Investor follow-up saved.");
+      followUpSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      followUpSave.fail();
       setStatus(error instanceof Error ? error.message : "Investor follow-up failed.");
     } finally {
       setWorking(null);
@@ -471,6 +531,8 @@ export function DealEngineDealDetailView({
 
   async function saveTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = taskSave.begin();
+    if (submitted === null) return;
     setWorking("task");
     setStatus(null);
     try {
@@ -492,8 +554,10 @@ export function DealEngineDealDetailView({
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Task save failed.");
       setStatus(payload.message ?? "Operator task saved.");
       setTaskId(payload.taskId ?? taskId);
+      taskSave.succeed(JSON.stringify({ ...JSON.parse(submitted), taskId: payload.taskId ?? taskId }));
       router.refresh();
     } catch (error) {
+      taskSave.fail();
       setStatus(error instanceof Error ? error.message : "Task save failed.");
     } finally {
       setWorking(null);
@@ -502,6 +566,8 @@ export function DealEngineDealDetailView({
 
   async function saveCoordination(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitted = coordinationSave.begin();
+    if (submitted === null) return;
     setWorking("coordination");
     setStatus(null);
     try {
@@ -528,8 +594,10 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Coordination save failed.");
       setStatus(payload.message ?? "Closing coordination saved.");
+      coordinationSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      coordinationSave.fail();
       setStatus(error instanceof Error ? error.message : "Coordination save failed.");
     } finally {
       setWorking(null);
@@ -537,6 +605,9 @@ export function DealEngineDealDetailView({
   }
 
   async function saveSellerDraft(kind: string, title: string, body: string) {
+    const save = sellerDraftSaves[kind];
+    const submitted = save?.begin();
+    if (submitted == null) return;
     setWorking("seller-draft");
     setStatus(null);
     try {
@@ -548,8 +619,10 @@ export function DealEngineDealDetailView({
       const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Seller draft save failed.");
       setStatus(payload.message ?? "Seller draft saved.");
+      save.succeed(submitted);
       router.refresh();
     } catch (error) {
+      save.fail();
       setStatus(error instanceof Error ? error.message : "Seller draft save failed.");
     } finally {
       setWorking(null);
@@ -590,6 +663,10 @@ export function DealEngineDealDetailView({
 
   async function saveCloseout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!closeoutOutcome || !closeoutDate || !closeoutFee.trim() || !Number.isFinite(Number(closeoutFee)) || Number(closeoutFee) < 0) { setStatus("Choose an outcome, enter the close date and confirm the collected fee (0 if none)."); return; }
+    if (!window.confirm(`Record this property as ${closeoutOutcome}? Confirm the actual outcome and amount before continuing.`)) return;
+    const submitted = closeoutSave.begin();
+    if (submitted === null) return;
     setWorking("closeout");
     setStatus(null);
     try {
@@ -605,12 +682,16 @@ export function DealEngineDealDetailView({
           notes: closeoutNotes,
         }),
       });
-      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean };
+      const payload = (await response.json()) as { error?: string; message?: string; ok?: boolean; stageStatus: string; stageNextAction: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error ?? "Deal closeout failed.");
-      setStageStatus("Closed");
+      setStageStatus((current) => current === stageStatus ? payload.stageStatus : current);
+      setStageNextAction((current) => current === stageNextAction ? payload.stageNextAction : current);
+      stageSave.acknowledgeFields({ stageStatus: payload.stageStatus, stageNextAction: payload.stageNextAction });
       setStatus(payload.message ?? "Deal closeout recorded.");
+      closeoutSave.succeed(submitted);
       router.refresh();
     } catch (error) {
+      closeoutSave.fail();
       setStatus(error instanceof Error ? error.message : "Deal closeout failed.");
     } finally {
       setWorking(null);
@@ -651,6 +732,8 @@ export function DealEngineDealDetailView({
 
   async function sendEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (draftNeedsReview(emailSubject) || draftNeedsReview(emailBody)) { setStatus("Review this draft: remove missing-value placeholders and internal technical messages before sending."); return; }
+    if (!window.confirm(`Send this email to ${emailTo}? Review the recipient and message before confirming.`)) return;
     setWorking("email");
     setStatus(null);
     try {
@@ -734,7 +817,8 @@ export function DealEngineDealDetailView({
           coordinationPayload({ contractSent: true }),
           "Contract marked as sent.",
         );
-        setContractSent(true);
+        setContractSent((current) => current === contractSent ? true : current);
+        coordinationSave.acknowledgeFields({ ...coordinationPayload(), dealId: undefined, contractSent: true });
         setStatus("Contract marked as sent. Next: collect seller signature and confirm title cadence.");
       }
 
@@ -744,6 +828,9 @@ export function DealEngineDealDetailView({
           coordinationPayload({ contractSent: true, contractSigned: true }),
           "Contract marked as signed.",
         );
+        setContractSent((current) => current === contractSent ? true : current);
+        setContractSigned((current) => current === contractSigned ? true : current);
+        coordinationSave.acknowledgeFields({ ...coordinationPayload(), dealId: undefined, contractSent: true, contractSigned: true });
         await postJson(
           "/api/deal-engine/update-stage",
           {
@@ -754,10 +841,11 @@ export function DealEngineDealDetailView({
           },
           "Deal moved under contract.",
         );
-        setContractSent(true);
-        setContractSigned(true);
-        setStageStatus("Under Contract");
-        setStageNextAction("Build buyer packet, launch buyer outreach, and coordinate walkthrough access.");
+        setContractSent((current) => current === contractSent ? true : current);
+        setContractSigned((current) => current === contractSigned ? true : current);
+        stageSave.acknowledgeFields({ stageStatus: "Under Contract", stageNextAction: "Build buyer packet, launch buyer outreach, and coordinate walkthrough access." });
+        setStageStatus((current) => current === stageStatus ? "Under Contract" : current);
+        setStageNextAction((current) => current === stageNextAction ? "Build buyer packet, launch buyer outreach, and coordinate walkthrough access." : current);
         setStatus("Deal is now marked under contract. Next: save packet and activate buyer outreach.");
       }
 
@@ -787,8 +875,9 @@ export function DealEngineDealDetailView({
           },
           "Deal moved into closing.",
         );
-        setStageStatus("Closing");
-        setStageNextAction("Complete title, EMD, assignment, final docs, and payout coordination.");
+        stageSave.acknowledgeFields({ stageStatus: "Closing", stageNextAction: "Complete title, EMD, assignment, final docs, and payout coordination." });
+        setStageStatus((current) => current === stageStatus ? "Closing" : current);
+        setStageNextAction((current) => current === stageNextAction ? "Complete title, EMD, assignment, final docs, and payout coordination." : current);
         setStatus("Deal moved into closing. Next: finish checklist, documents, EMD, assignment, and payout posture.");
       }
 
@@ -804,7 +893,7 @@ export function DealEngineDealDetailView({
   const contactReady = detail.sellerContact.ownerPhone !== "Not captured" || detail.sellerContact.phoneStatus !== "Skip Trace Needed";
   const contractReady = contractSent && contractSigned;
   const packetReady = Boolean(investorSummary.trim() && buyerEmailBlast.trim() && comps.trim());
-  const buyerReady = detail.buyerSignals.length > 0;
+  const buyerReady = /^(assigned|locked|under contract)$/i.test(detail.coordination.buyerAssignmentStatus);
   const coordinationReady =
     closingChecklist.length > 0 &&
     closingChecklist.every((item) => item.status === "Done") &&
@@ -814,16 +903,22 @@ export function DealEngineDealDetailView({
     { label: "Contact", ready: contactReady, detail: contactReady ? "seller lane ready" : "run Nexus / verify phone" },
     { label: "Contract", ready: contractReady, detail: contractReady ? "signed posture saved" : contractSent ? "sent, awaiting signature" : "send contract" },
     { label: "Packet", ready: packetReady, detail: packetReady ? "buyer packet ready" : "complete buyer-facing copy" },
-    { label: "Buyer", ready: buyerReady, detail: buyerReady ? `${detail.buyerSignals.length} buyer signal(s)` : "run Buyer Engine" },
+    { label: "Buyer", ready: buyerReady, detail: `${detail.buyerSignals.length} candidates; buyer commitment not verified` },
     { label: "Close", ready: coordinationReady, detail: coordinationReady ? "closing board complete" : "finish title/docs/checklist" },
   ];
 
+  const nextStep = detail.underwriting.missingInputs.length
+    ? { text: `Complete these numbers: ${detail.underwriting.missingInputs.join(", ")}.`, section: "numbers", label: "Review missing numbers" }
+    : !detail.coordination.contractSigned
+      ? { text: "Review your proposed offer and required documents before proceeding.", section: "offer", label: "Review offer" }
+      : { text: readableNextStep(detail.lead.nextAction), section: "closing", label: "Review closing tasks" };
   const dealReadiness = dealReadinessFromCoordination(detail.coordination, {
-    hasDocuments: detail.uploadedDocuments.length > 0,
+    hasDocuments: detail.uploadedDocuments.some((item) => !suspectedTestRecord(JSON.stringify(item))),
   });
 
   return (
-    <DealEngineShell>
+    <PropertySectionContext.Provider value={section}><DealEngineShell light>
+      {(detail.uploadedDocuments.some((item) => suspectedTestRecord(JSON.stringify(item))) || detail.investorResponses.some((item) => suspectedTestRecord(JSON.stringify(item)))) ? <div role="status" className="workspace-connection-notice rounded-xl border p-4">This property contains records that appear to be tests. Review Documents and Buyers before relying on completion badges or response counts. Existing records are preserved.</div> : null}
       <header className="brand-panel overflow-hidden px-6 py-7">
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-5">
@@ -859,6 +954,7 @@ export function DealEngineDealDetailView({
               <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="workspace-primary brand-button inline-flex px-5 py-4 text-sm transition">
                 Open packet view
               </Link>
+              <details className="col-span-full"><summary className="min-h-11 cursor-pointer py-3">Downloads and other tools</summary><div className="flex flex-wrap gap-3">
               <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Open contract draft
               </a>
@@ -874,6 +970,7 @@ export function DealEngineDealDetailView({
               <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
                 Buyer contacts
               </Link>
+              </div></details>
             </div>
           </div>
 
@@ -887,7 +984,7 @@ export function DealEngineDealDetailView({
                 <div>Calculated purchase ceiling: <span className="font-semibold text-white">{detail.lead.mao}</span></div>
                 <div>Assignment target: <span className="font-semibold text-white">{detail.lead.assignmentFee}</span></div>
                 <div>Exit strategy: <span className="font-semibold text-white">{detail.lead.exitStrategy}</span></div>
-                <div>Next move: <span className="font-semibold text-white">{detail.lead.nextAction}</span></div>
+                <div>Next step: <span className="font-semibold text-white">{nextStep.text}</span></div><button type="button" className="workspace-primary brand-button px-4 py-3" onClick={() => setSection(nextStep.section)}>{nextStep.label}</button>
               </div>
             </div>
           </div>
@@ -896,18 +993,18 @@ export function DealEngineDealDetailView({
 
       <section className="grid gap-4 md:grid-cols-4">
         <Metric label="Motivation Score" value={String(detail.lead.motivationScore)} detail="Seller urgency and context from upstream intelligence" />
-        <Metric label="Buyer Matches" value={String(detail.buyerSignals.length).padStart(2, "0")} detail="Relevant Buyer Engine signals for this county lane" />
+        <Metric label="Buyer candidates" value={String(detail.buyerSignals.length).padStart(2, "0")} detail="Candidates may be from broader markets. Confirm location, property type and funding." />
         <Metric label="Open Tasks" value={String(detail.operatorTasks.length).padStart(2, "0")} detail="Internal execution items attached to this deal" />
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
       </section>
 
       <nav aria-label="This property" className="property-section-nav brand-card flex flex-wrap gap-2 p-4">
-        {[["property-research", "Property & research"], ["property-numbers", "Costs & returns"], ["property-terms", "Offer & contract"], ["property-closing", "Closing tasks"], ["property-documents", "Documents"], ["property-conversations", "Conversations"], ["property-packet", "Comps & buyer packet"]].map(([id, label]) => <a key={id} href={`#${id}`} className="brand-button min-h-11 px-4 py-3 text-sm focus-visible:outline focus-visible:outline-2">{label}</a>)}
+        {[["overview", "Overview"], ["numbers", "Numbers"], ["offer", "Offer"], ["buyers", "Buyers"], ["closing", "Closing"], ["documents", "Documents"], ["conversations", "Messages"], ["packet", "Buyer packet"], ["activity", "Activity"]].map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)} className="brand-button min-h-11 px-4 py-3 text-sm">{label}</button>)}
       </nav>
-      <DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} strategy={detail.underwriting.strategy} />
-      <DealTransactionCommand dealId={dealId} initialSnapshot={transactionCenter} />
+      <details hidden={section !== "overview"} className="brand-card p-5"><summary className="min-h-11 cursor-pointer py-3">Additional guidance and assumptions</summary><DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} strategy={detail.underwriting.strategy} /></details>
+      <div hidden={section !== "offer" && section !== "closing"}><DealTransactionCommand dealId={dealId} initialSnapshot={transactionCenter} /></div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Automation Workflow"
           title="Future-deal automation path"
@@ -1036,7 +1133,7 @@ export function DealEngineDealDetailView({
         </div>
       </Panel>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Seller Context"
           title="Acquisition brief"
@@ -1053,7 +1150,7 @@ export function DealEngineDealDetailView({
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Recommended handoff action</div>
               <div className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                {detail.sellerSignal?.recommendedAction ?? detail.lead.nextAction}
+                {readableNextStep(detail.sellerSignal?.recommendedAction ?? detail.lead.nextAction)}
               </div>
             </div>
             <div className="brand-card p-5">
@@ -1099,22 +1196,25 @@ export function DealEngineDealDetailView({
           <div className="space-y-4">
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">First-touch SMS</div>
-              <textarea value={sellerFirstTouchSms} onChange={(event) => setSellerFirstTouchSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <WorkspaceSaveState state={firstTouchSave} label="First-touch SMS" />
+              <textarea aria-label="First message draft" value={sellerFirstTouchSms} onChange={(event) => setSellerFirstTouchSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
               <button type="button" onClick={() => void saveSellerDraft("First-touch SMS", `${detail.sellerContact.ownerName} first-touch SMS`, sellerFirstTouchSms)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save seller draft
               </button>
             </div>
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Follow-up SMS</div>
-              <textarea value={sellerFollowUpSms} onChange={(event) => setSellerFollowUpSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <WorkspaceSaveState state={followMessageSave} label="Follow-up SMS" />
+              <textarea aria-label="Follow-up message draft" value={sellerFollowUpSms} onChange={(event) => setSellerFollowUpSms(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
               <button type="button" onClick={() => void saveSellerDraft("Follow-up SMS", `${detail.sellerContact.ownerName} follow-up SMS`, sellerFollowUpSms)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save seller draft
               </button>
             </div>
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Email draft</div>
-              <input value={sellerEmailSubject} onChange={(event) => setSellerEmailSubject(event.target.value)} className="brand-input mt-3 w-full px-3 py-3 text-sm outline-none" />
-              <textarea value={sellerEmailBody} onChange={(event) => setSellerEmailBody(event.target.value)} className="brand-input mt-3 min-h-32 w-full px-3 py-3 text-sm outline-none" />
+              <input aria-label="Seller email subject" value={sellerEmailSubject} onChange={(event) => setSellerEmailSubject(event.target.value)} className="brand-input mt-3 w-full px-3 py-3 text-sm outline-none" />
+              <WorkspaceSaveState state={sellerEmailSave} label="Seller Email" />
+              <textarea aria-label="Seller email draft" value={sellerEmailBody} onChange={(event) => setSellerEmailBody(event.target.value)} className="brand-input mt-3 min-h-32 w-full px-3 py-3 text-sm outline-none" />
               <button type="button" onClick={() => void saveSellerDraft("Seller Email", sellerEmailSubject, sellerEmailBody)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save seller draft
               </button>
@@ -1122,14 +1222,16 @@ export function DealEngineDealDetailView({
             <div className="grid gap-4 md:grid-cols-2">
               <div className="brand-card p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Call opener</div>
-                <textarea value={sellerCallOpener} onChange={(event) => setSellerCallOpener(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
+                <WorkspaceSaveState state={callSave} label="Call Opener" />
+              <textarea aria-label="Call opener draft" value={sellerCallOpener} onChange={(event) => setSellerCallOpener(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
                 <button type="button" onClick={() => void saveSellerDraft("Call Opener", `${detail.sellerContact.ownerName} call opener`, sellerCallOpener)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                   Save seller draft
                 </button>
               </div>
               <div className="brand-card p-5">
                 <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Voicemail script</div>
-                <textarea value={sellerVoicemailScript} onChange={(event) => setSellerVoicemailScript(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
+                <WorkspaceSaveState state={voicemailSave} label="Voicemail Script" />
+              <textarea aria-label="Voicemail draft" value={sellerVoicemailScript} onChange={(event) => setSellerVoicemailScript(event.target.value)} className="brand-input mt-3 min-h-24 w-full px-3 py-3 text-sm outline-none" />
                 <button type="button" onClick={() => void saveSellerDraft("Voicemail Script", `${detail.sellerContact.ownerName} voicemail`, sellerVoicemailScript)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                   Save seller draft
                 </button>
@@ -1137,7 +1239,8 @@ export function DealEngineDealDetailView({
             </div>
             <div className="brand-card p-5">
               <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Objection-handling reply</div>
-              <textarea value={sellerObjectionReply} onChange={(event) => setSellerObjectionReply(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
+              <WorkspaceSaveState state={replySave} label="Objection Reply" />
+              <textarea aria-label="Reply draft" value={sellerObjectionReply} onChange={(event) => setSellerObjectionReply(event.target.value)} className="brand-input mt-3 min-h-28 w-full px-3 py-3 text-sm outline-none" />
               <button type="button" onClick={() => void saveSellerDraft("Objection Reply", `${detail.sellerContact.ownerName} objection reply`, sellerObjectionReply)} disabled={working === "seller-draft"} className="brand-button mt-3 inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
                 Save seller draft
               </button>
@@ -1151,6 +1254,7 @@ export function DealEngineDealDetailView({
           description="Update the active stage and next action so the command deck reflects what this deal needs now."
         >
           <form onSubmit={saveStageUpdate} className="grid gap-4">
+            <WorkspaceSaveState state={stageSave} label="Pipeline stage" />
             <select
               value={stageStatus}
               onChange={(event) => setStageStatus(event.target.value)}
@@ -1190,11 +1294,11 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Task Queue"
           title="Internal execution checklist"
-          description="Keep the next internal moves attached to the deal so underwriting, acquisitions, and disposition all work from one queue."
+          description="These are saved tasks and may describe older information. Compare them with the current Numbers section before acting; edit or complete outdated tasks here."
         >
           <div className="space-y-4">
             {detail.operatorTasks.length ? (
@@ -1232,16 +1336,17 @@ export function DealEngineDealDetailView({
           description="Use this to assign underwriting asks, seller follow-ups, title coordination, or buyer-packet work without leaving the workstation."
         >
           <form onSubmit={saveTask} className="grid gap-4">
-            <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Task title" />
+            <WorkspaceSaveState state={taskSave} label="Task" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Task title</span><input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Task title" /></label>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Task owner" />
-              <input value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Task owner</span><input value={taskOwner} onChange={(event) => setTaskOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Task owner" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Due date</span><input type={!taskDueDate || /^\d{4}-\d{2}-\d{2}$/.test(taskDueDate) ? "date" : "text"} value={taskDueDate} onChange={(event) => setTaskDueDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Due date" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Priority" />
-              <input value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Priority</span><input value={taskPriority} onChange={(event) => setTaskPriority(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Priority" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Status</span><input value={taskStatus} onChange={(event) => setTaskStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" /></label>
             </div>
-            <textarea value={taskNotes} onChange={(event) => setTaskNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Task notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Task notes</span><textarea value={taskNotes} onChange={(event) => setTaskNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Task notes" /></label>
             <button type="submit" disabled={!taskTitle.trim() || working === "task"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "task" ? "Saving task..." : "Save operator task"}
             </button>
@@ -1249,7 +1354,7 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Coordination"
           title="Title and close-table coordination"
@@ -1257,21 +1362,22 @@ export function DealEngineDealDetailView({
         >
           <span id="property-closing" className="scroll-mt-6" />
           <form onSubmit={saveCoordination} className="grid gap-4">
+            <WorkspaceSaveState state={coordinationSave} label="Closing details" />
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={titleCompany} onChange={(event) => setTitleCompany(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company" />
-              <input value={titleOfficer} onChange={(event) => setTitleOfficer(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title officer / closer" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Title company</span><input value={titleCompany} onChange={(event) => setTitleCompany(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title company" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Title officer / closer</span><input value={titleOfficer} onChange={(event) => setTitleOfficer(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Title officer / closer" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={walkthroughAt} onChange={(event) => setWalkthroughAt(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Walkthrough date/time" />
-              <input value={inspectionEndsOn} onChange={(event) => setInspectionEndsOn(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Inspection ends on" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Walkthrough date/time</span><input value={walkthroughAt} onChange={(event) => setWalkthroughAt(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Walkthrough date/time" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Inspection ends on</span><input value={inspectionEndsOn} onChange={(event) => setInspectionEndsOn(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Inspection ends on" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={closingDate} onChange={(event) => setClosingDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Closing date" />
-              <input value={buyerAssignmentStatus} onChange={(event) => setBuyerAssignmentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer assignment status" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Closing date</span><input type={!closingDate || /^\d{4}-\d{2}-\d{2}$/.test(closingDate) ? "date" : "text"} value={closingDate} onChange={(event) => setClosingDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Closing date" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer assignment status</span><input value={buyerAssignmentStatus} onChange={(event) => setBuyerAssignmentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Buyer assignment status" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={earnestMoneyStatus} onChange={(event) => setEarnestMoneyStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Earnest money status" />
-              <input value={payoutStatus} onChange={(event) => setPayoutStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout status" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Earnest money status</span><input value={earnestMoneyStatus} onChange={(event) => setEarnestMoneyStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Earnest money status" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Payout status</span><input value={payoutStatus} onChange={(event) => setPayoutStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Payout status" /></label>
             </div>
             <div className="flex flex-wrap gap-6 text-sm text-[var(--copy-soft)]">
               <label className="flex items-center gap-2">
@@ -1283,7 +1389,7 @@ export function DealEngineDealDetailView({
                 <span>Contract signed</span>
               </label>
             </div>
-            <textarea value={coordinationNotes} onChange={(event) => setCoordinationNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Coordination notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Coordination notes</span><textarea value={coordinationNotes} onChange={(event) => setCoordinationNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Coordination notes" /></label>
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Close checklist</div>
@@ -1386,7 +1492,7 @@ export function DealEngineDealDetailView({
         <Panel
           eyebrow="Close Status"
           title="Current coordination posture"
-          description="This is the live coordination snapshot for title, signatures, access, and payout readiness."
+          description="These values reflect the form above, including unsaved edits. Save closing details to update the stored record."
         >
           <div className="space-y-3 text-sm text-[var(--copy-soft)]">
             <div>Title company: <span className="font-semibold text-white">{titleCompany || "Not set"}</span></div>
@@ -1442,7 +1548,7 @@ export function DealEngineDealDetailView({
         >
           <form onSubmit={uploadDocument} className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-2">
-              <select value={documentCategory} onChange={(event) => setDocumentCategory(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+              <select aria-label="Document category" value={documentCategory} onChange={(event) => setDocumentCategory(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
                 <option>Signed Contract</option>
                 <option>Assignment Agreement</option>
                 <option>Proof Of Funds</option>
@@ -1452,16 +1558,16 @@ export function DealEngineDealDetailView({
                 <option>Walkthrough Photos</option>
                 <option>Other</option>
               </select>
-              <select value={documentStatus} onChange={(event) => setDocumentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+              <select aria-label="Document status" value={documentStatus} onChange={(event) => setDocumentStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
                 <option>Received</option>
                 <option>Reviewed</option>
                 <option>Final</option>
                 <option>Missing</option>
               </select>
             </div>
-            <input value={documentOwner} onChange={(event) => setDocumentOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Document owner" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Document owner</span><input value={documentOwner} onChange={(event) => setDocumentOwner(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Document owner" /></label>
             <input type="file" onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)} className="brand-input px-3 py-3 text-sm outline-none" />
-            <textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Notes about the file, signature status, or missing items" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Notes about the file, signature status, or missing items</span><textarea value={documentNotes} onChange={(event) => setDocumentNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Notes about the file, signature status, or missing items" /></label>
             <button type="submit" disabled={!documentFile || working === "document"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "document" ? "Uploading..." : "Upload deal document"}
             </button>
@@ -1469,11 +1575,11 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Document Ledger"
           title="Saved deal files"
-          description="This is the live file trail for the deal, including public proof-of-funds uploads and internal signed documents."
+          description="Property uploads are listed here. The transaction vault is a separate collection. Uploading a file does not verify its contents or complete the required-document checklist."
         >
           <span id="property-documents" className="scroll-mt-6" />
           <div className="space-y-4">
@@ -1537,9 +1643,9 @@ export function DealEngineDealDetailView({
               <option value="seller">Seller email</option>
               <option value="buyer">Buyer email</option>
             </select>
-            <input value={emailTo} onChange={(event) => setEmailTo(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient email" />
-            <input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Subject" />
-            <textarea value={emailBody} onChange={(event) => setEmailBody(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Email body" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Recipient email</span><input value={emailTo} onChange={(event) => setEmailTo(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient email" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Subject</span><input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Subject" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Email body</span><textarea value={emailBody} onChange={(event) => setEmailBody(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Email body" /></label>
             <button type="submit" disabled={!emailTo.trim() || !emailSubject.trim() || !emailBody.trim() || working === "email"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "email" ? "Sending email..." : "Send email"}
             </button>
@@ -1547,7 +1653,7 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Underwriting Console"
           title="Run the numbers"
@@ -1594,7 +1700,7 @@ export function DealEngineDealDetailView({
               <InvestmentAmountField label="Monthly loan payment" help="Expected monthly debt service. Enter a confirmed 0 for an all-cash purchase." value={monthlyDebtService} onChange={setMonthlyDebtService} />
             </div> : null}
             <button type="submit" disabled={analysisSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              {analysisSave.pending ? "Saving underwriting..." : "Save underwriting"}
+              {analysisSave.pending ? "Saving underwriting..." : "Save numbers"}
             </button>
           </form>
         </Panel>
@@ -1632,7 +1738,7 @@ export function DealEngineDealDetailView({
               <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
             </div>
             <button type="submit" disabled={contractSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
-              {contractSave.pending ? "Saving..." : "Save contract posture"}
+              {contractSave.pending ? "Saving..." : "Save offer terms"}
             </button>
           </form>
         </Panel>
@@ -1679,7 +1785,7 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Buyer Activation"
           title="Create and review investor drafts"
@@ -1728,7 +1834,7 @@ export function DealEngineDealDetailView({
                     <StatusPill tone="warn" label={`${signal.purchaseCount} buys`} />
                   </div>
                 </div>
-                <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{signal.outreachAngle}</div>
+                <div className="mt-3 text-sm leading-6 text-[var(--copy-soft)]">{signal.matchReason ?? buyerCandidateLabel(detail.lead.county, signal.market)}. {signal.outreachAngle}</div>
               </div>
             ))}
           </div>
@@ -1740,6 +1846,7 @@ export function DealEngineDealDetailView({
           description="Use this form after an investor responds so the deal shifts from passive packet distribution into an active disposition workflow."
         >
           <form onSubmit={saveInvestorResponse} className="grid gap-4">
+            <WorkspaceSaveState state={followUpSave} label="Buyer follow-up" />
             <select
               value={selectedInvestorEmail}
               onChange={(event) => syncInvestorFollowUp(event.target.value)}
@@ -1785,7 +1892,7 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Seller Draft Ledger"
           title="Saved seller outreach artifacts"
@@ -1859,7 +1966,7 @@ export function DealEngineDealDetailView({
         </Panel>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Execution Log"
           title="Record real outreach from inside the deal"
@@ -1883,15 +1990,15 @@ export function DealEngineDealDetailView({
                 <option value="seller">Seller outreach</option>
                 <option value="buyer">Buyer outreach</option>
               </select>
-              <input value={outreachChannel} onChange={(event) => setOutreachChannel(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Channel" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Channel</span><input value={outreachChannel} onChange={(event) => setOutreachChannel(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Channel" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={outreachRecipient} onChange={(event) => setOutreachRecipient(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient" />
-              <input value={outreachStatus} onChange={(event) => setOutreachStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Recipient</span><input value={outreachRecipient} onChange={(event) => setOutreachRecipient(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Recipient" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Status</span><input value={outreachStatus} onChange={(event) => setOutreachStatus(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Status" /></label>
             </div>
-            <input value={outreachOutcome} onChange={(event) => setOutreachOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Outcome" />
-            <textarea value={outreachNextStep} onChange={(event) => setOutreachNextStep(event.target.value)} className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Next step" />
-            <textarea value={outreachNotes} onChange={(event) => setOutreachNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Internal notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Outcome</span><input value={outreachOutcome} onChange={(event) => setOutreachOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Outcome" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Next step</span><textarea value={outreachNextStep} onChange={(event) => setOutreachNextStep(event.target.value)} className="brand-input min-h-20 w-full px-3 py-3 text-sm outline-none" placeholder="Next step" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Internal notes</span><textarea value={outreachNotes} onChange={(event) => setOutreachNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Internal notes" /></label>
             <button type="submit" disabled={!outreachRecipient.trim() || working === "outreach"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "outreach" ? "Logging outreach..." : "Log outreach execution"}
             </button>
@@ -1941,15 +2048,15 @@ export function DealEngineDealDetailView({
         <form onSubmit={savePacket} className="grid gap-6 xl:grid-cols-2">
             <div className="xl:col-span-2"><WorkspaceSaveState state={packetSave} label="Property packet" /></div>
           <div className="space-y-4">
-            <textarea value={propertyNotes} onChange={(event) => setPropertyNotes(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Property notes" />
-            <textarea value={investorSummary} onChange={(event) => setInvestorSummary(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Investor summary" />
-            <textarea value={comps} onChange={(event) => setComps(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="One comp per line" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Property notes</span><textarea value={propertyNotes} onChange={(event) => setPropertyNotes(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Property notes" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Investor summary</span><textarea value={investorSummary} onChange={(event) => setInvestorSummary(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="Investor summary" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>One comp per line</span><textarea value={comps} onChange={(event) => setComps(event.target.value)} className="brand-input min-h-32 w-full px-3 py-3 text-sm outline-none" placeholder="One comp per line" /></label>
           </div>
           <div className="space-y-4">
-            <input value={deadlineToSubmitOffer} onChange={(event) => setDeadlineToSubmitOffer(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Deadline to submit offer" />
-            <textarea value={contactInstructions} onChange={(event) => setContactInstructions(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Contact instructions" />
-            <textarea value={buyerEmailBlast} onChange={(event) => setBuyerEmailBlast(event.target.value)} className="brand-input min-h-28 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer email blast" />
-            <textarea value={buyerSmsAlert} onChange={(event) => setBuyerSmsAlert(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer SMS alert" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Deadline to submit offer</span><input value={deadlineToSubmitOffer} onChange={(event) => setDeadlineToSubmitOffer(event.target.value)} className="brand-input w-full px-3 py-3 text-sm outline-none" placeholder="Deadline to submit offer" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Contact instructions</span><textarea value={contactInstructions} onChange={(event) => setContactInstructions(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Contact instructions" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer email blast</span><textarea value={buyerEmailBlast} onChange={(event) => setBuyerEmailBlast(event.target.value)} className="brand-input min-h-28 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer email blast" /></label>
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer SMS alert</span><textarea value={buyerSmsAlert} onChange={(event) => setBuyerSmsAlert(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Buyer SMS alert" /></label>
             <button type="submit" disabled={packetSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {packetSave.pending ? "Saving packet..." : "Save disposition packet"}
             </button>
@@ -1957,26 +2064,28 @@ export function DealEngineDealDetailView({
         </form>
       </Panel>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+      <div className="contents">
         <Panel
           eyebrow="Closeout"
           title="Record the final deal outcome"
           description="Use this to finish the wholesale loop inside the site once the assignment, disposition, or fallout result is known."
         >
           <form onSubmit={saveCloseout} className="grid gap-4">
+            <WorkspaceSaveState state={closeoutSave} label="Final outcome" />
             <div className="grid gap-3 md:grid-cols-2">
-              <select value={closeoutOutcome} onChange={(event) => setCloseoutOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+              <select aria-label="Final outcome" value={closeoutOutcome} onChange={(event) => setCloseoutOutcome(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none">
+                <option value="" disabled>Choose the actual outcome</option>
                 <option>Closed Won</option>
                 <option>Closed Lost</option>
                 <option>Cancelled</option>
               </select>
-              <input value={closeoutDate} onChange={(event) => setCloseoutDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Close date" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Close date</span><input type={!closeoutDate || /^\d{4}-\d{2}-\d{2}$/.test(closeoutDate) ? "date" : "text"} value={closeoutDate} onChange={(event) => setCloseoutDate(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Close date" /></label>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <input value={closeoutBuyerName} onChange={(event) => setCloseoutBuyerName(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="End buyer / assignee" />
-              <input value={closeoutFee} onChange={(event) => setCloseoutFee(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assignment fee collected" />
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>End buyer / assignee</span><input value={closeoutBuyerName} onChange={(event) => setCloseoutBuyerName(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="End buyer / assignee" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Assignment fee collected</span><input value={closeoutFee} onChange={(event) => setCloseoutFee(event.target.value)} className="brand-input px-3 py-3 text-sm outline-none" placeholder="Assignment fee collected" /></label>
             </div>
-            <textarea value={closeoutNotes} onChange={(event) => setCloseoutNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Closeout notes" />
+            <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Closeout notes</span><textarea value={closeoutNotes} onChange={(event) => setCloseoutNotes(event.target.value)} className="brand-input min-h-24 w-full px-3 py-3 text-sm outline-none" placeholder="Closeout notes" /></label>
             <button type="submit" disabled={!closeoutOutcome.trim() || working === "closeout"} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {working === "closeout" ? "Recording closeout..." : "Record deal closeout"}
             </button>
@@ -2017,6 +2126,6 @@ export function DealEngineDealDetailView({
           {status}
         </div>
       ) : null}
-    </DealEngineShell>
+    </DealEngineShell></PropertySectionContext.Provider>
   );
 }

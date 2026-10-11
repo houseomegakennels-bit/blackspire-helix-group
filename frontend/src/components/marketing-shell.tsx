@@ -96,6 +96,7 @@ export function MarketingShell({
           <Link href="/about">About</Link>
           <Link href="/contact">Contact</Link>
           <Link href="/workspaces">Client access</Link>
+          <Link href="/auth">Sign in</Link>
         </div>
       </footer>
     </div>

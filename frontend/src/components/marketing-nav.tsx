@@ -43,6 +43,7 @@ export function MarketingNav() {
           aria-current={pathname === "/workspaces" || pathname.startsWith("/workspaces/") ? "page" : undefined}>
           Client access
         </Link>
+        <Link href="/auth" onClick={() => setOpenPath(null)}>Sign in</Link>
         <Link href="/contact" className="public-button" onClick={() => setOpenPath(null)}
           aria-current={pathname === "/contact" ? "page" : undefined}>
           Let’s talk
