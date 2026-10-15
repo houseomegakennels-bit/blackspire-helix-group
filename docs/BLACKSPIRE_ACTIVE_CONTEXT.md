@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-15 — Peggy guidance published and verified
+
+PR #167 merged with ancestry preserved as 51d2d3c202566718a9a57b2e6908509c89ea11f9 after final-head CI 38673958850 passed and configured independent review 6183438868 found no major issues on 2e2706c500c35d70bca3512d47c992e084f42dd6. Production frontend deployment dpl_8iwW3exqDZXp3xgZdbmuBaCkqVHu is READY at that merge SHA with blackspirehelix.com and www.blackspirehelix.com aliases.
+
+Signed-in cloud-browser production verification reached /workspace/deal-engine and confirmed the new quick-start and glossary expand and render correctly. The preview property walkthrough had already verified next-step navigation and revised ARV, assignment-fee and earnest-money help. Public health is HTTP200/up, auth status is configured with bootstrap disabled, public home/auth respond HTTP200 with Sign in, and anonymous title-checklist access remains HTTP401. Fresh origin/main living-memory verification passes with reviewed anchor b1a9240f412ef27ab22f800b162826bf149ac7f5 and no checker changes. Physical-phone and Peggy-account acceptance remain UNVERIFIED. No live record saves, outreach, paid searches, signing, role/environment changes or VPS/Zola release occurred. This post-release evidence is preserved on docs/peggy-release-20261015; deployment is complete.
+
 ## 2026-10-15 — Peggy guidance desktop acceptance and independent clearance
 
 Signed-in cloud-browser acceptance passed on exact implementation b1a9240f412ef27ab22f800b162826bf149ac7f5, hosted by READY preview dpl_7auim4VamZcmLnG4ujvkXKUjXmGo on the previously authorized configured Peggy preview branch. The three-step guide expands, collapses and reopens; its nested glossary renders legibly. Property DE-1931 shows the reason for its next step, and Review missing numbers opens Numbers with the revised ARV and assignment-fee guidance. No live record was saved and no outreach, paid search or signing occurred.
