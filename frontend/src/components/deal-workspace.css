@@ -215,8 +215,8 @@
 .deal-workspace .property-word-help dd { margin-top: 2px; max-width: 72ch; color: #405863; }
 .deal-workspace .property-help-hint { color: #516671; font-size: 14px; }
 @media (max-width: 639px) {
-  .deal-workspace .property-section-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
-  .deal-workspace .property-section-nav .brand-button { min-width: 0; white-space: normal; padding: 12px 8px; }
+  .deal-workspace :is(.property-section-nav, .practice-property-sections) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .deal-workspace :is(.property-section-nav, .practice-property-sections) button { min-width: 0; white-space: normal; padding: 12px 8px; }
   .deal-workspace .workspace-feedback { position: static; }
   .deal-workspace :is(input, select, textarea) { max-width: 100%; min-width: 0; scroll-margin-block: 90px; }
 }
