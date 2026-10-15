@@ -1,6 +1,7 @@
 "use client";
 
 import "./deal-workspace.css";
+import { PropertyQuickStart } from "@/components/property-quick-start";
 import { useUnsavedWorkWarning } from "@/components/workspace-save-state";
 
 import { useEffect, useId, useState, type FormEvent } from "react";
@@ -98,6 +99,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
       <p className="mt-3 text-sm text-zinc-300">Access expires {expires}. No outreach is sent and no paid services are called.</p>
       <a className="mt-3 inline-block min-h-11 py-3 underline text-zinc-200" href="/demo/login">Sign in on another device</a>
     </header>
+    <PropertyQuickStart practice />
     <nav aria-label="Workspace tools" className="flex flex-wrap gap-2">{["Properties", "Follow-ups", "Activity", "Buyer reference", "Live snapshot"].map(t => <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t} className={tab === t ? button : secondary}>{t}</button>)}</nav>
     {error && <p role="alert" className="rounded-xl border border-red-400 p-4 text-red-200">{error}</p>}
     {unsaved && <p role="status" className="rounded-xl border border-[#ddc392] bg-[#fff0d9] p-4">You have unsaved entries. They stay here while you switch sections; save before leaving.</p>}
