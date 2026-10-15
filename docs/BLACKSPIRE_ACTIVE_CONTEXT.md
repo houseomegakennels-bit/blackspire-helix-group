@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-15 — Peggy guidance desktop acceptance and independent clearance
+
+Signed-in cloud-browser acceptance passed on exact implementation b1a9240f412ef27ab22f800b162826bf149ac7f5, hosted by READY preview dpl_7auim4VamZcmLnG4ujvkXKUjXmGo on the previously authorized configured Peggy preview branch. The three-step guide expands, collapses and reopens; its nested glossary renders legibly. Property DE-1931 shows the reason for its next step, and Review missing numbers opens Numbers with the revised ARV and assignment-fee guidance. No live record was saved and no outreach, paid search or signing occurred.
+
+Configured independent review 6183303182 found no major issues on b1a9240f41 after the practice phone-grid finding was fixed and resolved. Exact-head CI 38673045299 passed. The genuine reviewed implementation anchor advances to b1a9240f412ef27ab22f800b162826bf149ac7f5; the checker is unchanged. This documentation successor still requires passing exact-head CI before publication. The observed desktop operator walkthrough is accepted. Physical-phone keyboard behavior, phone-width visual acceptance and Peggy's own account remain UNVERIFIED: the cloud browser provides no viewport-resize control and the observed account is the existing administrator. These limitations are not represented as passed checks. No account roles or environment settings changed.
+
 ## 2026-10-15 — Peggy quick-start and phone guidance follow-up
 
 The previously approved overhaul is live: PR #166 merged as 4bc8ce810c31f6e9b7381744f850a9f237489032 and production deployment dpl_3Kbmf1GecBxbxmzzvwJv3QCCuuJz was verified READY with live domain aliases on October 11. Exact-head CI 38001058550 passed and independent review 6090577821 was clean. Release evidence is also preserved on docs/peggy-release-20261011 (fbbae0c1); earlier pending-release entries below are historical.
