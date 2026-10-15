@@ -1,6 +1,7 @@
 "use client";
 
 import "./deal-workspace.css";
+import { PropertyQuickStart } from "@/components/property-quick-start";
 import { useUnsavedWorkWarning } from "@/components/workspace-save-state";
 
 import { useEffect, useId, useState, type FormEvent } from "react";
@@ -98,6 +99,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
       <p className="mt-3 text-sm text-zinc-300">Access expires {expires}. No outreach is sent and no paid services are called.</p>
       <a className="mt-3 inline-block min-h-11 py-3 underline text-zinc-200" href="/demo/login">Sign in on another device</a>
     </header>
+    <PropertyQuickStart practice />
     <nav aria-label="Workspace tools" className="flex flex-wrap gap-2">{["Properties", "Follow-ups", "Activity", "Buyer reference", "Live snapshot"].map(t => <button key={t} onClick={() => setTab(t)} aria-pressed={tab === t} className={tab === t ? button : secondary}>{t}</button>)}</nav>
     {error && <p role="alert" className="rounded-xl border border-red-400 p-4 text-red-200">{error}</p>}
     {unsaved && <p role="status" className="rounded-xl border border-[#ddc392] bg-[#fff0d9] p-4">You have unsaved entries. They stay here while you switch sections; save before leaving.</p>}
@@ -122,7 +124,7 @@ export function DemoSandboxWorkspace({ snapshot, expires }: { snapshot: DemoSnap
       {tab === "Properties" && lead && <section className="space-y-5">
         <button className={secondary} onClick={() => setSelected(null)}>Back to properties</button>
         <header><h2 className="text-2xl font-bold">{lead.name}</h2><p className="mt-2 text-zinc-300">{lead.city} · Practice stage: {lead.stage}</p>{Object.keys(draft).length > 0 && <p className="mt-2 text-amber-200">Unsaved edits are retained while you switch sections. Save before leaving this page.</p>}</header>
-        <nav aria-label="Property sections" className="flex flex-wrap gap-2">{["Overview", "Research & comps", "Numbers", "Notes & next steps", "Contract & closing"].map(s => <button key={s} onClick={() => setSection(s)} aria-pressed={section === s} className={section === s ? button : secondary}>{s}</button>)}</nav>
+        <nav aria-label="Property sections" className="practice-property-sections flex flex-wrap gap-2">{["Overview", "Research & comps", "Numbers", "Notes & next steps", "Contract & closing"].map(s => <button key={s} onClick={() => setSection(s)} aria-pressed={section === s} className={section === s ? button : secondary}>{s}</button>)}</nav>
         {section === "Overview" && <><Analysis lead={lead} /><div className={card}><h3 className="text-lg font-semibold">Next step</h3><p className="mt-3 leading-7 text-zinc-200">{analyzeDemoDeal(lead).complete ? "Review the research and seller terms before deciding to proceed." : "Collect missing figures in Numbers. You can research the property at any time."}</p><button className={button + " mt-4"} onClick={() => setSection("Numbers")}>Review numbers</button></div></>}
         {["Numbers", "Research & comps", "Notes & next steps", "Contract & closing"].includes(section) && <form key={lead.id + section} className={card + " space-y-5"} onChange={e => remember(e, lead.id)} onSubmit={async e => {
           e.preventDefault(); const values = { ...draft, ...Object.fromEntries(new FormData(e.currentTarget)) };

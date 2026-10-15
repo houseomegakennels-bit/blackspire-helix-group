@@ -200,3 +200,23 @@
 .practice-workspace [role="alert"] { background: #ffe8e7; color: #8f2c2c; }
 .practice-workspace .workspace-feedback { background: #e4f2ee; color: #163e35; }
 .practice-workspace :is(button, a, input, select, textarea):focus-visible { outline-color: #11695f; }
+
+/* Quiet, optional guidance shared by live and private practice workspaces. */
+.deal-workspace .property-quick-start { border: 1px solid #b9ccd4; border-radius: 12px; background: #fff; color: #182f3a; }
+.deal-workspace .property-quick-start > summary { cursor: pointer; min-height: 48px; padding: 14px 16px; font-weight: 600; }
+.deal-workspace .property-quick-start-body { padding: 0 16px 16px; font-size: 15px; line-height: 1.65; }
+.deal-workspace .property-quick-start ol { list-style: decimal; padding-left: 24px; }
+.deal-workspace .property-quick-start li { padding: 6px 0; max-width: 72ch; }
+.deal-workspace .property-quick-start p { margin-top: 12px; }
+.deal-workspace .property-word-help { margin-top: 12px; border-top: 1px solid #ccd8de; }
+.deal-workspace .property-word-help summary { min-height: 44px; cursor: pointer; padding: 12px 0; color: #11695f; font-weight: 600; }
+.deal-workspace .property-word-help dl { display: grid; gap: 14px; }
+.deal-workspace .property-word-help dt { font-weight: 600; }
+.deal-workspace .property-word-help dd { margin-top: 2px; max-width: 72ch; color: #405863; }
+.deal-workspace .property-help-hint { color: #516671; font-size: 14px; }
+@media (max-width: 639px) {
+  .deal-workspace :is(.property-section-nav, .practice-property-sections) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; }
+  .deal-workspace :is(.property-section-nav, .practice-property-sections) button { min-width: 0; white-space: normal; padding: 12px 8px; }
+  .deal-workspace .workspace-feedback { position: static; }
+  .deal-workspace :is(input, select, textarea) { max-width: 100%; min-width: 0; scroll-margin-block: 90px; }
+}

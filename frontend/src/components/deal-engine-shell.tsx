@@ -1,6 +1,7 @@
 import "./deal-workspace.css";
 
 import Image from "next/image";
+import { PropertyQuickStart } from "@/components/property-quick-start";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -47,7 +48,7 @@ export function DealEngineShell({ children, home = false, light = home }: { chil
           </nav>
           <p className="workspace-introduction mt-6 border-t border-[var(--line)] pt-4 text-sm leading-6 text-[var(--copy-soft)]">Open a property to review its numbers, save your progress or prepare the next step.</p>
         </aside>
-        <section id="workspace-content" tabIndex={-1} className={`min-w-0 space-y-5 ${light ? "workspace-home-content" : ""}`}>{children}</section>
+        <section id="workspace-content" tabIndex={-1} className={`min-w-0 space-y-5 ${light ? "workspace-home-content" : ""}`}><PropertyQuickStart />{children}</section>
       </div>
     </main>
   );

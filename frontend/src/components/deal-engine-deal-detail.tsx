@@ -908,10 +908,10 @@ export function DealEngineDealDetailView({
   ];
 
   const nextStep = detail.underwriting.missingInputs.length
-    ? { text: `Complete these numbers: ${detail.underwriting.missingInputs.join(", ")}.`, section: "numbers", label: "Review missing numbers" }
+    ? { text: `Complete these numbers: ${detail.underwriting.missingInputs.join(", ")}.`, reason: "These figures are needed before the calculation can be complete.", section: "numbers", label: "Review missing numbers" }
     : !detail.coordination.contractSigned
-      ? { text: "Review your proposed offer and required documents before proceeding.", section: "offer", label: "Review offer" }
-      : { text: readableNextStep(detail.lead.nextAction), section: "closing", label: "Review closing tasks" };
+      ? { text: "Review your proposed offer and required documents before proceeding.", reason: "Check the proposed terms before sharing them with the seller.", section: "offer", label: "Review offer" }
+      : { text: readableNextStep(detail.lead.nextAction), reason: "Review the saved dates, documents and responsibilities for this property.", section: "closing", label: "Review closing tasks" };
   const dealReadiness = dealReadinessFromCoordination(detail.coordination, {
     hasDocuments: detail.uploadedDocuments.some((item) => !suspectedTestRecord(JSON.stringify(item))),
   });
@@ -984,7 +984,7 @@ export function DealEngineDealDetailView({
                 <div>Calculated purchase ceiling: <span className="font-semibold text-white">{detail.lead.mao}</span></div>
                 <div>Assignment target: <span className="font-semibold text-white">{detail.lead.assignmentFee}</span></div>
                 <div>Exit strategy: <span className="font-semibold text-white">{detail.lead.exitStrategy}</span></div>
-                <div>Next step: <span className="font-semibold text-white">{nextStep.text}</span></div><button type="button" className="workspace-primary brand-button px-4 py-3" onClick={() => setSection(nextStep.section)}>{nextStep.label}</button>
+                <div>Next step: <span className="font-semibold text-white">{nextStep.text}</span></div><p className="text-sm leading-6 text-[var(--copy-soft)]">{nextStep.reason}</p><button type="button" className="workspace-primary brand-button px-4 py-3" onClick={() => setSection(nextStep.section)}>{nextStep.label}</button>
               </div>
             </div>
           </div>
@@ -1679,12 +1679,12 @@ export function DealEngineDealDetailView({
             </label>
             <p className="text-sm text-[var(--copy-soft)]">Saved with this property. You can change strategy without losing the other numbers.</p>
             <div className="grid gap-3 md:grid-cols-2">
-              {strategy !== "rental" ? <InvestmentAmountField label="Resale value after repairs" help="What similar renovated homes could sell for. Example: 250000. Confirm with sold comps." value={estimatedArv} onChange={setEstimatedArv} /> : null}
+              {strategy !== "rental" ? <InvestmentAmountField label="Resale value after repairs" help="Also called ARV (after-repair value). Estimate using recent sales of similar renovated homes. Example: 250000." value={estimatedArv} onChange={setEstimatedArv} /> : null}
               <InvestmentAmountField label="Seller asking price" help="Enter the seller’s current asking price. Example: 175000. The calculation compares this price with your purchase ceiling." value={sellerAskingPrice} onChange={setSellerAskingPrice} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <InvestmentAmountField label="Repairs budget" help="Total expected repair spending. Include a contingency; enter 0 only for confirmed no repairs." value={repairEstimate} onChange={setRepairEstimate} />
-              {strategy === "assignment" ? <InvestmentAmountField label="Assignment fee target" help="Your intended disclosed assignment fee. Used only for the assignment strategy." value={assignmentFeeTarget} onChange={setAssignmentFeeTarget} /> : null}
+              {strategy === "assignment" ? <InvestmentAmountField label="Assignment fee target" help="Your target fee for transferring your purchase-contract rights to another buyer. This is an estimate, not collected income." value={assignmentFeeTarget} onChange={setAssignmentFeeTarget} /> : null}
             </div>
             <div className="grid gap-3 md:grid-cols-3">
               <InvestmentAmountField label="Closing costs" help={strategy === "rental" ? "Acquisition closing costs only. These are included in the acquisition-cost estimate; do not include monthly expenses here." : "Total acquisition and sale closing costs relevant to this strategy. Do not include repairs here."} value={closingCosts} onChange={setClosingCosts} />
@@ -1735,7 +1735,7 @@ export function DealEngineDealDetailView({
             <div className="grid gap-3 md:grid-cols-3">
               <InvestmentAmountField label="Offer range — lower amount" help="Enter your own proposed amount. Saving a draft does not send an offer." value={offerLow} onChange={setOfferLow} required />
               <InvestmentAmountField label="Offer range — upper amount" help="Enter your own upper amount after reviewing the analysis and seller terms." value={offerHigh} onChange={setOfferHigh} required />
-              <InvestmentAmountField label="Earnest money deposit" help="Deposit proposed for this property. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
+              <InvestmentAmountField label="Earnest money deposit" help="Deposit connected to the purchase agreement. Confirm its amount and terms. Enter a confirmed 0 if none; do not guess." value={earnestMoney} onChange={setEarnestMoney} required />
             </div>
             <button type="submit" disabled={contractSave.pending} className="brand-button inline-flex px-4 py-3 text-sm uppercase tracking-[0.18em] transition disabled:opacity-60">
               {contractSave.pending ? "Saving..." : "Save offer terms"}
