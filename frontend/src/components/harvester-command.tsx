@@ -40,7 +40,7 @@ type BuyerMatchResult = {
 };
 type FindBuyersResult = {
   matches: BuyerMatchResult[];
-  validation?: { buyerCount: number; demandScore: number; assignmentPotential: string; county: string | null };
+  validation?: { evaluation: string; reason: string | null; buyerCount: number | null; demandScore: number | null; assignmentPotential: string | null; county: string | null };
 };
 
 async function postJson<T>(url: string, body: Record<string, unknown>) {
@@ -243,7 +243,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
       setBuyerResults((prev) => ({ ...prev, [intakeId]: { matches: result.matches ?? [], validation: v } }));
       setStatus(
         v
-          ? `${v.buyerCount.toLocaleString()} buyers in ${v.county ?? "county"} · ${v.assignmentPotential} assignment potential · demand ${v.demandScore}/100 · ${result.matches?.length ?? 0} matched.`
+          ? v.evaluation !== "evaluated" ? (v.reason ?? "Buyer demand not evaluated") : `${v.buyerCount?.toLocaleString() ?? "Not evaluated"} indexed profiles in ${v.county ?? "county"} · ${v.assignmentPotential} assignment potential · demand ${v.demandScore}/100 · ${result.matches?.length ?? 0} matched.`
           : `${result.matches?.length ?? 0} buyer matches found.`,
       );
       startTransition(() => router.refresh());
@@ -683,13 +683,13 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                   {buyerResults[intake.id].validation ? (
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="rounded-full bg-[rgba(45,212,191,0.12)] px-3 py-1 uppercase tracking-[0.16em] text-[#5eead4]">
-                        {buyerResults[intake.id].validation!.buyerCount.toLocaleString()} buyers in {buyerResults[intake.id].validation!.county ?? "county"}
+                        {buyerResults[intake.id].validation!.buyerCount?.toLocaleString() ?? "Not evaluated"} indexed profiles in {buyerResults[intake.id].validation!.county ?? "county"}
                       </span>
                       <span className="rounded-full border border-[var(--line)] px-3 py-1 uppercase tracking-[0.16em] text-[var(--copy-soft)]">
-                        {buyerResults[intake.id].validation!.assignmentPotential} assignment potential
+                        {buyerResults[intake.id].validation!.assignmentPotential ?? "Not evaluated"} assignment potential
                       </span>
                       <span className="rounded-full border border-[var(--line)] px-3 py-1 uppercase tracking-[0.16em] text-[var(--copy-soft)]">
-                        demand {buyerResults[intake.id].validation!.demandScore}/100
+                        demand {buyerResults[intake.id].validation!.demandScore ?? "Not evaluated"}
                       </span>
                     </div>
                   ) : null}
@@ -706,7 +706,7 @@ export function HarvesterCommand({ snapshot }: { snapshot: HarvesterWorkspaceSna
                         </div>
                       ))
                     ) : (
-                      <div className="text-sm text-[var(--copy-soft)]">No buyers indexed for this county yet. Launch a Buyer Engine search to ingest them.</div>
+                      <div className="text-sm text-[var(--copy-soft)]">{buyerResults[intake.id].validation?.evaluation !== "evaluated" ? (buyerResults[intake.id].validation?.reason ?? "Buyer demand is not evaluated. Verify state and county and retry when the sources are available.") : "No indexed profile or institutional candidate matched this state and county. This does not establish that the market has no buyers."}</div>
                     )}
                   </div>
                 </div>

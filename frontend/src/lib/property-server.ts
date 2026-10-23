@@ -69,7 +69,7 @@ export type PropertyCommandView = {
   related: {
     sellerLeadId: string | null;
     dealId: string | null;
-    buyerCount: number;
+    buyerCount: number | null;
     hasContract: boolean;
     hasTransaction: boolean;
   };
@@ -129,7 +129,7 @@ export async function getPropertyCommandView(propertyId: string): Promise<Proper
   let buyerMatchError: string | null = null;
   const buyers = await matchBuyersForProperty({
     county: property.county,
-    state: property.state ?? "NC",
+    state: property.state,
     city: property.city,
     zip: property.zip_code,
     propertyType: property.property_type,
@@ -137,8 +137,10 @@ export async function getPropertyCommandView(propertyId: string): Promise<Proper
     limit: 8,
   }).catch(() => {
     buyerMatchError = "Buyer matching could not be checked. An empty result does not confirm there are no buyers.";
-    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low" as const, county: property.county };
+    return { evaluation: "not_evaluated" as const, reason: buyerMatchError, state: property.state, matches: [], buyerCount: null, demandScore: null, assignmentPotential: null, county: property.county };
   });
+
+  if (buyers.evaluation === "not_evaluated") buyerMatchError = buyers.reason;
 
   // Timeline from existing event sources (no new timeline table).
   const [{ data: statusHistory }, { data: notes }, { data: closingEvents }, { data: alerts }] = await Promise.all([

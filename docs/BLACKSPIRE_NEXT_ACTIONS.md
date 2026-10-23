@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-23 — Real-estate product candidate, local verification
+
+Final candidate code gates and synthetic end-to-end verification passed. Record the exact local milestone commit and PROJECT_HANDOFF.md, then obtain explicit authorization before any push/merge/deployment. Reconcile pending Commander operations before retrying interrupted jobs. Preserve production and other worktrees. Actual-device and Peggy-account acceptance remain UNVERIFIED; configured exact-head CI/review remains a release gate.
+
 ## 2026-10-08 — Peggy start screen and save clarity
 
 Published the user-authorized follow-up: the home page emphasizes Add property and Continue working, shows stored next actions, and provides a counted 24-property paginated list with explicit empty/unavailable states. Analysis, offer terms and packet forms show unsaved, saving, failed and saved states with a session-local success time. Successful saves acknowledge only the submitted snapshot, so edits made in flight remain unsaved; the packet form and shortcut share a lock and status. Packet feedback spans both desktop columns. Division totals are separate from operator pagination and cached for five minutes, scoped to the data source, with at most one count plus five row reads and a 5000-property ceiling. Larger or incomplete summaries show Unavailable instead of partial totals. Labels describe saved properties and buyer follow-ups accurately.

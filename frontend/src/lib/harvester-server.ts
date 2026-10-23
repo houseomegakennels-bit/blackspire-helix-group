@@ -1191,7 +1191,7 @@ export async function extractHarvesterOpportunity(input: {
   // blank/Unknown, so the property record and buyer matching have a real county.
   const countyBlank = !payload.county || /^(unknown|unresolved|n\/a)$/i.test(payload.county.trim());
   if (countyBlank && payload.city) {
-    const inferredCounty = inferNcCountyFromCity(payload.city);
+    const inferredCounty = inferNcCountyFromCity(payload.city, payload.state);
     if (inferredCounty) payload.county = inferredCounty;
   }
 
@@ -1591,7 +1591,7 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
   // groups). Harvester DISPLAYS the result; it no longer re-implements buyer logic.
   const buyerResult = await matchBuyersForProperty({
     county: opportunity.county,
-    state: opportunity.state ?? "NC",
+    state: opportunity.state,
     city: opportunity.city,
     zip: opportunity.zip,
     propertyType: opportunity.beds && opportunity.baths ? "residential" : opportunity.condition ?? null,
@@ -1600,6 +1600,8 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
     baths: opportunity.baths,
     limit: 10,
   });
+
+  if (buyerResult.evaluation !== "evaluated") return { ok: true as const, matches: [], buyerEngineLaunch: null, validation: buyerResult };
 
   const ranked = buyerResult.matches.map((match) => ({
     buyerId: match.buyerId,
@@ -1689,6 +1691,9 @@ export async function runHarvesterBuyerMatch(input: { intakeId: string }) {
     buyerEngineLaunch,
     // Early buyer validation — demand signal before significant acquisition effort.
     validation: {
+      evaluation: buyerResult.evaluation,
+      reason: buyerResult.reason,
+      state: buyerResult.state,
       buyerCount: buyerResult.buyerCount,
       demandScore: buyerResult.demandScore,
       assignmentPotential: buyerResult.assignmentPotential,

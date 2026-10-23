@@ -200,7 +200,7 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
               <div className="flex items-center justify-between">
                 <div className="text-sm font-bold uppercase tracking-[0.22em] text-white">Potential buyer matches</div>
                 <span className="rounded-full px-3 py-1 text-[10px] uppercase tracking-wider" style={{ color: view.buyers.assignmentPotential === "high" ? "#34d399" : view.buyers.assignmentPotential === "medium" ? "#fbbf24" : "#94a3b8", background: "rgba(45,212,191,0.1)" }}>
-                  {view.buyerMatchError ? "Check unavailable" : `${view.buyers.buyerCount} indexed · ${view.buyers.assignmentPotential} matching signal`}
+                  {view.buyerMatchError ? "Not evaluated" : `${view.buyers.buyerCount} indexed · ${view.buyers.assignmentPotential} matching signal`}
                 </span>
               </div>
               <p className="mt-3 text-sm text-[var(--copy-soft)]">Matches are research candidates, not committed buyers. Current purchase criteria, interest in this property and independent funding still need confirmation.</p>
@@ -231,7 +231,7 @@ export default async function PropertyCommandPage({ params }: { params: Promise<
                 {[
                   { label: "Seller Lead", href: view.related.sellerLeadId ? "/seller-engine" : null, ok: Boolean(view.related.sellerLeadId) },
                   { label: "Deal", href: view.related.dealId ? `/workspace/deal-engine/${view.related.dealId}` : null, ok: Boolean(view.related.dealId) },
-                  { label: "Buyers", href: "#buyers", ok: view.related.buyerCount > 0 },
+                  { label: "Buyers", href: "#buyers", ok: (view.related.buyerCount ?? 0) > 0 },
                   { label: "Contract", href: view.related.dealId ? `/workspace/deal-engine/${view.related.dealId}` : null, ok: view.related.hasContract },
                   { label: "Transaction", href: view.related.dealId ? `/workspace/deal-engine/${view.related.dealId}` : null, ok: view.related.hasTransaction },
                   { label: "Sentinel", href: "/workspace/sentinel", ok: true },

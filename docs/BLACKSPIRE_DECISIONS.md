@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-10-23 — Real-estate product candidate, local verification
+
+The user authorized implementation on Blackspire-command in /mnt/blackspire-builds/real-estate-product-20261023, branch feat/real-estate-product-20261023, based on main51d2d3c202566718a9a57b2e6908509c89ea11f9. This scope has no push, merge or production-deployment authority; historical Peggy publication authority does not apply. Existing worktrees, production records, credentials, roles and security settings are preserved. No paid provider, outreach, offer, signature or financial commitment was used.
+
+Research uses existing disposition_logs primary-key revision claims with no schema/security change. Only structured recipient-whitelisted research facts enter previews, with explicit comp sharing; internal notes and negotiating assumptions remain private. Unknown values are not zero and uploads are not title clearance. Preserve the genuine reviewed anchor and all existing release gates.
+
 ## 2026-10-08 — Peggy changes published; release checkpoint cleared
 
 PR #163 merged as `6c46b233dbad239edd6a42fa16efff47c9358446` after full exact-head CI `37855320946` passed on `3d616bf77f916d71d1bd6b0babf939ec778f100b` and independent review completed cleanly on both implementation `097b585a07ce668ac8f17288e1831f6dc530710c` and its documentation successor. All eight earlier review findings are resolved. The unchanged living-memory checker now returns PASS against freshly fetched trusted origin/main, with CANONICAL_MEMORY_ONLY_DESCENDANT, a clean working tree and no protected credential paths or secret-shaped memory.

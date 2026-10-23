@@ -1,3 +1,4 @@
+import { normalizeBuyerState, normalizeCountyName, stateFromAddress } from "@/lib/buyer-geography";
 import { ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
 import "server-only";
 import { unstable_cache } from "next/cache";
@@ -201,6 +202,7 @@ export type DealEngineDealDetail = {
     callOpener: string;
   };
   buyerSignals: DealEngineBuyerSignal[];
+  buyerEvaluation?: { evaluated: boolean; reason: string | null };
   contractDraft: DealEngineContractDraft | null;
   coordination: {
     titleCompany: string;
@@ -926,9 +928,9 @@ function normalizeBuyerSignalLane(value: string | null | undefined) {
 
 function normalizeDealLane(lead: DealEngineLead) {
   const normalized = `${lead.exitStrategy} ${lead.propertyAddress}`.toLowerCase();
-  if (/land|lot|acre/.test(normalized)) return "land";
-  if (/brrrr|duplex|triplex|quad|multi|rental/.test(normalized)) return "multifamily";
-  if (/commercial|retail|office|industrial/.test(normalized)) return "commercial";
+  if (/\b(?:land|lot|lots|acre|acres)\b/.test(normalized)) return "land";
+  if (/\b(?:brrrr|duplex|triplex|quad|multi|multifamily|rental)\b/.test(normalized)) return "multifamily";
+  if (/\b(?:commercial|retail|office|industrial)\b/.test(normalized)) return "commercial";
   return "residential";
 }
 
@@ -938,13 +940,15 @@ function rankBuyerSignalsForLead(
   limit = 4,
 ): RankedBuyerSignal[] {
   const dealLane = normalizeDealLane(lead);
-  const countyNeedle = lead.county.trim().toLowerCase();
+  const countyNeedle = normalizeCountyName(lead.county);
+  const leadState = stateFromAddress(lead.propertyAddress);
 
   return buyerSignals
+    .filter(signal => Boolean(leadState && countyNeedle) && normalizeBuyerState(signal.market.split(",").at(-1)) === leadState && normalizeCountyName(signal.market.split(",")[0]) === countyNeedle)
     .map((signal) => {
       const market = signal.market.toLowerCase();
       const countyMatch = countyNeedle.length > 0 && market.split(",")[0].replace(/\bcounty\b/g, "").trim() === countyNeedle.replace(/\bcounty\b/g, "").trim();
-      const stateMatch = /\bnc\b/.test(market);
+      const stateMatch = normalizeBuyerState(signal.market.split(",").at(-1)) === leadState;
       const buyerLane = normalizeBuyerSignalLane(signal.propertyType);
       const laneMatch =
         buyerLane === "general"
@@ -1324,9 +1328,10 @@ export async function listDealEngineSellerSignals(limit = 4): Promise<DealEngine
   }
 }
 
-export async function listDealEngineBuyerSignals(limit = 4): Promise<DealEngineBuyerSignal[]> {
+export async function listDealEngineBuyerSignals(limit = 4, { strict = false, property }: { strict?: boolean; property?: DealEngineLead } = {}): Promise<DealEngineBuyerSignal[]> {
   const env = getEnvState();
-  if (!env.enabled) return [];
+  if (!env.enabled) { if (strict) throw new Error("Buyer reports not evaluated"); return []; }
+  if (property) return listPropertyBuyerSignals(property, limit);
 
   try {
     const reportPage = await listAllBuyerReports({ limit: Math.max(limit * 3, 12), offset: 0 });
@@ -1336,7 +1341,7 @@ export async function listDealEngineBuyerSignals(limit = 4): Promise<DealEngineB
       reportPage.reports
         .map((report) => report.search_job_id)
         .filter((id): id is string => Boolean(id)),
-    ).catch(() => []);
+    );
     const drafts = await listOutreachDraftRecords().catch(() => []);
 
     const signals = reportPage.reports
@@ -1350,8 +1355,49 @@ export async function listDealEngineBuyerSignals(limit = 4): Promise<DealEngineB
 
     return signals;
   } catch {
+    if (strict) throw new Error("Buyer reports not evaluated");
     return [];
   }
+}
+
+
+/** Complete the authorized report set before applying property geography or result limits. */
+export async function listPropertyBuyerSignals(lead: DealEngineLead, limit = 20): Promise<DealEngineBuyerSignal[]> {
+  const county = normalizeCountyName(lead.county);
+  const state = stateFromAddress(lead.propertyAddress);
+  if (!county || !state) throw new Error("Buyer reports not evaluated: verify state and county.");
+  const pageSize = 100;
+  const first = await listAllBuyerReports({ limit: pageSize, offset: 0, strict: true });
+  const total = first.total;
+  if (!Number.isSafeInteger(total) || total < 0 || total > 5000 || !Array.isArray(first.reports) || first.reports.length > pageSize || first.reports.length > total) throw new Error("Buyer reports not evaluated: incomplete source.");
+  const reports = [...first.reports];
+  if (total && !reports.length) throw new Error("Buyer reports not evaluated: incomplete source.");
+  for (let reads = 1; reports.length < total && reads < 50; reads += 1) {
+    const page = await listAllBuyerReports({ limit: pageSize, offset: reports.length, strict: true });
+    if (page.total !== total || !page.reports.length || page.reports.length > pageSize || reports.length + page.reports.length > total) throw new Error("Buyer reports not evaluated: source changed or incomplete.");
+    reports.push(...page.reports);
+  }
+  if (reports.length !== total || new Set(reports.map(report => report.id)).size !== total) throw new Error("Buyer reports not evaluated: incomplete source.");
+  const jobIds = [...new Set(reports.map(report => report.search_job_id).filter((id): id is string => Boolean(id)))];
+  if (reports.some(report => !report.search_job_id)) throw new Error("Buyer reports not evaluated: report geography is unknown.");
+  const jobs: Awaited<ReturnType<typeof listSearchJobsByIds>> = [];
+  for (let offset = 0; offset < jobIds.length; offset += 100) {
+    const ids = jobIds.slice(offset, offset + 100);
+    const batch = await listSearchJobsByIds(ids);
+    if (batch.length !== ids.length || new Set(batch.map(job => job.id)).size !== ids.length || batch.some(job => !ids.includes(job.id))) throw new Error("Buyer reports not evaluated: report geography is unavailable.");
+    jobs.push(...batch);
+  }
+  const views = reports.map(report => toBuyerReportView(report, jobs));
+  if (views.some(report => !normalizeCountyName(report.county) || !normalizeBuyerState(report.state))) throw new Error("Buyer reports not evaluated: report geography is unknown.");
+  const drafts = await listOutreachDraftRecords().catch(() => []);
+  const signals = views
+    .filter(report => normalizeCountyName(report.county) === county && normalizeBuyerState(report.state) === state)
+    .map(report => {
+      const draft = drafts.find(item => item.searchJobId === report.searchJobId);
+      return buildBuyerSignal(report, draft ? { subject: draft.subject, angle: draft.angle } : null);
+    })
+    .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+  return signals.filter((signal, index, all) => all.findIndex(other => other.buyerName === signal.buyerName && other.market === signal.market) === index).slice(0, Math.max(1, Math.min(200, limit)));
 }
 
 function createDealId() {
@@ -4232,7 +4278,7 @@ export async function getDealEngineDealDetail(
 ): Promise<DealEngineDealDetail | null> {
   const supabase = getSupabaseAdmin();
   let lead: DealEngineLead | null;
-  if (!persistScaffold) {
+  if (supabase || !persistScaffold) {
     if (!supabase) throw new Error("Deal capability unavailable");
     // A capability ID identifies persisted state, independent of the UI's ranked list.
     const { data, error } = await supabase
@@ -4249,12 +4295,16 @@ export async function getDealEngineDealDetail(
   }
   if (!lead) return null;
 
-  const [sellerSignals, buyerSignals, drafts] = await Promise.all([
+  const [sellerSignals, buyerObservation, drafts] = await Promise.all([
     listDealEngineSellerSignals(12),
-    listDealEngineBuyerSignals(20),
+    listDealEngineBuyerSignals(20, { strict: true, property: lead }).then(signals => ({ signals, available: true }), () => ({ signals: [] as DealEngineBuyerSignal[], available: false })),
     listOutreachDraftRecords().catch(() => []),
   ]);
 
+  const buyerSignals = buyerObservation.signals;
+  const buyerGeographyKnown = Boolean(normalizeCountyName(lead.county) && stateFromAddress(lead.propertyAddress));
+  const buyerEvaluation = { evaluated: buyerObservation.available && buyerGeographyKnown,
+    reason: !buyerGeographyKnown ? "Buyer shortlist not evaluated: verify the property's state and county." : !buyerObservation.available ? "Buyer reports could not be checked. Demand is not evaluated." : null };
   const sellerSignal = findSellerSignalForLead(lead, sellerSignals);
   const relatedBuyerSignals = rankBuyerSignalsForLead(lead, buyerSignals, 6);
   let contractDraft = buildContractDrafts([lead], sellerSignals, relatedBuyerSignals).find(
@@ -4443,7 +4493,8 @@ export async function getDealEngineDealDetail(
     sellerContact,
     sellerContactWorkflow,
     sellerOutreach,
-    buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
+    buyerSignals: relatedBuyerSignals,
+    buyerEvaluation,
     contractDraft,
     coordination,
     room,
@@ -4460,7 +4511,7 @@ export async function getDealEngineDealDetail(
       lead,
       underwriting,
       sellerContact,
-      buyerSignals: relatedBuyerSignals.length ? relatedBuyerSignals : buyerSignals.slice(0, 4),
+      buyerSignals: relatedBuyerSignals,
       coordination,
       packet,
       uploadedDocuments,

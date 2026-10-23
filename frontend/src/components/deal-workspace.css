@@ -220,3 +220,42 @@
   .deal-workspace .workspace-feedback { position: static; }
   .deal-workspace :is(input, select, textarea) { max-width: 100%; min-width: 0; scroll-margin-block: 90px; }
 }
+
+/* Property task header: one primary next step, readable secondary details. */
+.deal-workspace .property-header { display: grid; gap: 20px; min-width: 0; }
+.deal-workspace .property-back-link { display: inline-flex; align-items: center; min-height: 44px; width: fit-content; color: var(--gold-soft); font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.deal-workspace .property-heading-row { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.deal-workspace .property-eyebrow { color: var(--copy-muted); font-size: 14px; font-weight: 600; }
+.deal-workspace .property-header .property-address { margin-top: 6px; font-size: clamp(1.5rem, 4.5vw, 2.2rem); line-height: 1.2; overflow-wrap: anywhere; }
+.deal-workspace .property-owner { margin-top: 10px; color: var(--copy-soft); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.deal-workspace .property-next-step { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 20px; border: 1px solid #a4cfc0; border-left: 4px solid #11695f; border-radius: 12px; background: #eef8f4; color: #163e35; }
+.deal-workspace .property-next-step[data-urgency="overdue"] { border-color: #ddc392; border-left-color: #765012; background: #fff7e9; color: #624311; }
+.deal-workspace .property-next-step h3 { font-size: 15px; font-weight: 700; }
+.deal-workspace .property-next-step p { margin-top: 8px; font-size: 15px; line-height: 1.6; }
+.deal-workspace .property-next-step .property-next-step-text { font-size: 19px; font-weight: 650; line-height: 1.4; }
+.deal-workspace .property-summary-details { padding-top: 8px; border-top: 1px solid var(--line); min-width: 0; }
+.deal-workspace .property-summary-details > summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: var(--gold-soft); font-size: 15px; font-weight: 600; }
+.deal-workspace .property-summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 12px 0; }
+.deal-workspace .property-summary-grid dt { color: var(--copy-muted); font-size: 14px; }
+.deal-workspace .property-summary-grid dd { margin-top: 4px; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.deal-workspace .property-summary-details .workspace-actions { margin-top: 16px; }
+.deal-workspace .workspace-home-content :is(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid #11695f; outline-offset: 3px; }
+.deal-workspace .workspace-home-content :is(.property-next-step, .property-section-nav) { scroll-margin-top: 90px; }
+@media (max-width: 639px) {
+  .deal-workspace .property-next-step { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
+  .deal-workspace .property-next-step > button { width: 100%; white-space: normal; min-height: 48px; }
+  .deal-workspace .property-summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .deal-workspace .property-header .workspace-actions { grid-template-columns: minmax(0, 1fr); }
+  .deal-workspace .property-header .workspace-actions .brand-button { font-size: 15px; }
+}
+
+/* Keep the selected section readable when the generic light button hover applies. */
+.deal-workspace .workspace-home-content .property-section-nav .brand-button[aria-pressed="true"] {
+  background: #11695f;
+  color: #fff;
+  border-color: #11695f;
+}
+.deal-workspace .workspace-home-content .property-section-nav .brand-button[aria-pressed="true"]:focus-visible {
+  outline-color: #0b4b44;
+  outline-offset: 3px;
+}
