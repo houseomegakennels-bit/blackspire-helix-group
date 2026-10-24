@@ -2574,3 +2574,7 @@ This documentation-only successor records the genuinely independently reviewed i
 ## 2026-10-24 — Scoped security draft publication preparation
 
 Prepared an isolated branch from main7b594eb for the authorized beta-feedback fix/tests and already-applied function migration record20261024214440. Route and service both enforce the existing admitted-role model; verified first-admin fallback remains. Broader table-policy work is preserved outside this branch. No merge, deployment, new SQL, credentials or dependency upgrades are authorized. See docs/BETA_FEEDBACK_SECURITY_FIX_20261024.md for validation and execution-evidence limits.
+
+## 2026-10-24 — PR170 scoped release preparation
+
+Reconciled exact approved head2bd77429, successful root/focused CI and clean configured Codex review. User approved PR summary update, merge and frontend deployment. Main and production remain7b594eb; unrelated open PRs preserved. Advanced genuine reviewed anchor with canonical documentation only; exact successor checks/review and production revision verification remain pending. Broader table policy candidates remain separate; no SQL replay or production records were used.
