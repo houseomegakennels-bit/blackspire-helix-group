@@ -1,0 +1,20 @@
+{
+  "evidence_source": "Parent report of existing Supabase connector worker execution; not independently re-queried by this local executor",
+  "project_id": "kchtrvfcixnimvxxctkj",
+  "project_name": "blackspire insight",
+  "applied_at_utc": "2026-10-24T21:44:41Z",
+  "migration_version": "20261024214440",
+  "migration_name": "pin_ember_halo_function_search_path",
+  "sql_sha256": "d0788ab5ead974ade8e67b70960ba06a15691cf7bd514cd978496595f6eef521",
+  "previous_local_candidate_version": "20261024212901",
+  "reconciliation": "Renamed local migration to recorded production version without changing SQL bytes; old candidate filename removed",
+  "reported_postchecks": {
+    "function_count": 4,
+    "search_path": "pg_catalog",
+    "attributes_except_config": "identical to captured precheck",
+    "definition_delta": "only expected SET search_path insertion",
+    "security_advisor_mutable_search_path_warnings": 0,
+    "other_advisor_warnings": "remain"
+  },
+  "scope": "Four Ember Halo functions only; no sixteen-policy change, rollback, upgrade, application deployment or production-history edit by local executor"
+}

@@ -1,5 +1,9 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-24 — Draft beta-feedback authorization and applied function record
+
+The user authorized a draft PR and CI for the beta-feedback route/service authorization repair, its focused tests, and the reconciled record of the already-applied four-function search-path hardening. No merge, deployment or further production SQL is authorized. The draft is isolated from concurrent UI work and excludes broader table-policy candidates and their combined harness. Existing first-admin fallback and shared admin/beta access are preserved. See docs/BETA_FEEDBACK_SECURITY_FIX_20261024.md for scope, parent-reported function execution evidence, exact migration digest and validation limits. The reviewed implementation anchor and security/containment checkers are unchanged; new exact-commit CI/review remain required.
+
 ## 2026-10-24 — Auth-status release approved and reviewed
 
 The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
