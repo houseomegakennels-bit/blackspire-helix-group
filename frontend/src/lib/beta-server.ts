@@ -83,11 +83,24 @@ export async function guardBetaAction(action: "sweep" | "export"): Promise<GateR
   return { operatorId, role: "beta_tester" };
 }
 
-export async function submitBetaFeedback(input: { category?: string; message: string; pagePath?: string }) {
+type BetaFeedbackResult =
+  | { ok: true }
+  | { ok: false; error: string; status: 400 | 401 | 403 };
+
+export async function submitBetaFeedback(input: { category?: string; message: string; pagePath?: string }): Promise<BetaFeedbackResult> {
+  const { operatorId, role } = await getOperatorContext();
+  if (!operatorId || role === "anonymous") {
+    return { ok: false, error: "Authentication required.", status: 401 };
+  }
+  if (role !== "admin" && role !== "beta_tester") {
+    return { ok: false, error: "Operator access is required.", status: 403 };
+  }
+  if (!input.message?.trim()) return { ok: false, error: "A message is required.", status: 400 };
+
   const supabase = admin();
-  if (!supabase) return { ok: false as const, error: "Storage is not configured." };
-  const { operatorId, email } = await resolveOperator();
-  if (!input.message?.trim()) return { ok: false as const, error: "A message is required." };
+  if (!supabase) return { ok: false, error: "Storage is not configured.", status: 400 };
+  const users = await listAuthUsers().catch(() => []);
+  const email = users.find((user) => user.id === operatorId)?.email ?? null;
 
   const allowed = new Set(["navigation", "bug", "bad_data", "missing_feature", "performance", "other"]);
   const category = allowed.has(input.category ?? "") ? input.category! : "other";
@@ -99,8 +112,8 @@ export async function submitBetaFeedback(input: { category?: string; message: st
     message: input.message.trim().slice(0, 4000),
     page_path: input.pagePath ?? null,
   });
-  if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const };
+  if (error) return { ok: false, error: error.message, status: 400 };
+  return { ok: true };
 }
 
 export type BetaProgramSnapshot = {

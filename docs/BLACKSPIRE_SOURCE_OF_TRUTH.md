@@ -1,5 +1,17 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-24 — Feedback authorization release approved and reviewed
+
+The user explicitly approved updating PR170, merging and deploying the scoped feedback authorization fix. Implementation 2bd77429e91b9f2e383bdfe508476a1ce7f8da34 passed configured Codex review (receipt 6390005983, no findings), root CI40136168584 and focused CI40136168595. Root CI reports 2746 total tests, 2567 passed, 179 skipped and zero failures; all 309 inventory files completed. The focused workflow passed four frontend authorization tests and frontend lint/types. Five scoped local tests passed; local aggregate execution remains blocked by missing ptrace_scope and local frontend build by Google Fonts access. These local limitations are not CI failures.
+
+The genuine reviewed implementation anchor advances to 2bd77429. This canonical-documentation-only successor requires exact-head CI/review before a history-preserving merge. The unchanged memory checker is expected to report REVIEWED_COMMIT_NOT_ANCESTOR before merge; verify ancestry and canonical-only delta afterward. Fresh production remains READY at main7b594eb through dpl_2BCKoZi6Tt5LuE1U7bHBWJnuHEGk until the release is verified. No authenticated production feedback will be submitted for testing. Live role-matrix acceptance remains UNVERIFIED; synthetic denial and admitted-role coverage is verified.
+
+The sixteen-table policy proposal remains excluded and unpublished. Four-function hardening was already applied as migration20261024214440; its repository record must not be replayed. No bulk migrations, new credentials, permissions, spending or unrelated UI changes are authorized by this release. Earlier draft-only authorization entries are historical checkpoints superseded only for this scoped release.
+
+## 2026-10-24 — Draft beta-feedback authorization and applied function record
+
+The user authorized a draft PR and CI for the beta-feedback route/service authorization repair, its focused tests, and the reconciled record of the already-applied four-function search-path hardening. No merge, deployment or further production SQL is authorized. The draft is isolated from concurrent UI work and excludes broader table-policy candidates and their combined harness. Existing first-admin fallback and shared admin/beta access are preserved. See docs/BETA_FEEDBACK_SECURITY_FIX_20261024.md for scope, parent-reported function execution evidence, exact migration digest and validation limits. The reviewed implementation anchor and security/containment checkers are unchanged; new exact-commit CI/review remain required.
+
 ## 2026-10-24 — Auth-status release approved and reviewed
 
 The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
@@ -1312,7 +1324,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `0ff5b0b775efac1335c65e95fe94dc23bf48369c`
+- Last verified implementation commit: `2bd77429e91b9f2e383bdfe508476a1ce7f8da34`
 
 ## 2026-09-04 — Activation recovery delta
 
