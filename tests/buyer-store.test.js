@@ -68,9 +68,16 @@ test('unknown deal state never runs native unscoped buyer count or trusts caller
  assert.equal(reads,0);
 });
 
-test('native capability uses explicit state from each reviewed comma ZIP address before counting buyers',async()=>{
+test('native capability uses explicit state from comma and application-produced ZIP addresses before counting buyers',async()=>{
  for(const [address,state,county] of [
   ['1 Synthetic St, Greenville, NC, 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC','NC','Pitt'],
+  ['1 Synthetic St, Greenville SC','SC','Greenville'],
+  ['1 Synthetic St, Greenville NC, 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC 27834-1234','NC','Pitt'],
+  ['1 Synthetic St, Greenville SC 29601','SC','Greenville'],
+
   ['1 Synthetic St, Greenville, NC 27834','NC','Pitt'],
   ['1 Synthetic St, Greenville, NC, 27834-1234','NC','Pitt'],
   ['1 Synthetic St, Greenville, SC, 29601','SC','Greenville'],
@@ -86,7 +93,7 @@ test('native capability uses explicit state from each reviewed comma ZIP address
  }
 });
 test('native capability missing or unrecognized address state is unavailable instead of evaluated zero',async()=>{
- for(const address of [null,'1 Synthetic St, Greenville','1 Synthetic St, Greenville, ZZ, 27834','1 Synthetic St, Greenville, Unknown, 27834']){
+ for(const address of [null,'1 Synthetic St, Greenville','1 Synthetic St, Greenville, ZZ, 27834','1 Synthetic St, Greenville, Unknown, 27834','1 Synthetic St, Greenville ZZ','1 Synthetic St, Greenville ZZ 27834','1 Synthetic St, Greenville North Carolina 27834']){
   const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',state:'NC',limit:5,matchesOnly:true};
   const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
   let reads=0;

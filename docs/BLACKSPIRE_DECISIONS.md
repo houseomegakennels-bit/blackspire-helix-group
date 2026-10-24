@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Real-estate review repairs and publication scope
+
+The user explicitly approved pushing feat/real-estate-product-20261023 for review and CI. Implementation9ef920d3702ef30638dc54a5ea38a77f49300e59 is pushed and PR#168 is open against main51d2d3c2. Merge, auto-merge and production deployment remain unapproved. No credentials, permissions, production records, provider purchases or outreach changed. Earlier no-push entries describe their dated checkpoints and are superseded for branch-push authority only.
+
+Parse explicit state tokens consistently across shared and native matching, including formats produced when ZIP is absent. Never infer state from a city. Editable comma-separated duplicate IDs retain a raw text draft while saved research uses a canonical array; reload must observe both raw and canonical edits. Added-file whitespace is checked against the PR base with the scoped candidate staged. No release checker, reviewed anchor or security boundary is weakened.
+
 ## 2026-10-23 — Real-estate product candidate, local verification
 
 The user authorized implementation on Blackspire-command in /mnt/blackspire-builds/real-estate-product-20261023, branch feat/real-estate-product-20261023, based on main51d2d3c202566718a9a57b2e6908509c89ea11f9. This scope has no push, merge or production-deployment authority; historical Peggy publication authority does not apply. Existing worktrees, production records, credentials, roles and security settings are preserved. No paid provider, outreach, offer, signature or financial commitment was used.

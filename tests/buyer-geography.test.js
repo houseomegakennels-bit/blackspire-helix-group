@@ -103,3 +103,32 @@ test('alias merging retains database nulls-last order instead of treating unknow
  const match=await f.match({county:'Union',state:'NC',limit:1});
  assert.equal(match.matches[0].buyerId,'z-known-zero');assert.equal(match.matches[0].purchaseCount,0);
 });
+
+test('explicit state suffixes support application-produced addresses without city inference',()=>{
+ for(const address of ['10 Example St, Greenville NC','10 Example St, Greenville NC 27834','10 Example St, Greenville, NC 27834','10 Example St, Greenville, NC, 27834','10 Example St, Greenville NC, 27834','10 Example St, Greenville NC 27834-1234'])assert.equal(geo.stateFromAddress(address),'NC',address);
+ for(const address of ['10 Example St, Greenville SC','10 Example St, Greenville SC 29601','10 Example St, Greenville, SC, 29601'])assert.equal(geo.stateFromAddress(address),'SC',address);
+ assert.equal(geo.stateFromAddress('10 Example St, Greenville, NC'),'NC','preserve explicit comma-delimited state without ZIP');
+ for(const address of [null,'10 Example St, Greenville','10 Example St, Greenville ZZ','10 Example St, Greenville ZZ 27834','10 Example St, Greenville North Carolina 27834'])assert.equal(geo.stateFromAddress(address),null,'unresolved address stays unknown: '+address);
+});
+
+test('normal persisted address producers preserve explicit NC and SC when ZIP is missing',()=>{
+ const dealSource=fs.readFileSync('frontend/src/lib/deal-engine-server.ts','utf8');
+ const handoffStart=dealSource.indexOf('function toDealLeadFromSellerHandoff(');
+ const handoffEnd=dealSource.indexOf('\nfunction isMissingDealTableError',handoffStart);
+ const formatStart=dealSource.indexOf('function formatSellerPropertyAddress(');
+ const formatEnd=dealSource.indexOf('\nfunction parseNexusContactNote',formatStart);
+ assert.ok(handoffStart>=0&&handoffEnd>handoffStart&&formatStart>=0&&formatEnd>formatStart);
+ const producers=vm.runInNewContext(stripTypeScriptTypes(dealSource.slice(handoffStart,handoffEnd)+dealSource.slice(formatStart,formatEnd))+'\n({toDealLeadFromSellerHandoff,formatSellerPropertyAddress})',{formatCurrency:value=>String(value)});
+ for(const state of ['NC','SC']){
+  const lead={id:'DE-0001',propertyAddress:'10 Example St',city:'Greenville',state,zipCode:null,county:state==='NC'?'Pitt':'Greenville',score:50};
+  const property={property_address:lead.propertyAddress,city:lead.city,state,zip_code:null};
+  for(const address of [producers.toDealLeadFromSellerHandoff(lead).propertyAddress,producers.formatSellerPropertyAddress(property)]){
+   assert.equal(address,'10 Example St, Greenville '+state);
+   assert.equal(geo.stateFromAddress(address),state);
+  }
+ }
+ for(const state of [undefined,'ZZ']){
+  const address=producers.formatSellerPropertyAddress({property_address:'10 Example St',city:'Greenville',state,zip_code:null});
+  assert.equal(geo.stateFromAddress(address),null);
+ }
+});

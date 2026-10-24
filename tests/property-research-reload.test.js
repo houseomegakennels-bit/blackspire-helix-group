@@ -32,6 +32,7 @@ function editor({ dirty = false, confirm = true } = {}) {
   };
   const context = {
     currentDraftRef, revisionRef, operationRef, saveState, transport, JSON, Error,
+    duplicateIdsTextRef: { current: "" }, setDuplicateIdsText() {},
     window: { confirm() { confirms++; return confirm; } },
     setResearchState(value) { draft = value; },
     setRevision(value) { revision = value; },
@@ -43,7 +44,7 @@ function editor({ dirty = false, confirm = true } = {}) {
   return { ...actions, read, write, operationRef, revisionRef,
     state: () => ({ draft, revision, baseline, message, reloading, loads, writes, confirms, dirty: JSON.stringify(draft) !== baseline }) };
 }
-const saved = { revision: 4, research: { privateNotes: 'saved on server' } };
+const saved = { revision: 4, research: { privateNotes: 'saved on server', duplicateReview: { candidateIds: [] } } };
 
 test('reload preserves newer draft and revision when edited during the awaited read', async () => {
   const e = editor();

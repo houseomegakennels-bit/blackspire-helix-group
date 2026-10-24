@@ -71,4 +71,3 @@ test('a verified empty reverse search differs from missing geography or failed s
  const r=await fixture({sellerRows:[],dealRows:[]}).run({targetState:'NC',targetCounty:'Union'});
  assert.equal(r.evaluation,'evaluated');assert.equal(r.unevaluatedCount,0);assert.equal(r.reason,null);assert.equal(r.matches.length,0);
 });
-

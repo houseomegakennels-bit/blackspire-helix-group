@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Real-estate review repairs and publication scope
+
+The repaired successor passed full local gates and targeted keyboard acceptance. Commit and push on the existing authorized PR#168, resolve verified repair threads and request fresh exact-head CI/Codex review. No repeat push approval is needed. Do not merge or deploy production without separate explicit authority. Keep actual-device/Peggy acceptance unverified until observed.
+
 ## 2026-10-23 — Real-estate product candidate, local verification
 
 Final candidate code gates and synthetic end-to-end verification passed. Record the exact local milestone commit and PROJECT_HANDOFF.md, then obtain explicit authorization before any push/merge/deployment. Reconcile pending Commander operations before retrying interrupted jobs. Preserve production and other worktrees. Actual-device and Peggy-account acceptance remain UNVERIFIED; configured exact-head CI/review remains a release gate.

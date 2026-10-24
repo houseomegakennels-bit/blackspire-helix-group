@@ -45,7 +45,8 @@ export function buyerCountyFilter(county: string): string {
   return "county.ilike."+JSON.stringify(core)+",county.ilike."+JSON.stringify(core+" County");
 }
 export function stateFromAddress(value?: string | null): string | null {
-  const match=(value ?? "").match(/,\s*([A-Za-z]{2})(?:\s*,?\s*\d{5}(?:-\d{4})?)?\s*$/);
-  return normalizeBuyerState(match?.[1]);
+  const match=(value ?? "").match(/(,\s*|\s+)([A-Za-z]{2})(?:\s*,?\s*(\d{5}(?:-\d{4})?))?\s*$/);
+  // Read only an explicit valid terminal state code; the normal address producers may omit ZIP.
+  if (!match) return null;
+  return normalizeBuyerState(match[2]);
 }
-
