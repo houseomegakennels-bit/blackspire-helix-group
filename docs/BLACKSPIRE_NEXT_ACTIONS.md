@@ -1,5 +1,19 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Auth-status release approved and reviewed
+
+The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
+
+This documentation-only successor records the genuinely independently reviewed implementation anchor0ff5b0b7. The checker is unchanged. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while that anchor is outside trusted main; require a history-preserving merge and verify anchor-to-main canonical-memory-only net delta afterward. This final head requires its own successful exact-head CI and configured review before merge. Release approval is for the frontend auth-status fix and necessary release documentation only; no credentials, roles, schema, security settings, production records, outreach, financial actions or VPS/Zola activation are authorized. Existing production remains main230a0a29 until exact merge-SHA deployment READY, aliases and read-only smoke are verified.
+
+## 2026-10-24 — Authentication recovered; truthful status candidate
+
+Finish candidate validation and commit locally, then obtain explicit authority for branch publication/review and production release. Resume is already complete; do not restore the project again. Keep the existing deployment unchanged while this UI repair is unpublished. User-confirmed iPhone page loading does not establish Peggy account or save acceptance.
+
+## 2026-10-24 — Real-estate frontend published and verified
+
+The approved real-estate frontend release is live at main 230a0a29 via READY deployment dpl_8L1kTbK8qe2Wij4zsGTATCUXeNiC. Premerge exact-head CI/review, live aliases, read-only smoke and fresh-main memory proof passed. Separate exact-main CI 40099421509 also passed. Follow up on actual iPhone/native-keyboard and Peggy-account acceptance; do not substitute synthetic fixtures or anonymous checks. No further implementation or repeat tests are needed absent new changes or concerns. Preserve production-record and VPS/Zola boundaries.
+
 ## 2026-10-24 — Real-estate release approved and reviewed
 
 User merge/production authority is now explicit for PR #168 real-estate frontend. Verify this canonical-memory-only successor on exact-head CI/Codex review, merge with history preserved, observe production READY at the exact merge SHA and correct live aliases, then perform read-only health/auth boundary smoke checks and record release evidence. No fresh approval question is needed within this scope. Keep physical-phone/Peggy acceptance UNVERIFIED until observed; preserve all production-record and VPS/Zola boundaries.

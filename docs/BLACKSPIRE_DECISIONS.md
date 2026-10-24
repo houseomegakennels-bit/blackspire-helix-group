@@ -1,5 +1,21 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Auth-status release approved and reviewed
+
+The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
+
+This documentation-only successor records the genuinely independently reviewed implementation anchor0ff5b0b7. The checker is unchanged. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while that anchor is outside trusted main; require a history-preserving merge and verify anchor-to-main canonical-memory-only net delta afterward. This final head requires its own successful exact-head CI and configured review before merge. Release approval is for the frontend auth-status fix and necessary release documentation only; no credentials, roles, schema, security settings, production records, outreach, financial actions or VPS/Zola activation are authorized. Existing production remains main230a0a29 until exact merge-SHA deployment READY, aliases and read-only smoke are verified.
+
+## 2026-10-24 — Authentication recovered; truthful status candidate
+
+Failed authentication checks must not imply missing configuration, no session or completed setup. Require complete successful status evidence and ignore superseded requests. Recover the existing provider project rather than replacing credentials or projects. Provider restore approval was explicit; payment was performed by the user. Production UI publication remains a separate release decision.
+
+## 2026-10-24 — Real-estate frontend published and verified
+
+PR #168 merged with history preserved as 230a0a29fe865a9dc2932925ba44439c61f5b72a after exact-head CI 40098597297 and clean configured Codex review receipt 6384850642 passed on documentation head eac4bddbf35fe748b5931537daf3e304eea9ef6d. The genuinely reviewed implementation remains a9b75b9d0b81d9eedea660f1998b29f51fa35411. User production approval was explicit; no checker, credential, role, schema or release-boundary change was made.
+
+Production evidence is bound to the actual merge commit and deployment ID, not a preview or synthetic merge. Retain the existing runtime/settings and previous production deployment dpl_8iwW3exqDZXp3xgZdbmuBaCkqVHu as rollback reference; no rollback was performed. Public/auth boundary checks and limited logs establish release smoke only. Actual-device/Peggy and authenticated business workflows stay unverified. Preserve the genuine reviewed anchor and all production-record, provider and VPS/Zola constraints.
+
 ## 2026-10-24 — Real-estate release approved and reviewed
 
 The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.
