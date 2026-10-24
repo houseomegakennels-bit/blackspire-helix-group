@@ -8,11 +8,12 @@ const source = fs.readFileSync(new URL('../frontend/src/lib/deal-engine-server.t
 const start = source.indexOf('export async function getDealEngineDealDetail(');
 const end = source.indexOf('\nexport async function getDealEngineDealRoomBySlug', start);
 assert.ok(start >= 0 && end > start);
+const geography = vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync('frontend/src/lib/buyer-geography.ts','utf8')).replaceAll('export ', '')+'\n({normalizeCountyName,stateFromAddress})');
 const helper = stripTypeScriptTypes(source.slice(start, end).replace('export async function', 'async function'));
 
 // Execute the real detail helper; only database and presentation dependencies are synthetic.
 // The target is deliberately below the historical top-100 cutoff.
-function fixture({ enabled = true, failTable = null, missing = false, missingAnalysis = false } = {}) {
+function fixture({ enabled = true, failTable = null, missing = false, missingAnalysis = false, buyerFailure = false, allowScaffold = false } = {}) {
   const target = { id: 'DE-9999', motivation_score: 1 };
   const rows = [...Array.from({ length: 100 }, (_, i) => ({ id: `DE-${1000 + i}`, motivation_score: 1000 - i })), target];
   const reads = [];
@@ -38,17 +39,18 @@ function fixture({ enabled = true, failTable = null, missing = false, missingAna
     },
   };
   const dependencies = {
+    ...geography,
     getSupabaseAdmin: () => enabled ? client : null,
     listDealEngineLeads: async (limit) => { listCalls += 1; return missing ? [] : rows.slice(0, limit); },
     toLead: (row) => ({ ...row, propertyAddress: 'Synthetic address' }),
-    listDealEngineSellerSignals: async () => [], listDealEngineBuyerSignals: async () => [], listOutreachDraftRecords: async () => [],
+    listDealEngineSellerSignals: async () => [], listDealEngineBuyerSignals: async () => { if(buyerFailure) throw Error("synthetic offline"); return []; }, listOutreachDraftRecords: async () => [],
     findSellerSignalForLead: () => null, rankBuyerSignalsForLead: () => [], buildContractDrafts: () => [],
     buildUnderwritingSnapshot: (_lead, analysis) => ({ maximumAllowableOffer: analysis?.maximum_allowable_offer ?? 0 }),
     buildSellerContactProfile: () => ({}), buildSellerContactWorkflow: () => ({}), buildSellerOutreach: () => ({}),
     buildFallbackCoordination: () => ({}), buildFallbackPacket: () => ({}), buildFallbackRoom: () => ({}),
     findNexusContactForDeal: async () => null, mergeNexusContactProfile: (profile) => profile,
     enrichPacketWithSellerContactStatus: (packet) => packet,
-    syncDealBuyerMatches: mutate, ensureDealExecutionScaffold: mutate,
+    syncDealBuyerMatches: (...args) => allowScaffold ? Promise.resolve(null) : mutate(...args), ensureDealExecutionScaffold: (...args) => allowScaffold ? Promise.resolve(null) : mutate(...args),
     buildDefaultContactOperatorTask: () => ({ title: 'Synthetic contact task' }), buildDealAutomationWorkflow: () => ({}),
   };
   return { detail: vm.runInNewContext(`${helper}\ngetDealEngineDealDetail`, dependencies), reads, listCalls: () => listCalls, mutations: () => mutations };
@@ -89,3 +91,20 @@ for (const table of ['deal_leads', 'deal_packets', 'deal_analysis', 'contracts',
     assert.equal(f.mutations(), 0);
   });
 }
+
+test('buyer report failure and missing geography are not evaluated instead of zero demand',async()=>{
+ for(const options of [{},{buyerFailure:true}]){
+  const result=await fixture(options).detail('DE-9999',{persistScaffold:false});
+  assert.equal(result.buyerEvaluation.evaluated,false);
+  assert.match(result.buyerEvaluation.reason,/not evaluated|could not be checked/i);
+  assert.equal(result.buyerSignals.length,0);
+ }
+});
+
+test('normal property detail resolves a persisted ID beyond top100 with default scaffolding enabled', async () => {
+  const f = fixture({ allowScaffold: true });
+  const result = await f.detail('DE-9999');
+  assert.equal(result?.lead.id, 'DE-9999');
+  assert.equal(f.listCalls(), 0, 'normal property detail must not depend on a ranked top100 list');
+  assert.deepEqual(f.reads.find((read) => read.table === 'deal_leads').filters, [['id', 'DE-9999']]);
+});

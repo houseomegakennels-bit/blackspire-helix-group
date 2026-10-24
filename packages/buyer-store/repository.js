@@ -5,6 +5,21 @@ const REPORT='r.id,r.search_job_id,r.buyer_profile_id,r.buyer_name_snapshot,r.ma
 const EXPORT='id,user_id,search_job_id,file_name,storage_path,row_count,created_at';
 const uuid=v=>typeof v==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(v);
 const escapeLike=v=>v===null?null:v.replace(/[\\%_]/g,'\\$&');
+// Same code/full-name pairs as the frontend; tests bind both query surfaces.
+const BUYER_STATE_NAMES = {"al":"alabama","ak":"alaska","az":"arizona","ar":"arkansas","ca":"california","co":"colorado","ct":"connecticut","de":"delaware","dc":"district of columbia","fl":"florida","ga":"georgia","hi":"hawaii","id":"idaho","il":"illinois","in":"indiana","ia":"iowa","ks":"kansas","ky":"kentucky","la":"louisiana","me":"maine","md":"maryland","ma":"massachusetts","mi":"michigan","mn":"minnesota","ms":"mississippi","mo":"missouri","mt":"montana","ne":"nebraska","nv":"nevada","nh":"new hampshire","nj":"new jersey","nm":"new mexico","ny":"new york","nc":"north carolina","nd":"north dakota","oh":"ohio","ok":"oklahoma","or":"oregon","pa":"pennsylvania","ri":"rhode island","sc":"south carolina","sd":"south dakota","tn":"tennessee","tx":"texas","ut":"utah","vt":"vermont","va":"virginia","wa":"washington","wv":"west virginia","wi":"wisconsin","wy":"wyoming"};
+const buyerStateAliases = value => {
+ if (value === null) return null;
+ const text=value.trim().replace(/\s+/g," ").toLowerCase();
+ const code=Object.hasOwn(BUYER_STATE_NAMES,text)?text:Object.keys(BUYER_STATE_NAMES).find(code=>BUYER_STATE_NAMES[code]===text);
+ if (!code) refuse();
+ return [code,BUYER_STATE_NAMES[code]];
+};
+const buyerCounty = value => {
+ if (value === null) return null;
+ const text=value.trim().replace(/\s+county$/i,'').trim().replace(/\s+/g,' ').toLowerCase();
+ if (!/^[a-z][a-z .'-]*$/.test(text)||['unknown','unresolved','none','na','n a','county','not captured','not entered','tbd','pending','unverified'].includes(text)) refuse();
+ return text;
+};
 export function createBuyerStoreRepository({connect,connectCapability}){
  if(typeof connect!=='function')refuse();
  const execute=async (operation,raw,ownerId,role)=>{
@@ -56,8 +71,8 @@ export function createBuyerStoreRepository({connect,connectCapability}){
    }
    if(operation==='counts')data=(await q('SELECT (SELECT count(*)::integer FROM public."SearchJob" WHERE user_id=$1::uuid) AS "searchJobCount",(SELECT count(*)::integer FROM public."SearchJob" WHERE user_id=$1::uuid AND status=\'completed\') AS "completedJobCount",(SELECT count(*)::integer FROM public."SearchJob" WHERE user_id=$1::uuid AND status=\'processing\') AS "processingJobCount",(SELECT count(*)::integer FROM public."SearchJob" WHERE user_id=$1::uuid AND status=\'failed\') AS "failedJobCount",(SELECT count(*)::integer FROM public."BuyerReport" r JOIN public."SearchJob" j ON j.id=r.search_job_id WHERE j.user_id=$1::uuid) AS "buyerReportCount",(SELECT count(*)::integer FROM public.exports WHERE user_id=$1::uuid) AS "exportCount"',[ownerId]))[0];
    if(operation==='profiles-list'){
-    const where="($1::text IS NULL OR p.county ILIKE '%'||$1||'%') AND ($2::text IS NULL OR p.state ILIKE $2) AND ($3::text IS NULL OR p.buyer_name ILIKE '%'||$3||'%') AND ($4::text IS NULL OR p.property_types @> ARRAY[$4]::text[]) AND ($5::boolean IS NULL OR p.is_cash_buyer=$5) AND ($6::boolean IS NULL OR p.is_llc=$6)";
-    const args=[escapeLike(input.county),escapeLike(input.state),escapeLike(input.buyerName),input.propertyType,input.cashBuyer,input.llcBuyer];
+    const where="($1::text IS NULL OR lower(regexp_replace(btrim(p.county), '\\s+county$', '', 'i')) = lower($1)) AND ($2::text[] IS NULL OR lower(btrim(p.state))=ANY($2::text[])) AND ($3::text IS NULL OR p.buyer_name ILIKE '%'||$3||'%') AND ($4::text IS NULL OR p.property_types @> ARRAY[$4]::text[]) AND ($5::boolean IS NULL OR p.is_cash_buyer=$5) AND ($6::boolean IS NULL OR p.is_llc=$6)";
+    const args=[buyerCounty(input.county),buyerStateAliases(input.state),escapeLike(input.buyerName),input.propertyType,input.cashBuyer,input.llcBuyer];
     data={rows:await q(`SELECT ${PROFILE} FROM public."BuyerProfile" p WHERE ${where} ORDER BY p.purchase_count DESC NULLS LAST,p.id LIMIT $7`,[...args,input.limit]),count:(await q(`SELECT count(*)::integer AS n FROM public."BuyerProfile" p WHERE ${where}`,args))[0].n};
    }
    if(data===undefined||Buffer.byteLength(JSON.stringify(data))>512*1024)refuse();

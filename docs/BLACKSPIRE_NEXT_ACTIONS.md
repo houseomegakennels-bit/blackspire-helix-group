@@ -1,5 +1,17 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+User merge/production authority is now explicit for PR #168 real-estate frontend. Verify this canonical-memory-only successor on exact-head CI/Codex review, merge with history preserved, observe production READY at the exact merge SHA and correct live aliases, then perform read-only health/auth boundary smoke checks and record release evidence. No fresh approval question is needed within this scope. Keep physical-phone/Peggy acceptance UNVERIFIED until observed; preserve all production-record and VPS/Zola boundaries.
+
+## 2026-10-24 — Real-estate review repairs and publication scope
+
+The repaired successor passed full local gates and targeted keyboard acceptance. Commit and push on the existing authorized PR#168, resolve verified repair threads and request fresh exact-head CI/Codex review. No repeat push approval is needed. Do not merge or deploy production without separate explicit authority. Keep actual-device/Peggy acceptance unverified until observed.
+
+## 2026-10-23 — Real-estate product candidate, local verification
+
+Final candidate code gates and synthetic end-to-end verification passed. Record the exact local milestone commit and PROJECT_HANDOFF.md, then obtain explicit authorization before any push/merge/deployment. Reconcile pending Commander operations before retrying interrupted jobs. Preserve production and other worktrees. Actual-device and Peggy-account acceptance remain UNVERIFIED; configured exact-head CI/review remains a release gate.
+
 ## 2026-10-08 — Peggy start screen and save clarity
 
 Published the user-authorized follow-up: the home page emphasizes Add property and Continue working, shows stored next actions, and provides a counted 24-property paginated list with explicit empty/unavailable states. Analysis, offer terms and packet forms show unsaved, saving, failed and saved states with a session-local success time. Successful saves acknowledge only the submitted snapshot, so edits made in flight remain unsaved; the packet form and shortcut share a lock and status. Packet feedback spans both desktop columns. Division totals are separate from operator pagination and cached for five minutes, scoped to the data source, with at most one count plus five row reads and a 5000-property ceiling. Larger or incomplete summaries show Unavailable instead of partial totals. Labels describe saved properties and buyer follow-ups accurately.

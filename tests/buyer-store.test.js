@@ -27,7 +27,7 @@ test('capability helper binds original body and uses trusted deal lookup',async(
  const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',limit:5,matchesOnly:true};
  const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
  const bindingDigest='a'.repeat(64);let calls=0;
- const deps={lookupDeal:async id=>{assert.equal(id,'DE-0001');return {deal:{county:'Wake County',city:'Raleigh',property_address:null,property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}};},repository:{readCapabilityProfiles:async input=>{calls++;assert.equal(input.county,'Wake');assert.equal(input.limit,200);return {rows:[],count:0,observation:{requests:2,responseBytes:20,latencyMs:1}};}}};
+ const deps={lookupDeal:async id=>{assert.equal(id,'DE-0001');return {deal:{county:'Wake County',city:'Raleigh',property_address:'1 Example St, Raleigh, NC 27601',property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}};},repository:{readCapabilityProfiles:async input=>{calls++;assert.equal(input.county,'Wake');assert.equal(input.state,'NC');assert.equal(input.limit,200);return {rows:[],count:0,observation:{requests:2,responseBytes:20,latencyMs:1}};}}};
  const value=await readConsumedBuyerData({authority,request,bindingDigest},deps);assert.equal(value.bindingDigest,bindingDigest);assert.equal(calls,1);
  await assert.rejects(readConsumedBuyerData({authority,request:{...request,opportunityId:'DE-9999'},bindingDigest},deps));assert.equal(calls,1);
  await assert.rejects(readConsumedBuyerData({authority:{...authority,capabilityId:'deal.records.search'},request,bindingDigest},deps));
@@ -55,4 +55,62 @@ test('job criteria preserve frontend purchase bound and mutation roles come only
  const handler=createBuyerStoreHandler({verifyUser:async()=>({ownerId:owner,role:'beta_tester'}),repository:{execute:async(...args)=>{observed=args;return {};}}});
  await handler({operation:'job-create',accessToken:token,input});assert.equal(observed[3],'beta_tester');
  await assert.rejects(handler({operation:'job-create',accessToken:token,input:{...input,role:'admin'}}));
+});
+
+test('unknown deal state never runs native unscoped buyer count or trusts caller state',async()=>{
+ const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',state:'SC',limit:5,matchesOnly:true};
+ const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
+ let reads=0;
+ await assert.rejects(readConsumedBuyerData({authority,request,bindingDigest:'a'.repeat(64)},{
+ lookupDeal:async()=>({deal:{county:'Union',city:null,property_address:null,property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}}),
+ repository:{readCapabilityProfiles:async()=>{reads++;throw Error('unscoped');}}
+ }),/BUYER_STORE_REFUSED/);
+ assert.equal(reads,0);
+});
+
+test('native capability uses explicit state from comma and application-produced ZIP addresses before counting buyers',async()=>{
+ for(const [address,state,county] of [
+  ['1 Synthetic St, Greenville, NC, 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC','NC','Pitt'],
+  ['1 Synthetic St, Greenville SC','SC','Greenville'],
+  ['1 Synthetic St, Greenville NC, 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville NC 27834-1234','NC','Pitt'],
+  ['1 Synthetic St, Greenville SC 29601','SC','Greenville'],
+
+  ['1 Synthetic St, Greenville, NC 27834','NC','Pitt'],
+  ['1 Synthetic St, Greenville, NC, 27834-1234','NC','Pitt'],
+  ['1 Synthetic St, Greenville, SC, 29601','SC','Greenville'],
+ ]){
+  const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',state:state==='NC'?'SC':'NC',limit:5,matchesOnly:true};
+  const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
+  let reads=0;
+  const value=await readConsumedBuyerData({authority,request,bindingDigest:'a'.repeat(64)},{
+   lookupDeal:async()=>({deal:{county:county+' County',city:'Greenville',property_address:address,property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}}),
+   repository:{readCapabilityProfiles:async input=>{reads++;assert.equal(input.state,state);assert.equal(input.county,county);return {rows:[{id:'synthetic-buyer',county,state}],count:1,observation:{requests:2,responseBytes:80,latencyMs:1}};}}
+  });
+  assert.equal(reads,1);assert.equal(value.count,1);assert.equal(value.profiles[0].state,state);
+ }
+});
+test('native capability missing or unrecognized address state is unavailable instead of evaluated zero',async()=>{
+ for(const address of [null,'1 Synthetic St, Greenville','1 Synthetic St, Greenville, ZZ, 27834','1 Synthetic St, Greenville, Unknown, 27834','1 Synthetic St, Greenville ZZ','1 Synthetic St, Greenville ZZ 27834','1 Synthetic St, Greenville North Carolina 27834']){
+  const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',state:'NC',limit:5,matchesOnly:true};
+  const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
+  let reads=0;
+  await assert.rejects(readConsumedBuyerData({authority,request,bindingDigest:'a'.repeat(64)},{
+   lookupDeal:async()=>({deal:{county:'Pitt',city:'Greenville',property_address:address,property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}}),
+   repository:{readCapabilityProfiles:async()=>{reads++;return {rows:[],count:0,observation:{requests:2,responseBytes:2,latencyMs:1}};}}
+  }),/BUYER_STORE_REFUSED/);
+  assert.equal(reads,0);
+ }
+});
+test('native capability unknown county does not become an evaluated empty buyer count',async()=>{
+ const request={workspaceId:'blackspire-command',opportunityId:'DE-0001',limit:5,matchesOnly:true};
+ const authority={capabilityId:'buyer.matches.search',workspaceId:request.workspaceId,bodySha256:createHash('sha256').update(JSON.stringify(request)).digest('hex')};
+ let reads=0;
+ await assert.rejects(readConsumedBuyerData({authority,request,bindingDigest:'a'.repeat(64)},{
+  lookupDeal:async()=>({deal:{county:'Unknown',city:'Greenville',property_address:'1 Synthetic St, Greenville, NC, 27834',property_type:'land'},observation:{requests:1,responseBytes:80,latencyMs:1}}),
+  repository:{readCapabilityProfiles:async()=>{reads++;return {rows:[],count:0,observation:{requests:2,responseBytes:2,latencyMs:1}};}}
+ }),/BUYER_STORE_REFUSED/);
+ assert.equal(reads,0);
 });

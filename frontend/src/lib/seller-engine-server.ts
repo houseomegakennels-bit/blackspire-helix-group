@@ -851,6 +851,28 @@ export async function listSellerLeadsForCapability(limit: number, readClient: Su
   return ((data ?? []) as unknown as SellerLeadJoin[]).map(mapSellerLead);
 }
 
+// Reverse matching must not inherit the legacy UI mapper's default NC state.
+export async function listSellerLeadsForReverseSearch(readClient: SupabaseClient): Promise<SellerLeadView[]> {
+  if (!readClient) throw new Error("Seller opportunity source unavailable");
+  const countResult = await readClient.from("seller_leads").select("id", { count: "exact", head: true });
+  if (countResult.error || !Number.isSafeInteger(countResult.count) || countResult.count! < 0 || countResult.count! > 5000) throw new Error("Seller opportunity source unavailable");
+  const expected = countResult.count!;
+  const leads: SellerLeadView[] = [];
+  const ids = new Set<string>();
+  for (let batches=0; leads.length < expected && batches < 10; batches++) {
+    const { data, error } = await readClient.from("seller_leads").select(SELLER_LEAD_BASE_SELECT)
+      .order("id", { ascending: true }).range(leads.length, Math.min(leads.length + 999, expected - 1));
+    if (error || !data?.length) throw new Error("Seller opportunity source unavailable");
+    for (const row of data as unknown as SellerLeadJoin[]) {
+      if (!row.id || ids.has(row.id)) throw new Error("Seller opportunity source changed; retry");
+      ids.add(row.id);
+      leads.push({ ...mapSellerLead(row), state: row.properties?.state ?? "" });
+    }
+  }
+  if (leads.length !== expected) throw new Error("Seller opportunity source incomplete");
+  return leads;
+}
+
 export async function getSellerLeadDetail(id: string): Promise<SellerLeadView | null> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;

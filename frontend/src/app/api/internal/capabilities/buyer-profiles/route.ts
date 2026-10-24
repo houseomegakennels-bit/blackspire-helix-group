@@ -1,3 +1,4 @@
+import { stateFromAddress } from "@/lib/buyer-geography";
 import { productionCapabilityReadScope } from "@/lib/capability-read-client";
 import "server-only";
 
@@ -64,7 +65,7 @@ async function handleRead(request: NextRequest) {
     let result;
     try {
       const deal = data as DealLookupRow;
-      result = await matchBuyersForProperty({ county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client, ...(authority.buyerData?{ownedProfiles:{rows:authority.buyerData.profiles as BuyerProfileRow[],count:authority.buyerData.count}}:{}) });
+      result = await matchBuyersForProperty({ state: stateFromAddress(deal.property_address), county: deal.county, city: deal.city, propertyType: deal.property_type, limit }, { readOnly: true, readClient: scope.client, ...(authority.buyerData?{ownedProfiles:{rows:authority.buyerData.profiles as BuyerProfileRow[],count:authority.buyerData.count}}:{}) });
     } catch {
       return NextResponse.json({ ok: false, error: "Buyer capability unavailable" }, { status: 503 });
     }

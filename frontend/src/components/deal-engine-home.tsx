@@ -1,3 +1,5 @@
+import { PropertyWorkboard } from "@/components/property-workboard";
+import type { PropertyWorkboard as PropertyWorkboardData } from "@/lib/property-workboard-model";
 import { readableNextStep } from "@/lib/property-client-guidance";
 import { DealEngineActions } from "@/components/deal-engine-actions";
 import Link from "next/link";
@@ -16,8 +18,7 @@ function statusTone(status: string) {
   return "neutral";
 }
 
-export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnapshot }) {
-  const activeDeals = snapshot.leads.filter((lead) => !/^(closed|dead|lost)(?:\b|$)/i.test(lead.status));
+export function DealEngineHome({ snapshot, workboard }: { snapshot: DealEngineWorkspaceSnapshot; workboard: PropertyWorkboardData }) {
   const pagination = snapshot.pagination;
   const pageCount = pagination?.total != null ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : 1;
   const listUnavailable = pagination?.available === false;
@@ -42,8 +43,8 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
     <DealEngineShell home>
       {!snapshot.persistence.ready ? <div role="status" className="workspace-connection-notice rounded-xl border px-5 py-4 text-sm leading-6"><strong>Saving is unavailable.</strong> You can review available information, but changes cannot be saved until the connection is restored. Open Workspace status and help below for details.</div> : null}
       <header className="brand-panel px-6 py-7">
-        <h2 className="brand-display text-4xl leading-tight text-white lg:text-5xl">What would you like to work on?</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">Add a property or pick up an existing deal. Each property keeps its numbers, offer terms and next steps together.</p>
+        <h2 className="brand-display text-4xl leading-tight text-white lg:text-5xl">What needs your attention today?</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">Review saved deadlines, see who owns the next step, or find a property. Numbers, offer terms and evidence stay together.</p>
         <div className="workspace-actions mt-5 flex flex-wrap gap-3">
           <Link href="/workspace/harvester" className="workspace-primary brand-button inline-flex px-5 py-3 text-sm">Add property</Link>
           {hasLiveDeals ? <a href="#continue-working" className="brand-button inline-flex px-5 py-3 text-sm">Continue working</a> : <Link href="/seller-engine" className="brand-button inline-flex px-5 py-3 text-sm">Review seller leads</Link>}
@@ -51,26 +52,13 @@ export function DealEngineHome({ snapshot }: { snapshot: DealEngineWorkspaceSnap
         <p className="mt-3 text-sm text-[var(--copy-soft)]">Start with the address and what you know. You can review seller details before the property joins this list.</p>
       </header>
 
-      <section id="continue-working" aria-labelledby="continue-heading" className="workspace-continue space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="continue-heading" className="text-2xl font-semibold text-white">Continue working</h2>
-          {hasLiveDeals ? <a href="#property-queue" className="brand-button inline-flex px-4 py-3 text-sm">Browse properties{pagination?.total != null ? ` (${pagination.total})` : ""}</a> : null}
-        </div>
-        {activeDeals.length ? <div className="grid gap-4 xl:grid-cols-3">
-          {activeDeals.slice(0, 3).map((lead) => <article key={lead.id} className="brand-card flex min-w-0 flex-col gap-3 p-5">
-            <StatusPill tone={statusTone(lead.status)} label={lead.status} />
-            <h3 className="text-lg font-semibold text-white">{lead.propertyAddress}</h3>
-            <p className="text-sm leading-6 text-[var(--copy-soft)]"><span className="font-semibold text-white">Next step: </span>{readableNextStep(lead.nextAction) || "Open this property to review the details and choose a next step."}</p>
-            <Link href={`/workspace/deal-engine/${encodeURIComponent(lead.id)}`} className="brand-button mt-auto inline-flex px-4 py-3 text-sm" aria-label={`Continue working on ${lead.propertyAddress}`}>Open property</Link>
-          </article>)}
-        </div> : <div className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{listUnavailable ? "The property list could not be loaded. Refresh the page to try again; your saved properties have not been removed." : hasLiveDeals ? "No active properties on this page. Browse the property list below to review other pages or completed deals." : "Your first property will appear here after seller qualification. Start with Add property, or review existing seller leads."}</div>}
-      </section>
+      <section id="continue-working"><PropertyWorkboard board={workboard} /></section>
 
       <div id="property-queue" className="workspace-property-list">
         <Panel
           eyebrow="Pipeline"
-          title="Your properties"
-          description="Browse saved properties and open one to continue working. Open Progress by stage below for counts on this page."
+          title="Financial overview on this page"
+          description="This paginated overview keeps saved purchase ceilings and assignment targets visible. Use Find a property above to search every authorized property."
         >
           {pagination?.available ? <nav aria-label="Property pages" className="mb-4 flex flex-wrap items-center gap-3 text-sm text-[var(--copy-soft)]">
             <span>Page {pagination.page} of {pageCount} · {pagination.total} properties</span>

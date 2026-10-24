@@ -9,6 +9,9 @@ import { createDivisionAdapters } from '../packages/capabilities/http-adapters.j
 const routeSource = fs.readFileSync(new URL('../frontend/src/app/api/internal/capabilities/buyer-profiles/route.ts', import.meta.url), 'utf8');
 const dealRouteSource = fs.readFileSync(new URL('../frontend/src/app/api/internal/capabilities/deal-analysis/route.ts', import.meta.url), 'utf8');
 const engineSource = fs.readFileSync(new URL('../frontend/src/lib/buyer-engine-server.ts', import.meta.url), 'utf8');
+const geographySource = fs.readFileSync(new URL('../frontend/src/lib/buyer-geography.ts', import.meta.url), 'utf8');
+const geography = vm.runInNewContext(stripTypeScriptTypes(geographySource).replaceAll('export ', '') + '\n({normalizeBuyerState,buyerStateAliases,normalizeCountyName,resolveBuyerCounty,buyerGeographyMatches})');
+
 
 // Execute the actual server helpers with synthetic database dependencies. Node's
 // built-in type stripping keeps this behavioral lane independent of Next/npm installs.
@@ -28,14 +31,17 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
       let countOnly = false;
       const orders = [];
       let limit = Infinity;
+      const filters = [];
       const query = {
         select(_columns, options) { countOnly = options?.head === true; return query; },
         order(column, options) { orders.push({ column, ...options }); return query; },
         limit(value) { limit = value; return query; },
-        ilike() { return query; }, eq() { return query; }, contains() { return query; },
+        ilike(key, value) { filters.push(row => String(row[key] ?? '').toLowerCase() === value.toLowerCase()); return query; },
+        eq(key, value) { filters.push(row => row[key] === value); return query; }, contains() { return query; },
         then(resolve, reject) {
           reads.push(table);
-          const orderedProfiles = [...profiles].sort((a, b) => {
+          const matchingProfiles = profiles.filter(row => filters.every(filter => filter(row)));
+          const orderedProfiles = [...matchingProfiles].sort((a, b) => {
             for (const { column, ascending = true, nullsFirst = false } of orders) {
               const left = a[column]; const right = b[column];
               if (left === right) continue;
@@ -46,19 +52,18 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
             return 0;
           }).slice(0, limit);
           return Promise.resolve(table === 'buyer_group_registry'
-            ? { data: registry.slice(0, limit), error: registryError }
-            : countOnly ? { count: profiles.length, error: countError } : { data: orderedProfiles, error: profileError }).then(resolve, reject);
+            ? { data: registry.filter(row => filters.every(filter => filter(row))).slice(0, limit), error: registryError }
+            : countOnly ? { count: matchingProfiles.length, error: countError } : { data: orderedProfiles, error: profileError }).then(resolve, reject);
         },
       };
       return query;
     },
   };
   const dependencies = {
+    ...geography,
     ownedBuyerStoreEnabled: () => false,
     getEnvState: () => ({ enabled }),
     getSupabaseAdmin: () => { if (!enabled) throw new Error('synthetic missing configuration'); return supabase; },
-    normalizeCountyName: (value) => value.toLowerCase(),
-    resolveBuyerCounty: () => ({ core: 'forsyth', display: 'Forsyth' }),
     resolvePropertyTypeBucket: () => 'residential',
     scoreBuyerProfile: () => ({ score: 80, reasons: ['Synthetic persisted buyer'] }),
     classifyBuyerType: () => 'cash_buyer',
@@ -81,7 +86,7 @@ function buyerFixture({ enabled = true, profileError = null, countError = null, 
 test('Buyer capability profiles reject missing configuration and query failure', async () => {
   await assert.rejects(buyerFixture({ enabled: false }).profiles({ limit: 5 }), /unavailable/);
   const failed = buyerFixture({ profileError: { message: 'synthetic query failure' } });
-  await assert.rejects(failed.profiles({ limit: 5 }, failed.readClient), /synthetic query failure/);
+  await assert.rejects(failed.profiles({ limit: 5 }, failed.readClient), /Buyer profiles unavailable/);
   const empty = buyerFixture();
   assert.equal((await empty.profiles({ limit: 5 }, empty.readClient)).length, 0);
 });
@@ -113,8 +118,8 @@ test('read-only Buyer matching rejects each failed persisted data source', async
     { registryError: { message: 'relation buyer_group_registry does not exist' } },
   ]) {
     const fixture = buyerFixture(options);
-    const expected = (options.profileError || options.countError) ? 'Buyer matches unavailable' : options.registryError?.message || 'Buyer registry unavailable';
-    await assert.rejects(fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), (error) => error.message.includes(expected));
+    const expected = 'Buyer matches not evaluated';
+    await assert.rejects(fixture.matches({ county: 'Forsyth', state: 'NC', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), (error) => error.message.includes(expected));
     assert.equal(fixture.seedCalls(), 0);
   }
 });
@@ -127,7 +132,7 @@ test('read-only Buyer registry rejects missing configuration without synthetic f
 
 test('read-only Buyer matching accepts empty persisted rows without seeding', async () => {
   const fixture = buyerFixture();
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
+  const result = await fixture.matches({ county: 'Forsyth', state: 'NC', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.equal(result.matches.length, 0);
   assert.equal(result.buyerCount, 0);
   assert.equal(fixture.seedCalls(), 0);
@@ -136,12 +141,19 @@ test('read-only Buyer matching accepts empty persisted rows without seeding', as
 
 test('read-only Buyer matching returns persisted profiles and institutional groups without seeding', async () => {
   const fixture = buyerFixture({
-    profiles: [{ id: 'buyer-1', buyer_name: 'Persisted buyer', purchase_count: 3 }],
-    registry: [{ id: 'group-1', canonicalName: 'Persisted group', counties: ['Forsyth'], active: true }],
+    profiles: [{ id: 'buyer-1', buyer_name: 'Persisted buyer', county: 'Forsyth', state: 'NC', purchase_count: 3 }],
+    registry: [{ id: 'group-1', canonicalName: 'Persisted group', counties: ['Forsyth'], states: ['NC'], active: true }],
   });
-  const result = await fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
+  const result = await fixture.matches({ county: 'Forsyth', state: 'NC', limit: 5 }, { readOnly: true, readClient: fixture.readClient });
   assert.deepEqual(Array.from(result.matches, (row) => row.buyerId), ['buyer-1', 'group-1']);
   assert.equal(result.buyerCount, 1);
+  assert.equal(fixture.seedCalls(), 0);
+});
+
+test('read-only Buyer matching requires verified state before any persisted read', async () => {
+  const fixture = buyerFixture();
+  await assert.rejects(fixture.matches({ county: 'Forsyth', limit: 5 }, { readOnly: true, readClient: fixture.readClient }), /Buyer geography not evaluated/);
+  assert.equal(fixture.reads.length, 0);
   assert.equal(fixture.seedCalls(), 0);
 });
 

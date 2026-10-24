@@ -12,7 +12,8 @@ const { buildSellerOutreach } = extract('function buildSellerOutreach(', '\nfunc
 const { normalizeStage, buildStageBoard } = extract('function normalizeStage(', '\nfunction parseDispositionLogs', 'normalizeStage, buildStageBoard');
 const start = source.indexOf('function normalizeBuyerSignalLane(');
 const end = source.indexOf('\nfunction ', source.indexOf('function rankBuyerSignalsForLead(') + 10);
-const rank = vm.runInNewContext(stripTypeScriptTypes(source.slice(start, end)) + '\nrankBuyerSignalsForLead');
+const geo = vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync('frontend/src/lib/buyer-geography.ts', 'utf8')).replaceAll('export ', '') + '\n({normalizeBuyerState,normalizeCountyName,stateFromAddress})');
+const rank = vm.runInNewContext(stripTypeScriptTypes(source.slice(start, end)) + '\nrankBuyerSignalsForLead', geo);
 const guidance = fs.readFileSync('frontend/src/lib/property-client-guidance.ts', 'utf8');
 const { draftNeedsReview, readableNextStep, suspectedTestRecord } = vm.runInNewContext(stripTypeScriptTypes(guidance).replaceAll('export ', '') + '\n({draftNeedsReview, readableNextStep, suspectedTestRecord})');
 const scoring = fs.readFileSync('frontend/src/lib/sentinel-scoring.ts', 'utf8');
@@ -34,13 +35,23 @@ test('underwriting and closing stages do not fall back into new intake', () => {
  assert.equal(board.find(x=>x.label==='New Intake').count,0);
  assert.equal(board.reduce((sum,x)=>sum+x.count,0),2);
 });
-test('broader markets and mismatched types are explicitly identified as unverified candidates', () => {
- const candidates = rank({county:'Mecklenburg',exitStrategy:'Wholesale / Flip',propertyAddress:'10 Example St'},[
- {id:'1',buyerName:'Land LLC',market:'Forsyth, NC',propertyType:'land',score:60,purchaseCount:1},
- {id:'2',buyerName:'Home LLC',market:'Mecklenburg, NC',propertyType:'residential',score:50,purchaseCount:1}], 4);
- assert.equal(candidates[0].id,'2');
- assert.match(candidates[0].matchReason,/verify/);
+test('buyer candidates enforce exact state and county while retaining honest property-type guidance', () => {
+ const candidates = rank({county:'Mecklenburg',exitStrategy:'Wholesale / Flip',propertyAddress:'10 Example St, Charlotte, NC 28202'},[
+ {id:'1',buyerName:'Same county land LLC',market:'Mecklenburg County, NC',propertyType:'land',score:30,purchaseCount:1},
+ {id:'2',buyerName:'Home LLC',market:'Mecklenburg, NC',propertyType:'residential',score:50,purchaseCount:1},
+ {id:'3',buyerName:'Foreign State LLC',market:'Mecklenburg, SC',propertyType:'residential',score:99,purchaseCount:999},
+ {id:'4',buyerName:'Broader County LLC',market:'Forsyth, NC',propertyType:'residential',score:99,purchaseCount:999},
+ {id:'5',buyerName:'Substring County LLC',market:'Mecklenburgville, NC',propertyType:'residential',score:99,purchaseCount:999}], 10);
+ assert.deepEqual(Array.from(candidates, row => row.id), ['2','1']);
+ assert.match(candidates[0].matchReason,/^County candidate/);
+ assert.match(candidates[0].matchReason,/verify/i);
  assert.match(candidates[1].matchReason,/Property-type fit is not established/);
+});
+test('unresolved deal state never produces a cross-state buyer shortlist', () => {
+ const candidates = rank({county:'Union',exitStrategy:'Wholesale',propertyAddress:'10 Example St'},[
+ {id:'1',buyerName:'NC LLC',market:'Union, NC',propertyType:'residential',score:99,purchaseCount:99},
+ {id:'2',buyerName:'SC LLC',market:'Union, SC',propertyType:'residential',score:99,purchaseCount:99}], 4);
+ assert.equal(candidates.length,0);
 });
 test('unassigned and not-received statuses never award positive readiness', () => {
  const result=readiness({buyerAssignmentStatus:'Unassigned',earnestMoneyStatus:'Not received',titleCompany:'County title partner',payoutStatus:'Awaiting statement',closingChecklist:[{status:'Incomplete'}],closingDocuments:[{name:'Assignment agreement',status:'Requested'}]}, {hasDocuments:true});

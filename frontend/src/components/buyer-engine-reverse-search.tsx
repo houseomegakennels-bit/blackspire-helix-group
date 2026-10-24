@@ -14,12 +14,16 @@ type ReverseSearchResponse = {
   ok?: boolean;
   error?: string;
   matches?: BuyerReverseSearchMatch[];
+  evaluation?: "evaluated" | "not_evaluated";
+  reason?: string | null;
+  unevaluatedCount?: number | null;
   generatedAt?: string;
 };
 
 const initialCriteria: BuyerReverseSearchCriteria = {
   buyerName: "",
   buyerGroup: "",
+  targetState: "",
   targetCounty: "",
   targetCity: "",
   targetZipCodes: [],
@@ -52,6 +56,8 @@ export function BuyerEngineReverseSearchPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [evaluation, setEvaluation] = useState<"evaluated" | "not_evaluated" | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
 
   const metrics = useMemo(() => {
     const highScore = matches.filter((match) => match.matchScore >= 80).length;
@@ -70,6 +76,10 @@ export function BuyerEngineReverseSearchPage({
     setLoading(true);
     setError(null);
     setHasSearched(true);
+    setEvaluation(null);
+    setMatches([]);
+    setGeneratedAt(null);
+    setReason(null);
 
     try {
       const response = await fetch("/api/buyer-engine/reverse-search", {
@@ -86,16 +96,23 @@ export function BuyerEngineReverseSearchPage({
         throw new Error(payload.error ?? "Reverse search failed.");
       }
 
-      setMatches(payload.matches ?? []);
+      const evaluated = payload.evaluation === "evaluated";
+      setEvaluation(evaluated ? "evaluated" : "not_evaluated");
+      setReason(payload.reason ?? (evaluated ? null : "Not evaluated: the result could not be verified."));
+      setMatches(evaluated ? payload.matches ?? [] : []);
       setGeneratedAt(payload.generatedAt ?? new Date().toISOString());
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Reverse search failed.");
+      setError(caughtError instanceof Error ? caughtError.message : "Reverse search could not be evaluated.");
+      setEvaluation("not_evaluated");
+      setReason("Not evaluated: property sources could not be checked. No zero-demand conclusion can be drawn.");
       setMatches([]);
       setGeneratedAt(null);
     } finally {
       setLoading(false);
     }
   }
+
+  const metricValue = (value: number) => loading ? "Checking…" : evaluation === "evaluated" ? String(value).padStart(2, "0") : hasSearched ? "Not evaluated" : "Not run";
 
   return (
     <BuyerShell
@@ -135,10 +152,10 @@ export function BuyerEngineReverseSearchPage({
       </section>
 
       <section className="grid gap-4 md:grid-cols-4">
-        <Metric label="Matches" value={String(metrics.total).padStart(2, "0")} detail="Current ranked opportunities returned by reverse search" />
-        <Metric label="Strong criteria matches" value={String(metrics.highScore).padStart(2, "0")} detail="Matches scoring 80 or better" />
-        <Metric label="Deal records" value={String(metrics.dealCount).padStart(2, "0")} detail="Opportunities already staged in Deal Engine" />
-        <Metric label="Seller records" value={String(metrics.sellerCount).padStart(2, "0")} detail="Seller-side records not fully converted yet" />
+        <Metric label="Matches" value={metricValue(metrics.total)} detail="Current ranked opportunities returned by reverse search" />
+        <Metric label="Strong criteria matches" value={metricValue(metrics.highScore)} detail="Matches scoring 80 or better" />
+        <Metric label="Deal records" value={metricValue(metrics.dealCount)} detail="Opportunities already staged in Deal Engine" />
+        <Metric label="Seller records" value={metricValue(metrics.sellerCount)} detail="Seller-side records not fully converted yet" />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
@@ -147,12 +164,13 @@ export function BuyerEngineReverseSearchPage({
           title="Buyer criteria"
           description="Enter the buyer’s location, budget and property requirements. Results are ranked suggestions from your existing records."
         >
-          <p className="mb-4 text-sm leading-6 text-[var(--copy-soft)]">Leave unknown criteria blank. A match score is a screening suggestion, not a committed buyer or confirmed funding. Historical buyer activity does not verify current purchasing capacity.</p>
+          <p className="mb-4 text-sm leading-6 text-[var(--copy-soft)]">State and county are required; leave other unknown criteria blank. A match score is a screening suggestion, not a committed buyer or confirmed funding. Historical buyer activity does not verify current purchasing capacity.</p>
           <form onSubmit={runSearch} className="grid gap-4">
             <div className="grid gap-4 md:grid-cols-2">
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer name</span><input value={criteria.buyerName ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerName: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Buyer name" /></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Buyer group</span><input value={criteria.buyerGroup ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, buyerGroup: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Buyer group" /></label>
-              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target county</span><input value={criteria.targetCounty ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCounty: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target county" /></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target state</span><input required value={criteria.targetState ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetState: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="For example NC or SC" autoCapitalize="characters" /><span className="text-xs leading-5 text-[var(--copy-muted)]">County names can occur in more than one state.</span></label>
+              <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target county</span><input required value={criteria.targetCounty ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCounty: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target county" /></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target city</span><input value={criteria.targetCity ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, targetCity: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target city" /></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Target zip codes (comma separated)</span><input value={Array.isArray(criteria.targetZipCodes) ? criteria.targetZipCodes.join(", ") : ""} onChange={(event) => setCriteria((current) => ({ ...current, targetZipCodes: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Target zip codes (comma separated)" /><span className="text-xs leading-5 text-[var(--copy-muted)]">Separate ZIP codes with commas, for example 27101, 27103.</span></label>
               <label className="grid gap-2 text-sm text-[var(--copy-soft)]"><span>Property type</span><input value={criteria.propertyType ?? ""} onChange={(event) => setCriteria((current) => ({ ...current, propertyType: event.target.value }))} className="brand-input px-3 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-soft)]" placeholder="Property type" /></label>
@@ -198,6 +216,8 @@ export function BuyerEngineReverseSearchPage({
               </div>
             ) : null}
 
+            {reason ? <p role="status" className="brand-card p-5 text-sm leading-7 text-[var(--copy-soft)]">{reason}</p> : null}
+
             {generatedAt ? (
               <div className="text-xs uppercase tracking-[0.26em] text-[var(--copy-muted)]">
                 Last run: {new Date(generatedAt).toLocaleString()}
@@ -216,9 +236,9 @@ export function BuyerEngineReverseSearchPage({
               </div>
             ) : null}
 
-            {hasSearched && !loading && matches.length === 0 && !error ? (
+            {evaluation === "evaluated" && !loading && matches.length === 0 && !error ? (
               <div className="brand-card p-6 text-sm leading-7 text-[var(--copy-soft)]">
-                No matching opportunities found yet.
+                No matching records with verified state and county were found. Records with unknown geography are not evaluated.
               </div>
             ) : null}
 
@@ -233,7 +253,7 @@ export function BuyerEngineReverseSearchPage({
                     </div>
                     <h4 className="mt-3 text-xl font-semibold text-white">{match.propertyAddress}</h4>
                     <p className="mt-1 text-sm text-[var(--copy-soft)]">
-                      {match.city}, {match.county} {match.zip}
+                      {match.city}, {match.county}, {match.state} {match.zip}
                     </p>
                   </div>
 

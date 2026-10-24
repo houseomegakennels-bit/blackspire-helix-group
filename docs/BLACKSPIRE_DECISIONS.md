@@ -1,5 +1,23 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.
+
+Advance the reviewed anchor only to the genuinely clean-reviewed a9b75b9d implementation; preserve the release checker and use a merge commit rather than squash/rebase so reviewed ancestry survives. Prefer the existing frontend Git integration and verify its exact production SHA/project/team/aliases; do not create a second production deployment or alter settings/credentials. Physical-device/Peggy uncertainty is retained and is not represented by synthetic tests.
+
+## 2026-10-24 — Real-estate review repairs and publication scope
+
+The user explicitly approved pushing feat/real-estate-product-20261023 for review and CI. Implementation9ef920d3702ef30638dc54a5ea38a77f49300e59 is pushed and PR#168 is open against main51d2d3c2. Merge, auto-merge and production deployment remain unapproved. No credentials, permissions, production records, provider purchases or outreach changed. Earlier no-push entries describe their dated checkpoints and are superseded for branch-push authority only.
+
+Parse explicit state tokens consistently across shared and native matching, including formats produced when ZIP is absent. Never infer state from a city. Editable comma-separated duplicate IDs retain a raw text draft while saved research uses a canonical array; reload must observe both raw and canonical edits. Added-file whitespace is checked against the PR base with the scoped candidate staged. No release checker, reviewed anchor or security boundary is weakened.
+
+## 2026-10-23 — Real-estate product candidate, local verification
+
+The user authorized implementation on Blackspire-command in /mnt/blackspire-builds/real-estate-product-20261023, branch feat/real-estate-product-20261023, based on main51d2d3c202566718a9a57b2e6908509c89ea11f9. This scope has no push, merge or production-deployment authority; historical Peggy publication authority does not apply. Existing worktrees, production records, credentials, roles and security settings are preserved. No paid provider, outreach, offer, signature or financial commitment was used.
+
+Research uses existing disposition_logs primary-key revision claims with no schema/security change. Only structured recipient-whitelisted research facts enter previews, with explicit comp sharing; internal notes and negotiating assumptions remain private. Unknown values are not zero and uploads are not title clearance. Preserve the genuine reviewed anchor and all existing release gates.
+
 ## 2026-10-08 — Peggy changes published; release checkpoint cleared
 
 PR #163 merged as `6c46b233dbad239edd6a42fa16efff47c9358446` after full exact-head CI `37855320946` passed on `3d616bf77f916d71d1bd6b0babf939ec778f100b` and independent review completed cleanly on both implementation `097b585a07ce668ac8f17288e1831f6dc530710c` and its documentation successor. All eight earlier review findings are resolved. The unchanged living-memory checker now returns PASS against freshly fetched trusted origin/main, with CANONICAL_MEMORY_ONLY_DESCENDANT, a clean working tree and no protected credential paths or secret-shaped memory.

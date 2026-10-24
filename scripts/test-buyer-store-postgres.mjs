@@ -30,6 +30,21 @@ try{
  assert.equal((await repository.execute('export-create',exp,owner,'admin')).storage_path,`client-downloads/${owner}/${exp.id}/fixture.csv`);assert.equal((await repository.execute('counts',{},owner)).exportCount,1);assert.equal((await repository.execute('exports-list',{searchJobId:null,limit:5},owner)).length,1);assert.deepEqual(await repository.execute('exports-list',{searchJobId:null,limit:5},foreign),[]);
  assert.deepEqual((await repository.execute('reports-list',{searchJobId:null,limit:5,offset:0},foreign)).reports,[]);
  const profiles=await repository.readCapabilityProfiles({county:null,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:5});assert.equal(profiles.observation.requests,2);
+
+ // Same-name counties and suffix aliases must scope BOTH rows and true count.
+ run(['exec','-i',container,'psql','-X','-q','-U','postgres','-v','ON_ERROR_STOP=1'],
+   "INSERT INTO public.\"BuyerProfile\"(buyer_name,county,state) VALUES ('NC bare','Union','NC'),('NC suffix','Union County','NC'),('NC full name','Union','North Carolina'),('NC full suffix','Union County','North Carolina'),('SC full name','Union','South Carolina'),('SC foreign','Union','SC'),('Substring','Unionville','NC'),('Pitt NC','Pitt','NC'),('Greenville SC','Greenville','SC');");
+ const criteria={county:'Union County',state:'NC',buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200};
+ for(const state of ['Atlantis','Unknown'])await assert.rejects(repository.readCapabilityProfiles({...criteria,state}));
+ for(const county of ['Unknown','Not captured','TBD','%'])await assert.rejects(repository.readCapabilityProfiles({...criteria,county}));
+ const generic=await repository.readCapabilityProfiles({...criteria,county:null,state:null});assert.ok(generic.count>=9);
+ const nc=await repository.readCapabilityProfiles(criteria);
+ assert.equal(nc.count,4);assert.deepEqual(nc.rows.map(row=>row.buyer_name).sort(),['NC bare','NC full name','NC full suffix','NC suffix']);
+ const ncName=await repository.readCapabilityProfiles({...criteria,state:'North Carolina'});assert.equal(ncName.count,4);assert.deepEqual(ncName.rows.map(row=>row.buyer_name).sort(),nc.rows.map(row=>row.buyer_name).sort());
+ const sc=await repository.readCapabilityProfiles({...criteria,state:'SC'});assert.equal(sc.count,2);assert.deepEqual(sc.rows.map(row=>row.buyer_name).sort(),['SC foreign','SC full name']);
+ const pitt=await repository.readCapabilityProfiles({...criteria,county:'Pitt'});assert.equal(pitt.count,1);assert.equal(pitt.rows[0].state,'NC');
+ const greenville=await repository.readCapabilityProfiles({...criteria,county:'Greenville',state:'SC'});assert.equal(greenville.count,1);assert.equal(greenville.rows[0].buyer_name,'Greenville SC');
+ const empty=await repository.readCapabilityProfiles({...criteria,county:'Greenville',state:'NC'});assert.equal(empty.count,0);assert.equal(empty.rows.length,0);
  const cap=await connect('buyer_capability_login');try{await cap.query('SET ROLE buyer_capability_reader');assert.equal((await cap.query("SELECT has_function_privilege(current_user,(SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='auth' AND p.proname='uid' AND p.pronargs=0),'EXECUTE') AS allowed")).rows[0].allowed,false);await assert.rejects(cap.query('SELECT * FROM public."SearchJob"'));await assert.rejects(cap.query('INSERT INTO public."BuyerProfile"(buyer_name) VALUES(\'forbidden\')'));}finally{await cap.end();}
  const actor=await connect('buyer_repository_login');try{await actor.query('SET ROLE buyer_repository_user');await assert.rejects(actor.query('DELETE FROM public."SearchJob"'));await assert.rejects(actor.query('SET ROLE buyer_capability_reader'));}finally{await actor.end();}
  // Fill each rolling window to one remaining slot, then race independent

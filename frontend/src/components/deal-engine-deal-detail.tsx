@@ -6,14 +6,17 @@ import { createContext, useContext, useEffect, useState, type ComponentProps, ty
 
 import { WorkspaceSaveState, useWorkspaceSaveState } from "@/components/workspace-save-state";
 import { InvestmentAmountField } from "@/components/investment-amount-field";
-import { parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
+import { analyzeInvestment, parseInvestmentAmount, type InvestmentStrategy } from "@/lib/investment-analysis";
 
 import { Metric, Panel as BasePanel, StatusPill } from "@/components/buyer-shell";
 import { DealCommanderPanel } from "@/components/deal-commander-panel";
 import { DealTransactionCommand } from "@/components/deal-transaction-command";
+import { PropertyResearchWorkbench } from "@/components/property-research-workbench";
 import { DealEngineShell } from "@/components/deal-engine-shell";
 import type { DealCommanderInsight, DealEngineDealDetail, DealTransactionCenterSnapshot } from "@/lib/deal-engine-server";
-import { dealReadinessFromCoordination, readinessColor } from "@/lib/sentinel-display";
+import { dealReadinessFromCoordination } from "@/lib/sentinel-display";
+
+import { propertyNextStep, propertyTaskFinished } from "@/lib/property-next-step";
 
 import { buyerCandidateLabel, draftNeedsReview, readableNextStep, suspectedTestRecord } from "@/lib/property-client-guidance";
 
@@ -87,7 +90,7 @@ export function DealEngineDealDetailView({
   const [section, setSection] = useState("overview");
   useEffect(() => {
     const onHash = () => {
-      const sections: Record<string, string> = { "property-research": "overview", "property-numbers": "numbers", "property-terms": "offer", "property-closing": "closing", "property-documents": "documents", "property-conversations": "conversations", "property-packet": "packet" };
+      const sections: Record<string, string> = { "property-research": "research", "property-numbers": "numbers", "property-terms": "offer", "property-closing": "closing", "property-documents": "documents", "property-conversations": "conversations", "property-packet": "packet", "property-buyers": "buyers", "property-activity": "activity" };
       const target = sections[window.location.hash.slice(1)];
       if (target) setSection(target);
     };
@@ -903,104 +906,92 @@ export function DealEngineDealDetailView({
     { label: "Contact", ready: contactReady, detail: contactReady ? "seller lane ready" : "run Nexus / verify phone" },
     { label: "Contract", ready: contractReady, detail: contractReady ? "signed posture saved" : contractSent ? "sent, awaiting signature" : "send contract" },
     { label: "Packet", ready: packetReady, detail: packetReady ? "buyer packet ready" : "complete buyer-facing copy" },
-    { label: "Buyer", ready: buyerReady, detail: `${detail.buyerSignals.length} candidates; buyer commitment not verified` },
+    { label: "Buyer", ready: buyerReady, detail: detail.buyerEvaluation?.evaluated === false ? "Not evaluated; buyer commitment not verified" : `${detail.buyerSignals.length} candidates; buyer commitment not verified` },
     { label: "Close", ready: coordinationReady, detail: coordinationReady ? "closing board complete" : "finish title/docs/checklist" },
   ];
 
-  const nextStep = detail.underwriting.missingInputs.length
-    ? { text: `Complete these numbers: ${detail.underwriting.missingInputs.join(", ")}.`, reason: "These figures are needed before the calculation can be complete.", section: "numbers", label: "Review missing numbers" }
-    : !detail.coordination.contractSigned
-      ? { text: "Review your proposed offer and required documents before proceeding.", reason: "Check the proposed terms before sharing them with the seller.", section: "offer", label: "Review offer" }
-      : { text: readableNextStep(detail.lead.nextAction), reason: "Review the saved dates, documents and responsibilities for this property.", section: "closing", label: "Review closing tasks" };
-  const dealReadiness = dealReadinessFromCoordination(detail.coordination, {
+  const currentCoordination = { titleCompany, titleOfficer, walkthroughAt, inspectionEndsOn, closingDate, buyerAssignmentStatus, earnestMoneyStatus, payoutStatus, contractSent, contractSigned, coordinationNotes, closingChecklist, closingDocuments };
+  let currentMissingInputs: string[];
+  try {
+    currentMissingInputs = analyzeInvestment({
+      strategy,
+      purchasePrice: parseInvestmentAmount(sellerAskingPrice),
+      resaleValue: strategy === "rental" ? null : parseInvestmentAmount(estimatedArv),
+      repairs: parseInvestmentAmount(repairEstimate),
+      closingCosts: parseInvestmentAmount(closingCosts),
+      holdingCosts: strategy === "rental" ? null : parseInvestmentAmount(holdingCosts),
+      profitTarget: strategy === "rental" ? null : parseInvestmentAmount(buyerProfitTarget),
+      assignmentFee: strategy === "assignment" ? parseInvestmentAmount(assignmentFeeTarget) : null,
+      monthlyRent: strategy === "rental" ? parseInvestmentAmount(rentalEstimate) : null,
+      monthlyExpenses: strategy === "rental" ? parseInvestmentAmount(monthlyExpenses) : null,
+      monthlyDebtService: strategy === "rental" ? parseInvestmentAmount(monthlyDebtService) : null,
+    }).missing;
+  } catch {
+    currentMissingInputs = ["Review invalid amounts in the current draft"];
+  }
+  const nextStep = propertyNextStep({ stage: stageStatus, nextAction: stageNextAction, missingInputs: currentMissingInputs, coordination: currentCoordination, tasks: detail.operatorTasks });
+  const dealReadiness = dealReadinessFromCoordination(currentCoordination, {
     hasDocuments: detail.uploadedDocuments.some((item) => !suspectedTestRecord(JSON.stringify(item))),
   });
+  const openTaskCount = detail.operatorTasks.filter((task) => !propertyTaskFinished(task.status)).length;
 
   return (
     <PropertySectionContext.Provider value={section}><DealEngineShell light>
       {(detail.uploadedDocuments.some((item) => suspectedTestRecord(JSON.stringify(item))) || detail.investorResponses.some((item) => suspectedTestRecord(JSON.stringify(item)))) ? <div role="status" className="workspace-connection-notice rounded-xl border p-4">This property contains records that appear to be tests. Review Documents and Buyers before relying on completion badges or response counts. Existing records are preserved.</div> : null}
-      <header className="brand-panel overflow-hidden px-6 py-7">
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-5">
-            <div>
-              <p className="text-xs uppercase tracking-[0.42em] text-[var(--gold-soft)]">Property workspace</p>
-              <h2 className="brand-display mt-3 text-4xl leading-tight text-white lg:text-5xl">
-                {detail.lead.propertyAddress}
-              </h2>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <span
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em]"
-                  style={{
-                    color: readinessColor(dealReadiness.category),
-                    background: `${readinessColor(dealReadiness.category)}1f`,
-                    border: `1px solid ${readinessColor(dealReadiness.category)}55`,
-                  }}
-                  title={dealReadiness.factors.map((f) => `${f.met ? "✓" : "○"} ${f.label}`).join("  ·  ")}
-                >
-                  Deal Readiness {dealReadiness.score} · {dealReadiness.category}
-                </span>
-                <Link href="/workspace/sentinel" className="text-xs uppercase tracking-[0.18em] text-[#5eead4] hover:underline">
-                  View in Sentinel →
-                </Link>
-              </div>
-              <p className="mt-3 text-sm leading-7 text-[var(--copy-soft)]">
-                {detail.lead.ownerName} / {detail.lead.county} County. Review the numbers, set purchase terms, and track closing tasks. Property {dealId}.
-              </p>
-            </div>
-            <div className="workspace-actions flex flex-wrap gap-3">
-              <Link href="/workspace/deal-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Back to properties
-              </Link>
-              <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="workspace-primary brand-button inline-flex px-5 py-4 text-sm transition">
-                Open packet view
-              </Link>
-              <details className="col-span-full"><summary className="min-h-11 cursor-pointer py-3">Downloads and other tools</summary><div className="flex flex-wrap gap-3">
-              <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Open contract draft
-              </a>
-              <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Download PDF packet
-              </a>
-              <Link href={`/deal-room/${encodeURIComponent(detail.room.slug)}`} className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Open external deal room
-              </Link>
-              <Link href="/seller-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Seller leads
-              </Link>
-              <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-5 py-4 text-sm uppercase tracking-[0.18em] transition">
-                Buyer contacts
-              </Link>
-              </div></details>
-            </div>
+      <header className="property-header brand-panel px-6 py-6">
+        <Link href="/workspace/deal-engine" className="property-back-link">Back to properties</Link>
+        <div className="property-heading-row">
+          <div className="min-w-0">
+            <p className="property-eyebrow">Property {dealId}</p>
+            <h2 className="brand-display property-address">{detail.lead.propertyAddress}</h2>
+            <p className="property-owner">{detail.lead.ownerName} · {detail.lead.county || "County not verified"}</p>
           </div>
-
-          <div className="grid gap-4 content-start">
-            <div className="brand-card p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-lg font-semibold text-white">Property progress</div>
-                <StatusPill tone={statusTone(detail.lead.status)} label={detail.lead.status.toLowerCase()} />
-              </div>
-              <div className="mt-4 space-y-3 text-sm text-[var(--copy-soft)]">
-                <div>Calculated purchase ceiling: <span className="font-semibold text-white">{detail.lead.mao}</span></div>
-                <div>Assignment target: <span className="font-semibold text-white">{detail.lead.assignmentFee}</span></div>
-                <div>Exit strategy: <span className="font-semibold text-white">{detail.lead.exitStrategy}</span></div>
-                <div>Next step: <span className="font-semibold text-white">{nextStep.text}</span></div><p className="text-sm leading-6 text-[var(--copy-soft)]">{nextStep.reason}</p><button type="button" className="workspace-primary brand-button px-4 py-3" onClick={() => setSection(nextStep.section)}>{nextStep.label}</button>
-              </div>
-            </div>
-          </div>
+          <StatusPill tone={statusTone(stageStatus)} label={stageStatus} />
         </div>
+        <div className="property-next-step" data-urgency={nextStep.urgency} aria-labelledby="property-next-step-heading">
+          <div>
+            <h3 id="property-next-step-heading">{nextStep.urgency === "overdue" ? "Overdue — review next" : nextStep.urgency === "complete" ? "Recorded outcome" : "Your next step"}</h3>
+            <p className="property-next-step-text">{nextStep.text}</p>
+            <p>{nextStep.reason}</p>
+            {nextStep.dueDate ? <p><strong>Due:</strong> <time dateTime={nextStep.dueDate}>{nextStep.dueDate}</time> · <strong>Owner:</strong> {nextStep.owner ?? "Unassigned"}</p> : null}
+            {(analysisSave.dirty || coordinationSave.dirty || stageSave.dirty) ? <p className="property-help-hint">Guidance includes current edits. Save the relevant form to retain those changes.</p> : null}
+          </div>
+          <button type="button" className="workspace-primary brand-button px-4 py-3" onClick={() => setSection(nextStep.section)}>{nextStep.label}</button>
+        </div>
+        <details className="property-summary-details">
+          <summary>Saved figures, progress and other tools</summary>
+          <dl className="property-summary-grid">
+            <div><dt>Calculated purchase ceiling</dt><dd>{detail.lead.mao}</dd></div>
+            <div><dt>Assignment target</dt><dd>{detail.lead.assignmentFee}</dd></div>
+            <div><dt>Exit strategy</dt><dd>{detail.lead.exitStrategy}</dd></div>
+            <div><dt>Checklist readiness</dt><dd>{dealReadiness.score} · {dealReadiness.category}</dd></div>
+          </dl>
+          <p className="property-help-hint">Checklist readiness does not confirm title, funding or authority to sell.</p>
+          <div className="workspace-actions flex flex-wrap gap-3">
+            <Link href={`/workspace/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-4 py-3">Preview buyer packet</Link>
+            <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/contract`} className="brand-button inline-flex px-4 py-3">Open contract draft</a>
+            <a href={`/api/deal-engine/${encodeURIComponent(dealId)}/packet`} className="brand-button inline-flex px-4 py-3">Download PDF packet</a>
+            <Link href={`/deal-room/${encodeURIComponent(detail.room.slug)}`} className="brand-button inline-flex px-4 py-3">Open external deal room</Link>
+            <Link href="/workspace/sentinel" className="brand-button inline-flex px-4 py-3">View in Sentinel</Link>
+            <Link href="/seller-engine" className="brand-button inline-flex px-4 py-3">Seller leads</Link>
+            <Link href="/workspace/buyer-engine" className="brand-button inline-flex px-4 py-3">Buyer contacts</Link>
+          </div>
+        </details>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <details className="property-summary-details brand-card p-5"><summary>Property activity and counts</summary>
+      <section className="mt-4 grid gap-4 md:grid-cols-4">
         <Metric label="Motivation Score" value={String(detail.lead.motivationScore)} detail="Seller urgency and context from upstream intelligence" />
-        <Metric label="Buyer candidates" value={String(detail.buyerSignals.length).padStart(2, "0")} detail="Candidates may be from broader markets. Confirm location, property type and funding." />
-        <Metric label="Open Tasks" value={String(detail.operatorTasks.length).padStart(2, "0")} detail="Internal execution items attached to this deal" />
+        <Metric label="Buyer candidates" value={detail.buyerEvaluation?.evaluated === false ? "Not evaluated" : String(detail.buyerSignals.length).padStart(2, "0")} detail={detail.buyerEvaluation?.evaluated === false ? detail.buyerEvaluation.reason ?? "Buyer demand could not be evaluated." : "Location-scoped candidates still need current property criteria and funding checks."} />
+        <Metric label="Open Tasks" value={String(openTaskCount).padStart(2, "0")} detail="Internal execution items attached to this deal" />
         <Metric label="Investor Responses" value={String(detail.investorResponses.length).padStart(2, "0")} detail="Responses captured through the external deal room and ready for follow-up" />
-      </section>
+      </section></details>
 
       <nav aria-label="This property" className="property-section-nav brand-card flex flex-wrap gap-2 p-4">
-        {[["overview", "Overview"], ["numbers", "Numbers"], ["offer", "Offer"], ["buyers", "Buyers"], ["closing", "Closing"], ["documents", "Documents"], ["conversations", "Messages"], ["packet", "Buyer packet"], ["activity", "Activity"]].map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)} className="brand-button min-h-11 px-4 py-3 text-sm">{label}</button>)}
+        {[["overview", "Overview"], ["research", "Research"], ["numbers", "Numbers"], ["offer", "Offer"], ["buyers", "Buyers"], ["closing", "Closing"], ["documents", "Documents"], ["conversations", "Messages"], ["packet", "Buyer packet"], ["activity", "Activity"]].map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)} className="brand-button min-h-11 px-4 py-3 text-sm">{label}</button>)}
       </nav>
+      <div hidden={section !== "research"}><PropertyResearchWorkbench dealId={dealId} address={detail.lead.propertyAddress} underwriting={detail.underwriting} /></div>
+      <div hidden={section !== "buyers"}>{detail.buyerEvaluation?.evaluated === false ? <p role="status" className="workspace-connection-notice rounded-xl border p-4">{detail.buyerEvaluation.reason ?? "Buyer matching is not evaluated. Verify geography and data availability before drawing a demand conclusion."}</p> : null}</div>
       <details hidden={section !== "overview"} className="brand-card p-5"><summary className="min-h-11 cursor-pointer py-3">Additional guidance and assumptions</summary><DealCommanderPanel dealId={dealId} initialInsight={commanderInsight} strategy={detail.underwriting.strategy} /></details>
       <div hidden={section !== "offer" && section !== "closing"}><DealTransactionCommand dealId={dealId} initialSnapshot={transactionCenter} /></div>
 

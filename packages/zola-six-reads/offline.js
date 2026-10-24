@@ -49,10 +49,10 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
   const workspace = 'six-read-fixture';
   const env = Object.freeze({ BLACKSPIRE_CAPABILITY_TOKEN: token, BLACKSPIRE_SELLER_ENGINE_WORKSPACE_ID: workspace,
     SUPABASE_URL: 'https://offline.invalid', SUPABASE_SERVICE_ROLE_KEY: 'synthetic-offline-placeholder' });
-  const lead = { id: 'DE-0001', propertyAddress: '1 Fixture Street', county: 'Forsyth', status: 'New', motivationScore: 90,
+  const lead = { id: 'DE-0001', propertyAddress: '1 Fixture Street, Winston-Salem, NC 27101', county: 'Forsyth', status: 'New', motivationScore: 90,
     mao: '$1', assignmentFee: '$1', exitStrategy: 'Review', nextAction: 'Review' };
   const rows = {
-    seller_leads: [{ id: 'seller-1', propertyId: 'property-1', propertyAddress: '1 Fixture Street', county: 'Forsyth', status: 'New', score: 90, category: 'Review', reasons: [], sourceName: 'seller_leads/properties' }],
+    seller_leads: [{ id: 'seller-1', propertyId: 'property-1', propertyAddress: '1 Fixture Street, Winston-Salem, NC 27101', county: 'Forsyth', status: 'New', score: 90, category: 'Review', reasons: [], sourceName: 'seller_leads/properties' }],
     BuyerProfile: [{ id: 'buyer-1', buyer_name: 'Synthetic buyer', county: 'Forsyth', state: 'NC', is_cash_buyer: true, purchase_count: 3, score: 80 }],
     buyer_group_registry: [],
     deal_leads: [{ ...lead, motivation_score: 90, deal_analysis: { maximum_allowable_offer: 150000, assignment_fee_target: 10000 }, buyer_matches: { exit_strategy: 'Assignment' }, property_address: lead.propertyAddress, county: 'Forsyth', seller_lead_id: 'seller-1', owner_name: 'Synthetic owner' }],
@@ -67,13 +67,13 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
       select(_columns, options) { countOnly = options?.head === true; return query; },
       order() { return query; }, limit(value) { limit = value; return query; },
       eq(key, value) { filters.push([key, value]); return query; },
-      ilike() { return query; }, contains() { return query; },
+      ilike(key, value) { filters.push([key, value, "ilike"]); return query; }, contains() { return query; },
       maybeSingle() { return result(true); },
       then(resolve, rejectPromise) { return result(false).then(resolve, rejectPromise); },
     }, { get(target, key) { if (key in target) return target[key]; return reject('database_mutation_attempt'); } });
     async function result(single) {
       events.push({ kind: 'database_read', table, limit, countOnly });
-      const matches = rows[table].filter((row) => filters.every(([key, value]) => row[key] === value));
+      const matches = rows[table].filter((row) => filters.every(([key, value, mode]) => mode === "ilike" ? String(row[key] ?? "").toLowerCase() === String(value).toLowerCase() : row[key] === value));
       const data = matches.slice(0, limit ?? matches.length);
       return { data: single ? data[0] ?? null : data, count: countOnly ? matches.length : null, error: (databaseError || errorTable === table) ? { message: 'synthetic query failure' } : null };
     }
@@ -92,6 +92,7 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     for (const [key, value] of url.searchParams) {
       if (key === 'limit') q = q.limit(Number(value));
       else if (value.startsWith('eq.')) q = q.eq(key, value.slice(3) === 'true' ? true : value.slice(3));
+      else if (value.startsWith('ilike.')) q = q.ilike(key, value.slice(6));
     }
     const result = await q;
     if (result.error) return Response.json({ error: 'synthetic failure' }, { status: 503 });
@@ -117,6 +118,7 @@ export function createOfflineFixture({ databaseError = false, errorTable = null,
     listSellerLeads: () => reject('fallback_attempt'), toDealLeadFromSellerHandoff: () => reject('fallback_attempt'), toLead: (row) => row,
 
   };
+  Object.assign(dependencies, load('({ normalizeBuyerState,buyerStateAliases,normalizeCountyName,resolveBuyerCounty,buyerGeographyMatches,stateFromAddress })', read('lib/buyer-geography.ts'), {}));
   Object.assign(dependencies, load('({ analyzeInvestment, parseInvestmentAmount })', read('lib/investment-analysis.ts'), {}));
   const dealSource = read('lib/deal-engine-server.ts');
   const pureSource = dealSource.slice(dealSource.indexOf('function asNumber('), dealSource.indexOf('function buildMetrics('))

@@ -1,3 +1,5 @@
+import { normalizeBuyerState, buyerStateAliases, normalizeCountyName, resolveBuyerCounty, buyerGeographyMatches } from "@/lib/buyer-geography";
+export { inferNcCountyFromCity } from "@/lib/buyer-geography";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { buyerStoreRequest, ownedBuyerStoreEnabled } from "@/lib/buyer-store-client";
@@ -29,7 +31,7 @@ import {
   type BuyerGroupMatch,
   type BuyerGroupRegistryEntry,
 } from "@/lib/buyer-groups";
-import { listSellerLeads } from "@/lib/seller-engine-server";
+import { listSellerLeadsForReverseSearch } from "@/lib/seller-engine-server";
 import type { SellerLeadView } from "@/lib/seller-engine-demo";
 
 export type SearchJobRecord = {
@@ -107,6 +109,7 @@ export type BuyerGroupRegistryRow = {
 export type BuyerReverseSearchCriteria = {
   buyerName?: string;
   buyerGroup?: string;
+  targetState?: string;
   targetCounty?: string;
   targetCity?: string;
   targetZipCodes?: string[];
@@ -124,6 +127,7 @@ export type BuyerReverseSearchMatch = {
   id: string;
   sourceType: "seller_lead" | "deal";
   sourceId: string;
+  state: string;
   propertyAddress: string;
   city: string;
   county: string;
@@ -138,6 +142,9 @@ export type BuyerReverseSearchMatch = {
 };
 
 export type BuyerReverseSearchResult = {
+  evaluation: "evaluated" | "not_evaluated";
+  reason: string | null;
+  unevaluatedCount: number | null;
   criteria: BuyerReverseSearchCriteria;
   matches: BuyerReverseSearchMatch[];
   generatedAt: string;
@@ -727,15 +734,18 @@ export async function listAllBuyerReports({
   limit = 20,
   offset = 0,
   searchJobId,
+  strict = false,
 }: {
   limit?: number;
   offset?: number;
   searchJobId?: string;
+  strict?: boolean;
 } = {}): Promise<BuyerReportPage> {
   if (ownedBuyerStoreEnabled()) return buyerStoreRequest("reports-list",{limit,offset,searchJobId:searchJobId??null});
   const env = getEnvState();
   const operator = env.enabled ? await getAuthenticatedOperator() : null;
   if (!operator?.id) {
+    if (strict) throw new Error("Buyer reports not evaluated: authentication or configuration unavailable.");
     return {
       reports: [],
       total: 0,
@@ -753,6 +763,7 @@ export async function listAllBuyerReports({
     )
     .eq("SearchJob.user_id", operator.id)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: true })
     .range(offset, offset + Math.max(limit - 1, 0));
 
   if (searchJobId) {
@@ -764,6 +775,8 @@ export async function listAllBuyerReports({
   if (error) {
     throw new Error(error.message);
   }
+
+  if (strict && (count == null || !Number.isSafeInteger(count) || count < 0)) throw new Error("Buyer reports not evaluated: count unavailable.");
 
   return {
     reports: (data ?? []) as BuyerReportRecord[],
@@ -1185,63 +1198,14 @@ export type BuyerForPropertyMatch = {
 
 export type BuyerForPropertyResult = {
   matches: BuyerForPropertyMatch[];
-  buyerCount: number;
-  demandScore: number;
-  assignmentPotential: "high" | "medium" | "low";
+  evaluation: "evaluated" | "not_evaluated";
+  reason: string | null;
+  state: string | null;
+  buyerCount: number | null;
+  demandScore: number | null;
+  assignmentPotential: "high" | "medium" | "low" | null;
   county: string | null;
 };
-
-function normalizeCountyName(county?: string | null): string {
-  return (county ?? "")
-    .replace(/county/gi, "")
-    .trim()
-    .toLowerCase();
-}
-
-// NC city -> county for the common cities (so a property with a city but no
-// county — e.g. "Durham" or "Greensboro" — still matches buyers).
-const NC_CITY_TO_COUNTY: Record<string, string> = {
-  charlotte: "mecklenburg", greensboro: "guilford", winstonsalem: "forsyth",
-  raleigh: "wake", durham: "durham", fayetteville: "cumberland", cary: "wake",
-  wilmington: "newhanover", highpoint: "guilford", concord: "cabarrus",
-  gastonia: "gaston", asheville: "buncombe", greenville: "pitt",
-  jacksonville: "onslow", chapelhill: "orange", burlington: "alamance",
-  huntersville: "mecklenburg", rockymount: "nash", kannapolis: "cabarrus",
-  statesville: "iredell", monroe: "union", apex: "wake", wakeforest: "wake",
-  hickory: "catawba", goldsboro: "wayne", mooresville: "iredell",
-  newbern: "craven", salisbury: "rowan", sanford: "lee", garner: "wake",
-  thomasville: "davidson", lexington: "davidson", kernersville: "forsyth",
-};
-
-const UNKNOWN_COUNTY = new Set(["", "unknown", "unresolved", "n/a", "na", "none"]);
-
-/** Infer an NC county from a city name (Title Case), or null if unknown. */
-export function inferNcCountyFromCity(city?: string | null): string | null {
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (!cityKey) return null;
-  const mapped = NC_CITY_TO_COUNTY[cityKey];
-  if (mapped) return mapped.replace(/\b\w/g, (m) => m.toUpperCase());
-  return null;
-}
-
-/** Resolve a usable county for buyer matching, inferring from city when needed. */
-function resolveBuyerCounty(county?: string | null, city?: string | null): { core: string; display: string | null } {
-  const core = normalizeCountyName(county);
-  if (core && !UNKNOWN_COUNTY.has(core)) {
-    return { core, display: county ?? null };
-  }
-  const cityKey = (city ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (NC_CITY_TO_COUNTY[cityKey]) {
-    const mapped = NC_CITY_TO_COUNTY[cityKey];
-    return { core: mapped, display: mapped.replace(/\b\w/g, (m) => m.toUpperCase()) };
-  }
-  // Last resort: many NC cities share their county's name (Durham, Orange, etc).
-  const cityCore = normalizeCountyName(city);
-  if (cityCore && !UNKNOWN_COUNTY.has(cityCore)) {
-    return { core: cityCore, display: city ?? null };
-  }
-  return { core: "", display: null };
-}
 
 function resolvePropertyTypeBucket(input: BuyerForPropertyInput): "land" | "residential" {
   const text = `${input.propertyType ?? ""}`.toLowerCase();
@@ -1283,26 +1247,30 @@ export type BuyerCapabilityProfileInput = {
 
 /** Bounded, persisted BuyerProfile read for the internal Hermes capability. */
 export async function listBuyerProfilesForCapability(input: BuyerCapabilityProfileInput, readClient: SupabaseClient): Promise<BuyerProfileRow[]> {
-  const env = getEnvState();
-  if (!env.enabled) throw new Error("Buyer profiles unavailable");
-
-  const supabase = readClient;
-  let query = supabase
-    .from("BuyerProfile")
-    .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
-    .order("purchase_count", { ascending: false, nullsFirst: false })
-    .order("id", { ascending: true })
-    .limit(input.limit);
-  if (input.buyerName) query = query.ilike("buyer_name", `%${input.buyerName.replace(/[\\%_]/g, "\\$&")}%`);
-  if (input.county) query = query.ilike("county", `%${normalizeCountyName(input.county)}%`);
-  if (input.state) query = query.ilike("state", input.state);
-  if (input.cashBuyer !== null && input.cashBuyer !== undefined) query = query.eq("is_cash_buyer", input.cashBuyer);
-  if (input.llcBuyer !== null && input.llcBuyer !== undefined) query = query.eq("is_llc", input.llcBuyer);
-  if (input.propertyType) query = query.contains("property_types", [input.propertyType.toLowerCase()]);
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as BuyerProfileRow[];
+  if (!getEnvState().enabled) throw new Error("Buyer profiles unavailable");
+  const county = input.county ? normalizeCountyName(input.county) : null;
+  const state = input.state ? normalizeBuyerState(input.state) : null;
+  if ((input.county && (!county || !state)) || (input.state && !state)) throw new Error("Buyer geography not evaluated");
+  const countyAliases = county ? [county, county + " County"] : [null];
+  const stateAliases = state ? buyerStateAliases(state) : [null];
+  const results = await Promise.all(countyAliases.flatMap(countyAlias => stateAliases.map(async stateAlias => {
+    let query = readClient.from("BuyerProfile")
+      .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
+      .order("purchase_count", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).limit(input.limit);
+    if (input.buyerName) query = query.ilike("buyer_name", `%${input.buyerName.replace(/[\\%_]/g, "\\$&")}%`);
+    if (countyAlias) query = query.ilike("county", countyAlias);
+    if (stateAlias) query = query.ilike("state", stateAlias);
+    if (input.cashBuyer !== null && input.cashBuyer !== undefined) query = query.eq("is_cash_buyer", input.cashBuyer);
+    if (input.llcBuyer !== null && input.llcBuyer !== undefined) query = query.eq("is_llc", input.llcBuyer);
+    if (input.propertyType) query = query.contains("property_types", [input.propertyType.toLowerCase()]);
+    const { data, error } = await query;
+    if (error) throw new Error("Buyer profiles unavailable");
+    return (data ?? []) as BuyerProfileRow[];
+  })));
+  const rows = results.flat();
+  if (rows.some(row => (county && normalizeCountyName(row.county) !== county) || (state && normalizeBuyerState(row.state) !== state))) throw new Error("Buyer geography mismatch");
+  const unique = [...new Map(rows.map(row => [row.id, row])).values()];
+  return unique.sort((a,b) => (a.purchase_count == null) !== (b.purchase_count == null) ? (a.purchase_count == null ? 1 : -1) : (b.purchase_count ?? 0) - (a.purchase_count ?? 0) || a.id.localeCompare(b.id)).slice(0,input.limit);
 }
 
 function classifyBuyerType(row: BuyerProfileRow): BuyerForPropertyMatch["buyerType"] {
@@ -1365,34 +1333,39 @@ function scoreBuyerProfile(row: BuyerProfileRow, bucket: "land" | "residential")
 
 export async function matchBuyersForProperty(input: BuyerForPropertyInput, { readOnly = false, readClient, ownedProfiles }: { readOnly?: boolean; readClient?: SupabaseClient; ownedProfiles?: {rows: BuyerProfileRow[];count:number} } = {}): Promise<BuyerForPropertyResult> {
   if (readOnly && !readClient && !ownedProfiles) throw new Error("Observed read client required");
-  const supabase = ownedProfiles || ownedBuyerStoreEnabled() ? null : readClient ?? getSupabaseAdmin();
-  const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city);
+  const state = normalizeBuyerState(input.state);
+  const { core: countyCore, display: countyDisplay } = resolveBuyerCounty(input.county, input.city, state);
+  const notEvaluated = (reason: string): BuyerForPropertyResult => ({ evaluation: "not_evaluated", reason, state, county: countyDisplay, matches: [], buyerCount: null, demandScore: null, assignmentPotential: null });
   const bucket = resolvePropertyTypeBucket(input);
   const limit = input.limit ?? 10;
 
-  if (!countyCore) {
-    return { matches: [], buyerCount: 0, demandScore: 0, assignmentPotential: "low", county: input.county ?? null };
+  if (!countyCore || !state) {
+    if (readOnly) throw new Error("Buyer geography not evaluated");
+    return notEvaluated("State and county must be verified before buyer demand can be evaluated.");
   }
+  try {
+  const supabase = readClient ?? getSupabaseAdmin();
 
   // Real buyers from the BuyerProfile universe (the source of truth). Fetch the
   // top-200 by volume for scoring, and a true county-wide count for validation.
-  const owned = ownedProfiles ?? (ownedBuyerStoreEnabled() ? await buyerStoreRequest<{rows:BuyerProfileRow[];count:number}>("profiles-list",{county:countyCore,state:null,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200}) : null);
-  const [{ data: profileRows, error: profileError }, { count: countyBuyerCount, error: countError }] = owned ? [{data:owned.rows,error:null},{count:owned.count,error:null}] : await Promise.all([
-    supabase!
-      .from("BuyerProfile")
-      .select("id, buyer_name, county, state, is_llc, is_cash_buyer, purchase_count, total_spend, last_purchase_date, property_types, score")
-      .ilike("county", `%${countyCore}%`)
-      .order("purchase_count", { ascending: false, nullsFirst: false })
-      .limit(200),
-    supabase!
-      .from("BuyerProfile")
-      .select("id", { count: "exact", head: true })
-      .ilike("county", `%${countyCore}%`),
-  ]);
-  if (readOnly && (profileError || countError)) throw new Error("Buyer matches unavailable");
-
-  const rows = (profileRows ?? []) as BuyerProfileRow[];
-  const buyerCount = countyBuyerCount ?? rows.length;
+  const owned = ownedProfiles ?? (ownedBuyerStoreEnabled() ? await buyerStoreRequest<{rows:BuyerProfileRow[];count:number}>("profiles-list",{county:countyCore,state,buyerName:null,propertyType:null,cashBuyer:null,llcBuyer:null,limit:200}) : null);
+  // Use only existing observed-client operations; exact aliases never substring-match a county.
+  const profileReads = owned ? null : await Promise.all([countyCore, countyCore + " County"].flatMap(county => buyerStateAliases(state).map(async stateAlias => {
+    const [rows, count] = await Promise.all([
+      supabase.from("BuyerProfile")
+        .select("id,buyer_name,county,state,is_llc,is_cash_buyer,purchase_count,total_spend,last_purchase_date,property_types,score")
+        .ilike("county", county).ilike("state", stateAlias)
+        .order("purchase_count", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).limit(200),
+      supabase.from("BuyerProfile").select("id", { count: "exact", head: true }).ilike("county", county).ilike("state", stateAlias),
+    ]);
+    if (rows.error || count.error || count.count == null) throw new Error("Buyer source unavailable");
+    return { rows: (rows.data ?? []) as BuyerProfileRow[], count: count.count };
+  })));
+  const allRows = owned ? owned.rows : profileReads!.flatMap(result => result.rows);
+  if (allRows.some(row => !buyerGeographyMatches(row.county, row.state, countyCore, state))) throw new Error("Buyer geography mismatch");
+  const buyerCount = owned ? owned.count : profileReads!.reduce((sum, result) => sum + result.count, 0);
+  if (!Number.isSafeInteger(buyerCount) || buyerCount < allRows.length) throw new Error("Buyer count unavailable");
+  const rows = allRows.sort((a,b) => (a.purchase_count == null) !== (b.purchase_count == null) ? (a.purchase_count == null ? 1 : -1) : (b.purchase_count ?? 0) - (a.purchase_count ?? 0) || a.id.localeCompare(b.id)).slice(0,200);
 
   const profileMatches: BuyerForPropertyMatch[] = rows.map((row) => {
     const { score, reasons } = scoreBuyerProfile(row, bucket);
@@ -1417,9 +1390,9 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
   // Institutional groups remain a secondary lane (no longer the only source).
   const registry = readOnly
     ? await listBuyerGroupRegistry(false, { readOnly: true, readClient: readClient ?? supabase ?? undefined })
-    : await listBuyerGroupRegistry(false).catch(() => []);
+    : await listBuyerGroupRegistry(false, { readOnly: true, readClient: supabase });
   const institutionalMatches: BuyerForPropertyMatch[] = registry
-    .filter((group) => (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
+    .filter((group) => group.active && (group.states ?? []).some((s) => normalizeBuyerState(s) === state) && (group.counties ?? []).some((c) => normalizeCountyName(c) === countyCore))
     .map((group) => ({
       buyerId: group.id,
       buyerName: group.canonicalName,
@@ -1442,7 +1415,11 @@ export async function matchBuyersForProperty(input: BuyerForPropertyInput, { rea
   const demandScore = Math.min(100, Math.round(qualified * 7 + topScore * 0.3));
   const assignmentPotential = demandScore >= 70 ? "high" : demandScore >= 40 ? "medium" : "low";
 
-  return { matches, buyerCount, demandScore, assignmentPotential, county: countyDisplay ?? input.county ?? null };
+  return { evaluation: "evaluated", reason: null, state, matches, buyerCount, demandScore, assignmentPotential, county: countyDisplay };
+  } catch {
+    if (readOnly) throw new Error("Buyer matches not evaluated");
+    return notEvaluated("Buyer data could not be checked. Demand is not evaluated; retry when the sources are available.");
+  }
 }
 
 const getCachedCountyCapabilities = unstable_cache(
@@ -1672,7 +1649,8 @@ function normalizeBuyerReverseSearchCriteria(criteria: BuyerReverseSearchCriteri
   return {
     buyerName: criteria.buyerName?.trim() || "",
     buyerGroup: criteria.buyerGroup?.trim() || "",
-    targetCounty: criteria.targetCounty?.trim() || "",
+    targetState: normalizeBuyerState(criteria.targetState) ?? "",
+    targetCounty: normalizeCountyName(criteria.targetCounty),
     targetCity: criteria.targetCity?.trim() || "",
     targetZipCodes,
     propertyType: criteria.propertyType?.trim() || "",
@@ -1700,23 +1678,25 @@ function normalizeBuyerReverseSearchCriteria(criteria: BuyerReverseSearchCriteri
 
 async function listReverseSearchDealCandidates() {
   const env = getEnvState();
-  if (!env.enabled) return [] as ReverseDealJoinRow[];
-
+  if (!env.enabled) throw new Error("Deal opportunity source unavailable");
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("deal_leads")
-    .select(
-      "id,seller_lead_id,property_address,county,city,state,zip_code,status,motivation_score,property_type,estimated_equity,recommended_next_action,deal_analysis(estimated_arv,maximum_allowable_offer,purchase_price_target,wholesale_spread),buyer_matches(buyer_score,exit_strategy,investor_type_recommendation)",
-    )
-    .order("updated_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
-    if (isMissingRelationError(error.message)) return [] as ReverseDealJoinRow[];
-    throw new Error(error.message);
+  const countResult = await supabase.from("deal_leads").select("id", { count: "exact", head: true });
+  if (countResult.error || !Number.isSafeInteger(countResult.count) || countResult.count! < 0 || countResult.count! > 5000) throw new Error("Deal opportunity source unavailable");
+  const expected = countResult.count!;
+  const rows: ReverseDealJoinRow[] = [];
+  const ids = new Set<string>();
+  for (let batches=0; rows.length < expected && batches < 10; batches++) {
+    const { data, error } = await supabase.from("deal_leads")
+      .select("id,seller_lead_id,property_address,county,city,state,zip_code,status,motivation_score,property_type,estimated_equity,recommended_next_action,deal_analysis(estimated_arv,maximum_allowable_offer,purchase_price_target,wholesale_spread),buyer_matches(buyer_score,exit_strategy,investor_type_recommendation)")
+      .order("id", { ascending: true }).range(rows.length, Math.min(rows.length + 999, expected - 1));
+    if (error || !data?.length) throw new Error("Deal opportunity source unavailable");
+    for (const row of data as unknown as ReverseDealJoinRow[]) {
+      if (!row.id || ids.has(row.id)) throw new Error("Deal opportunity source changed; retry");
+      ids.add(row.id); rows.push(row);
+    }
   }
-
-  return (data ?? []) as ReverseDealJoinRow[];
+  if (rows.length !== expected) throw new Error("Deal opportunity source incomplete");
+  return rows;
 }
 
 function isSellerLeadActive(status: string) {
@@ -1882,18 +1862,30 @@ export async function runBuyerReverseSearch(
   rawCriteria: BuyerReverseSearchCriteria,
 ): Promise<BuyerReverseSearchResult> {
   const criteria = normalizeBuyerReverseSearchCriteria(rawCriteria);
+  const notEvaluated = (reason: string): BuyerReverseSearchResult => ({
+    evaluation: "not_evaluated", reason, unevaluatedCount: null, criteria, matches: [], generatedAt: new Date().toISOString(),
+  });
+  const state = normalizeBuyerState(criteria.targetState);
+  const county = normalizeCountyName(criteria.targetCounty);
+  if (!state || !county) return notEvaluated("Not evaluated: enter an explicit state and county. City names alone do not establish county coverage.");
+  try {
+  if (!getEnvState().enabled) return notEvaluated("Not evaluated: property sources are unavailable.");
   const [sellerLeads, dealCandidates] = await Promise.all([
-    listSellerLeads().catch(() => []),
-    listReverseSearchDealCandidates().catch(() => []),
+    listSellerLeadsForReverseSearch(getSupabaseAdmin()),
+    listReverseSearchDealCandidates(),
   ]);
+  const unevaluatedCount = sellerLeads.filter(lead => !normalizeBuyerState(lead.state) || !normalizeCountyName(lead.county)).length
+    + dealCandidates.filter(deal => !normalizeBuyerState(deal.state) || !normalizeCountyName(deal.county)).length;
+  const scopedSellerLeads = sellerLeads.filter(lead => buyerGeographyMatches(lead.county, lead.state, county, state));
+  const scopedDeals = dealCandidates.filter(deal => buyerGeographyMatches(deal.county, deal.state, county, state));
 
   const filteredSellerLeads = criteria.activeOnly
-    ? sellerLeads.filter((lead) => isSellerLeadActive(lead.status))
-    : sellerLeads;
+    ? scopedSellerLeads.filter((lead) => isSellerLeadActive(lead.status))
+    : scopedSellerLeads;
 
   const filteredDeals = criteria.activeOnly
-    ? dealCandidates.filter((deal) => isDealActive(deal.status ?? ""))
-    : dealCandidates;
+    ? scopedDeals.filter((deal) => isDealActive(deal.status ?? ""))
+    : scopedDeals;
 
   const sellerMatches: BuyerReverseSearchMatch[] = filteredSellerLeads.map((lead) => {
     const estimatedArv = estimateSellerLeadArv(lead);
@@ -1916,6 +1908,7 @@ export async function runBuyerReverseSearch(
       id: `seller-${lead.id}`,
       sourceType: "seller_lead",
       sourceId: lead.id,
+      state,
       propertyAddress: lead.propertyAddress,
       city: lead.city,
       county: lead.county,
@@ -1964,6 +1957,7 @@ export async function runBuyerReverseSearch(
       id: `deal-${deal.id}`,
       sourceType: "deal",
       sourceId: deal.id,
+      state,
       propertyAddress: deal.property_address ?? "Unknown property",
       city: deal.city ?? "",
       county: deal.county ?? "",
@@ -1986,7 +1980,7 @@ export async function runBuyerReverseSearch(
   const dedupedByAddress = new Map<string, BuyerReverseSearchMatch>();
   for (const match of [...dealMatches, ...sellerMatches]) {
     if (match.matchScore < 18) continue;
-    const key = `${match.propertyAddress.trim().toLowerCase()}|${match.zip}`;
+    const key = `${match.state}|${normalizeCountyName(match.county)}|${match.propertyAddress.trim().toLowerCase()}|${match.zip}`;
     const current = dedupedByAddress.get(key);
     if (!current || match.matchScore > current.matchScore) {
       dedupedByAddress.set(key, match);
@@ -2000,9 +1994,17 @@ export async function runBuyerReverseSearch(
     return left.propertyAddress.localeCompare(right.propertyAddress);
   });
 
+  if (!matches.length && unevaluatedCount) return { ...notEvaluated("Not evaluated: no known-geography matches were found, and records with missing state or county remain unchecked."), unevaluatedCount };
+
   return {
+    evaluation: "evaluated",
+    reason: unevaluatedCount ? `${unevaluatedCount} records not evaluated because state or county is missing. Counts below cover only known geography.` : null,
+    unevaluatedCount,
     criteria,
     matches,
     generatedAt: new Date().toISOString(),
   };
+  } catch {
+    return notEvaluated("Not evaluated: one or more property sources could not be read completely. Retry when the sources are available.");
+  }
 }
