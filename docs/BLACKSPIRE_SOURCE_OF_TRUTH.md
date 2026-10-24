@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.
+
+Implementation a9b75b9d0b81d9eedea660f1998b29f51fa35411 passed exact-head CI 40067019999 and configured independent Codex review receipt 6380489719, with no findings. Both earlier P2 review threads are repaired and resolved. Local Node22.23.1 validation passed 2,566 tests with 179 intended skips and zero failures; all 308 files completed with clean containment. Frontend/root lint, types and build, secret and full base-range whitespace checks pass. Synthetic browser and keyboard checks remain distinct from physical-device, Peggy-account, hosted-authenticated or production acceptance; those unobserved acceptances remain UNVERIFIED.
+
+The genuine reviewed implementation anchor advances to a9b75b9d using that review evidence; no checker or allowlist changes. This documentation-only successor requires its own exact-head CI/review before an ancestry-preserving merge. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while the reviewed implementation is outside trusted main; after merge, fetch trusted main and verify anchor ancestry plus canonical-memory-only net delta with the unchanged checker. Candidate frontend preview dpl_Aw2kFg9aUArP5ztsUDBvfJ4G3K3T is READY at a9b75b9d. Production is still observed READY at 51d2d3c2 via dpl_8iwW3exqDZXp3xgZdbmuBaCkqVHu until a new main deployment is verified. Release completion requires exact merge-SHA deployment READY, correct aliases and read-only smoke checks; no current production acceptance is claimed.
+
 ## 2026-10-24 — Real-estate review repairs and publication scope
 
 The user explicitly approved pushing feat/real-estate-product-20261023 for review and CI. Implementation9ef920d3702ef30638dc54a5ea38a77f49300e59 is pushed and PR#168 is open against main51d2d3c2. Merge, auto-merge and production deployment remain unapproved. No credentials, permissions, production records, provider purchases or outreach changed. Earlier no-push entries describe their dated checkpoints and are superseded for branch-push authority only.
@@ -1280,7 +1288,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `b1a9240f412ef27ab22f800b162826bf149ac7f5`
+- Last verified implementation commit: `a9b75b9d0b81d9eedea660f1998b29f51fa35411`
 
 ## 2026-09-04 — Activation recovery delta
 

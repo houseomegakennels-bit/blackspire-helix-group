@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+User merge/production authority is now explicit for PR #168 real-estate frontend. Verify this canonical-memory-only successor on exact-head CI/Codex review, merge with history preserved, observe production READY at the exact merge SHA and correct live aliases, then perform read-only health/auth boundary smoke checks and record release evidence. No fresh approval question is needed within this scope. Keep physical-phone/Peggy acceptance UNVERIFIED until observed; preserve all production-record and VPS/Zola boundaries.
+
 ## 2026-10-24 — Real-estate review repairs and publication scope
 
 The repaired successor passed full local gates and targeted keyboard acceptance. Commit and push on the existing authorized PR#168, resolve verified repair threads and request fresh exact-head CI/Codex review. No repeat push approval is needed. Do not merge or deploy production without separate explicit authority. Keep actual-device/Peggy acceptance unverified until observed.

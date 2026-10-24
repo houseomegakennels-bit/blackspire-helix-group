@@ -1,5 +1,13 @@
 # Blackspire Active Context
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.
+
+Implementation a9b75b9d0b81d9eedea660f1998b29f51fa35411 passed exact-head CI 40067019999 and configured independent Codex review receipt 6380489719, with no findings. Both earlier P2 review threads are repaired and resolved. Local Node22.23.1 validation passed 2,566 tests with 179 intended skips and zero failures; all 308 files completed with clean containment. Frontend/root lint, types and build, secret and full base-range whitespace checks pass. Synthetic browser and keyboard checks remain distinct from physical-device, Peggy-account, hosted-authenticated or production acceptance; those unobserved acceptances remain UNVERIFIED.
+
+The genuine reviewed implementation anchor advances to a9b75b9d using that review evidence; no checker or allowlist changes. This documentation-only successor requires its own exact-head CI/review before an ancestry-preserving merge. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while the reviewed implementation is outside trusted main; after merge, fetch trusted main and verify anchor ancestry plus canonical-memory-only net delta with the unchanged checker. Candidate frontend preview dpl_Aw2kFg9aUArP5ztsUDBvfJ4G3K3T is READY at a9b75b9d. Production is still observed READY at 51d2d3c2 via dpl_8iwW3exqDZXp3xgZdbmuBaCkqVHu until a new main deployment is verified. Release completion requires exact merge-SHA deployment READY, correct aliases and read-only smoke checks; no current production acceptance is claimed.
+
 ## 2026-10-24 — Real-estate review repairs and publication scope
 
 The user explicitly approved pushing feat/real-estate-product-20261023 for review and CI. Implementation9ef920d3702ef30638dc54a5ea38a77f49300e59 is pushed and PR#168 is open against main51d2d3c2. Merge, auto-merge and production deployment remain unapproved. No credentials, permissions, production records, provider purchases or outreach changed. Earlier no-push entries describe their dated checkpoints and are superseded for branch-push authority only.

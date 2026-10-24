@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Real-estate release approved and reviewed
+
+The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.
+
+Advance the reviewed anchor only to the genuinely clean-reviewed a9b75b9d implementation; preserve the release checker and use a merge commit rather than squash/rebase so reviewed ancestry survives. Prefer the existing frontend Git integration and verify its exact production SHA/project/team/aliases; do not create a second production deployment or alter settings/credentials. Physical-device/Peggy uncertainty is retained and is not represented by synthetic tests.
+
 ## 2026-10-24 — Real-estate review repairs and publication scope
 
 The user explicitly approved pushing feat/real-estate-product-20261023 for review and CI. Implementation9ef920d3702ef30638dc54a5ea38a77f49300e59 is pushed and PR#168 is open against main51d2d3c2. Merge, auto-merge and production deployment remain unapproved. No credentials, permissions, production records, provider purchases or outreach changed. Earlier no-push entries describe their dated checkpoints and are superseded for branch-push authority only.
