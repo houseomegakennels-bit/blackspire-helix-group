@@ -1,5 +1,11 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Auth-status release approved and reviewed
+
+The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
+
+This documentation-only successor records the genuinely independently reviewed implementation anchor0ff5b0b7. The checker is unchanged. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while that anchor is outside trusted main; require a history-preserving merge and verify anchor-to-main canonical-memory-only net delta afterward. This final head requires its own successful exact-head CI and configured review before merge. Release approval is for the frontend auth-status fix and necessary release documentation only; no credentials, roles, schema, security settings, production records, outreach, financial actions or VPS/Zola activation are authorized. Existing production remains main230a0a29 until exact merge-SHA deployment READY, aliases and read-only smoke are verified.
+
 ## 2026-10-24 — Authentication recovered; truthful status candidate
 
 Finish candidate validation and commit locally, then obtain explicit authority for branch publication/review and production release. Resume is already complete; do not restore the project again. Keep the existing deployment unchanged while this UI repair is unpublished. User-confirmed iPhone page loading does not establish Peggy account or save acceptance.

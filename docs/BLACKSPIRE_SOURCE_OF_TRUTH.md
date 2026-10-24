@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-24 — Auth-status release approved and reviewed
+
+The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
+
+This documentation-only successor records the genuinely independently reviewed implementation anchor0ff5b0b7. The checker is unchanged. Premerge REVIEWED_COMMIT_NOT_ANCESTOR is expected while that anchor is outside trusted main; require a history-preserving merge and verify anchor-to-main canonical-memory-only net delta afterward. This final head requires its own successful exact-head CI and configured review before merge. Release approval is for the frontend auth-status fix and necessary release documentation only; no credentials, roles, schema, security settings, production records, outreach, financial actions or VPS/Zola activation are authorized. Existing production remains main230a0a29 until exact merge-SHA deployment READY, aliases and read-only smoke are verified.
+
 ## 2026-10-24 — Authentication recovered; truthful status candidate
 
 Validation on Command under Node22.23.1 passed: 14 focused tests (11 auth-panel component regressions and 3 existing authorization checks), root/frontend lint, root/frontend type checks and root/frontend builds. Frontend lint retains six previously established warnings and no errors. Deterministic root/frontend npm ci used no production credentials. Evidence: /mnt/blackspire-builds/auth-status-uncertainty-20261024-evidence. This is synthetic component verification; no new hosted preview, deployment or production save was performed.
@@ -1306,7 +1312,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `a9b75b9d0b81d9eedea660f1998b29f51fa35411`
+- Last verified implementation commit: `0ff5b0b775efac1335c65e95fe94dc23bf48369c`
 
 ## 2026-09-04 — Activation recovery delta
 
