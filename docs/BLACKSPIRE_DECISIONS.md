@@ -1,5 +1,11 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Real-estate frontend published and verified
+
+PR #168 merged with history preserved as 230a0a29fe865a9dc2932925ba44439c61f5b72a after exact-head CI 40098597297 and clean configured Codex review receipt 6384850642 passed on documentation head eac4bddbf35fe748b5931537daf3e304eea9ef6d. The genuinely reviewed implementation remains a9b75b9d0b81d9eedea660f1998b29f51fa35411. User production approval was explicit; no checker, credential, role, schema or release-boundary change was made.
+
+Production evidence is bound to the actual merge commit and deployment ID, not a preview or synthetic merge. Retain the existing runtime/settings and previous production deployment dpl_8iwW3exqDZXp3xgZdbmuBaCkqVHu as rollback reference; no rollback was performed. Public/auth boundary checks and limited logs establish release smoke only. Actual-device/Peggy and authenticated business workflows stay unverified. Preserve the genuine reviewed anchor and all production-record, provider and VPS/Zola constraints.
+
 ## 2026-10-24 — Real-estate release approved and reviewed
 
 The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.

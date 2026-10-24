@@ -1,5 +1,15 @@
 # Blackspire Active Context
 
+## 2026-10-24 — Real-estate frontend published and verified
+
+PR #168 merged with history preserved as 230a0a29fe865a9dc2932925ba44439c61f5b72a after exact-head CI 40098597297 and clean configured Codex review receipt 6384850642 passed on documentation head eac4bddbf35fe748b5931537daf3e304eea9ef6d. The genuinely reviewed implementation remains a9b75b9d0b81d9eedea660f1998b29f51fa35411. User production approval was explicit; no checker, credential, role, schema or release-boundary change was made.
+
+Frontend production deployment dpl_8L1kTbK8qe2Wij4zsGTATCUXeNiC is READY at the exact main merge SHA, target production, source Git, with no alias error. Independent alias queries confirm blackspirehelix.com and www.blackspirehelix.com point to that deployment. Build duration was 61.398 seconds. Read-only HTTP checks on both domains returned homepage/sign-in 200, protected workspace 307 to /auth, and research API 401 without authentication. The live public homepage also rendered in the cloud browser. Short post-release error/fatal queries returned no groups; this is limited observation, not full signed-in workflow acceptance.
+
+Fresh main fetch and the unchanged memory checker passed on Command: reviewed anchor a9b75b9d is an ancestor of main 230a0a29, with canonical-memory-only net delta. The separate post-merge main CI run 40099421509 also completed successfully on exact merge 230a0a29fe865a9dc2932925ba44439c61f5b72a. Physical iPhone/native keyboard, Peggy account and authenticated production business workflows remain UNVERIFIED. No production records, messages, offers or signatures were submitted. Native-store source fixes are committed/tested, but no VPS/Zola runtime was installed or activated.
+
+Commander timed out during final HTTP/documentation commands after deployment and main-memory proof. HTTP smoke was completed independently with read-only local requests, and this canonical post-release record was prepared in an isolated recovery checkout from exact main. Official Node22.23.1 was checksum verified and root dependencies installed deterministically. No production environment files or credentials were copied. After Commander recovered, its worktree was verified clean at eac4bddb and the unknown branch switch was confirmed absent. This post-release record is checked and committed on a new server documentation branch from exact main; no application code changes are included.
+
 ## 2026-10-24 — Real-estate release approved and reviewed
 
 The user explicitly approved merge and production release of PR #168 after being told exact-head CI and Codex review pass and physical iPhone/Peggy-account acceptance remains unverified. This authorization covers the real-estate frontend only. Production records, credentials, security settings, paid providers, outreach, financial commitments and VPS/Zola release remain outside scope. Historical unapproved entries describe their dated checkpoints and are superseded for this release authority.

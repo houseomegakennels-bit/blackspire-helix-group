@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Real-estate frontend published and verified
+
+The approved real-estate frontend release is live at main 230a0a29 via READY deployment dpl_8L1kTbK8qe2Wij4zsGTATCUXeNiC. Premerge exact-head CI/review, live aliases, read-only smoke and fresh-main memory proof passed. Separate exact-main CI 40099421509 also passed. Follow up on actual iPhone/native-keyboard and Peggy-account acceptance; do not substitute synthetic fixtures or anonymous checks. No further implementation or repeat tests are needed absent new changes or concerns. Preserve production-record and VPS/Zola boundaries.
+
 ## 2026-10-24 — Real-estate release approved and reviewed
 
 User merge/production authority is now explicit for PR #168 real-estate frontend. Verify this canonical-memory-only successor on exact-head CI/Codex review, merge with history preserved, observe production READY at the exact merge SHA and correct live aliases, then perform read-only health/auth boundary smoke checks and record release evidence. No fresh approval question is needed within this scope. Keep physical-phone/Peggy acceptance UNVERIFIED until observed; preserve all production-record and VPS/Zola boundaries.
