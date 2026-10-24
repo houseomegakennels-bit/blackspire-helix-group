@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-24 — Authentication recovered; truthful status candidate
+
+Validation on Command under Node22.23.1 passed: 14 focused tests (11 auth-panel component regressions and 3 existing authorization checks), root/frontend lint, root/frontend type checks and root/frontend builds. Frontend lint retains six previously established warnings and no errors. Deterministic root/frontend npm ci used no production credentials. Evidence: /mnt/blackspire-builds/auth-status-uncertainty-20261024-evidence. This is synthetic component verification; no new hosted preview, deployment or production save was performed.
+
+The existing Supabase project was inactive. After the user approved resume, the provider first refused for unpaid organization invoices. The user reported payment; one subsequent restore succeeded and progressed to ACTIVE_HEALTHY. A read-only public /api/auth/status request returned HTTP200, ok:true, authConfigured:true and bootstrapRequired:false. No plan, credentials, permissions or production records were changed by this session. The user then confirmed sign-in, properties and Today queue load on their iPhone. This is user-reported actual-device loading acceptance; Peggy-account acceptance, native-keyboard behavior and production save workflows remain UNVERIFIED.
+
+The follow-up auth-panel candidate treats failed, incomplete and loading checks as unknown, invalidates stale displayed status during refresh, and sequences requests so an older completion cannot overwrite a newer result. Unknown setup never offers first-operator creation. Existing auth API/cookies/permissions are unchanged. The implementation is isolated on fix/auth-status-uncertainty-20261024 at /mnt/blackspire-builds/auth-status-uncertainty-20261024, based on a86f2ba9479c7a6175a93ae665224b64b65eca0a (documentation descendant of released main230a0a29). No push, merge or deployment of this follow-up is claimed or approved. The genuine reviewed anchor and release checker remain unchanged.
+
 ## 2026-10-24 — Real-estate frontend published and verified
 
 PR #168 merged with history preserved as 230a0a29fe865a9dc2932925ba44439c61f5b72a after exact-head CI 40098597297 and clean configured Codex review receipt 6384850642 passed on documentation head eac4bddbf35fe748b5931537daf3e304eea9ef6d. The genuinely reviewed implementation remains a9b75b9d0b81d9eedea660f1998b29f51fa35411. User production approval was explicit; no checker, credential, role, schema or release-boundary change was made.

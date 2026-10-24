@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { BuyerShell, Panel, StatusPill } from "@/components/buyer-shell";
@@ -16,8 +16,25 @@ type AuthStatusPayload = {
   error?: string;
 };
 
+async function loadAuthStatus(): Promise<AuthStatusPayload> {
+  const response = await fetch("/api/auth/status", { cache: "no-store" });
+  const payload = (await response.json()) as AuthStatusPayload;
+  if (!response.ok || !payload?.ok) {
+    throw new Error(payload?.error ?? "Auth status could not be loaded.");
+  }
+  if (
+    typeof payload.authConfigured !== "boolean" ||
+    typeof payload.bootstrapRequired !== "boolean" ||
+    !(payload.operator === null || (typeof payload.operator?.id === "string" && payload.operator.id.length > 0))
+  ) {
+    throw new Error("Auth status could not be verified. Refresh to try again.");
+  }
+  return payload;
+}
+
 export function AuthPanel() {
   const router = useRouter();
+  const statusRequestRef = useRef(0);
   const [status, setStatus] = useState<AuthStatusPayload | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -42,39 +59,36 @@ export function AuthPanel() {
   });
 
   async function refreshStatus() {
+    const requestId = ++statusRequestRef.current;
     setLoadingStatus(true);
+    setStatus(null);
     setError(null);
     try {
-      const response = await fetch("/api/auth/status", { cache: "no-store" });
-      const payload = (await response.json()) as AuthStatusPayload;
-      setStatus(payload);
-      if (!response.ok || !payload.ok) {
-        setError(payload.error ?? "Auth status could not be loaded.");
-      }
+      const payload = await loadAuthStatus();
+      if (statusRequestRef.current === requestId) setStatus(payload);
     } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : "Auth status could not be loaded.");
+      if (statusRequestRef.current === requestId) {
+        setError(statusError instanceof Error ? statusError.message : "Auth status could not be loaded.");
+      }
     } finally {
-      setLoadingStatus(false);
+      if (statusRequestRef.current === requestId) setLoadingStatus(false);
     }
   }
 
   useEffect(() => {
     let cancelled = false;
+    const requestId = ++statusRequestRef.current;
 
     async function loadInitialStatus() {
       try {
-        const response = await fetch("/api/auth/status", { cache: "no-store" });
-        const payload = (await response.json()) as AuthStatusPayload;
-        if (cancelled) return;
+        const payload = await loadAuthStatus();
+        if (cancelled || statusRequestRef.current !== requestId) return;
         setStatus(payload);
-        if (!response.ok || !payload.ok) {
-          setError(payload.error ?? "Auth status could not be loaded.");
-        }
       } catch (statusError) {
-        if (cancelled) return;
+        if (cancelled || statusRequestRef.current !== requestId) return;
         setError(statusError instanceof Error ? statusError.message : "Auth status could not be loaded.");
       } finally {
-        if (!cancelled) {
+        if (!cancelled && statusRequestRef.current === requestId) {
           setLoadingStatus(false);
         }
       }
@@ -237,8 +251,9 @@ export function AuthPanel() {
     }
   }
 
-  const bootstrapRequired = status?.bootstrapRequired ?? false;
-  const signedIn = Boolean(status?.operator);
+  const statusKnown = !loadingStatus && status?.ok === true;
+  const bootstrapRequired = statusKnown ? status.bootstrapRequired : null;
+  const signedIn = statusKnown && Boolean(status.operator);
 
   return (
       <BuyerShell
@@ -246,7 +261,7 @@ export function AuthPanel() {
         title="Auth Control"
         description="This is the handoff away from the shared default operator id. Bootstrap the first operator once, then use sign-in for normal sessions."
         operatorStatus={
-          status
+          statusKnown
             ? {
                 authConfigured: Boolean(status.authConfigured),
                 signedIn: Boolean(status.operator),
@@ -267,14 +282,14 @@ export function AuthPanel() {
           description="The app will prefer the signed-in Supabase auth user for jobs, exports, and drafts. It only falls back to the default bridge when no session exists."
         >
           <div className="flex flex-wrap items-center gap-3">
-            <StatusPill tone={status?.authConfigured ? "good" : "bad"} label={status?.authConfigured ? "auth env ready" : "auth env missing"} />
-            <StatusPill tone={signedIn ? "good" : "warn"} label={signedIn ? "signed in" : "no active session"} />
-            <StatusPill tone={bootstrapRequired ? "warn" : "good"} label={bootstrapRequired ? "bootstrap required" : "bootstrap complete"} />
+            <StatusPill tone={!statusKnown ? "warn" : status.authConfigured ? "good" : "bad"} label={!statusKnown ? "auth configuration unknown" : status.authConfigured ? "auth env ready" : "auth env missing"} />
+            <StatusPill tone={signedIn ? "good" : "warn"} label={!statusKnown ? "session unknown" : signedIn ? "signed in" : "no active session"} />
+            <StatusPill tone={!statusKnown || bootstrapRequired ? "warn" : "good"} label={!statusKnown ? "bootstrap status unknown" : bootstrapRequired ? "bootstrap required" : "bootstrap complete"} />
           </div>
 
           <div className="brand-copy-soft mt-5 space-y-3 text-sm leading-6">
             {loadingStatus ? <p>Loading auth status...</p> : null}
-            {status?.operator ? (
+            {statusKnown && status.operator ? (
               <div className="brand-card p-4">
                 <div className="text-xs uppercase tracking-[0.24em] text-[var(--copy-muted)]">Signed-in operator</div>
                 <div className="mt-2 text-white">{status.operator.email ?? "No email exposed"}</div>
@@ -282,7 +297,11 @@ export function AuthPanel() {
               </div>
             ) : (
               <div className="brand-card p-4 text-[var(--copy-soft)]">
-                No operator session is active yet. Jobs and drafts will keep using the default bridge until you sign in.
+                {statusKnown
+                  ? "No operator session is active yet. Jobs and drafts will keep using the default bridge until you sign in."
+                  : loadingStatus
+                    ? "Checking authentication status..."
+                    : "Unable to check authentication. Session and account setup status are unknown. Refresh to try again."}
               </div>
             )}
             {message ? <p className="text-[var(--gold-soft)]">{message}</p> : null}
@@ -351,7 +370,7 @@ export function AuthPanel() {
               <button
                 type="button"
                 onClick={() => void refreshStatus()}
-                disabled={submitting}
+                disabled={submitting || loadingStatus}
                 className="brand-button px-4 py-2 text-sm disabled:opacity-60"
               >
                 Refresh auth status
@@ -360,7 +379,7 @@ export function AuthPanel() {
           </form>
         </Panel>
 
-        {!signedIn && !bootstrapRequired ? (
+        {statusKnown && !signedIn && !bootstrapRequired ? (
           <Panel
             eyebrow="Soft Beta"
             title="Request access"

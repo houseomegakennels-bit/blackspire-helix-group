@@ -1,5 +1,9 @@
 # Blackspire Decisions
 
+## 2026-10-24 — Authentication recovered; truthful status candidate
+
+Failed authentication checks must not imply missing configuration, no session or completed setup. Require complete successful status evidence and ignore superseded requests. Recover the existing provider project rather than replacing credentials or projects. Provider restore approval was explicit; payment was performed by the user. Production UI publication remains a separate release decision.
+
 ## 2026-10-24 — Real-estate frontend published and verified
 
 PR #168 merged with history preserved as 230a0a29fe865a9dc2932925ba44439c61f5b72a after exact-head CI 40098597297 and clean configured Codex review receipt 6384850642 passed on documentation head eac4bddbf35fe748b5931537daf3e304eea9ef6d. The genuinely reviewed implementation remains a9b75b9d0b81d9eedea660f1998b29f51fa35411. User production approval was explicit; no checker, credential, role, schema or release-boundary change was made.

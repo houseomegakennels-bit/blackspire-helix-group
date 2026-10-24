@@ -1,5 +1,9 @@
 # Blackspire Next Actions
 
+## 2026-10-24 — Authentication recovered; truthful status candidate
+
+Finish candidate validation and commit locally, then obtain explicit authority for branch publication/review and production release. Resume is already complete; do not restore the project again. Keep the existing deployment unchanged while this UI repair is unpublished. User-confirmed iPhone page loading does not establish Peggy account or save acceptance.
+
 ## 2026-10-24 — Real-estate frontend published and verified
 
 The approved real-estate frontend release is live at main 230a0a29 via READY deployment dpl_8L1kTbK8qe2Wij4zsGTATCUXeNiC. Premerge exact-head CI/review, live aliases, read-only smoke and fresh-main memory proof passed. Separate exact-main CI 40099421509 also passed. Follow up on actual iPhone/native-keyboard and Peggy-account acceptance; do not substitute synthetic fixtures or anonymous checks. No further implementation or repeat tests are needed absent new changes or concerns. Preserve production-record and VPS/Zola boundaries.
