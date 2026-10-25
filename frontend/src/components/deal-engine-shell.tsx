@@ -1,24 +1,22 @@
 import "./deal-workspace.css";
+import "./luxury-workspace.css";
 
-import Image from "next/image";
 import { PropertyQuickStart } from "@/components/property-quick-start";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { brandAssets } from "@/lib/brand-assets";
-
 /** Keep the property workspace focused on everyday work; other divisions remain in More. */
 export function DealEngineShell({ children, home = false, light = home }: { children: ReactNode; home?: boolean; light?: boolean }) {
   return (
-    <main className={`deal-workspace theme-deal-engine relative min-h-screen ${light ? "workspace-home" : "bg-[#0b1217]"}`}>
+    <main className={`deal-workspace theme-deal-engine relative min-h-screen ${light ? "workspace-home luxury-workspace" : "bg-[#0b1217]"}`}>
       <a href="#workspace-content" className="workspace-skip">Skip to property workspace</a>
       <div className="workspace-layout relative mx-auto grid min-h-screen max-w-[1800px] gap-5 px-3 py-3 lg:px-5">
         <aside className="workspace-sidebar brand-panel h-fit p-5 lg:sticky lg:top-20">
           <div className="workspace-identity">
-            <Image src={brandAssets.dealEngine.logo} alt="" width={64} height={64} priority className="rounded-xl object-contain" />
+            <svg className="workspace-monogram shrink-0" width="28" height="43" viewBox="0 0 30 46" aria-hidden="true"><path d="M15 2 27 43H3L15 2Zm0 11L8 38h14L15 13Z" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
             <div>
-              <p className="text-sm text-[var(--copy-soft)]">Blackspire</p>
-              <h1 className="text-xl font-semibold text-white">Property workspace</h1>
+              <p className="workspace-wordmark text-sm text-[var(--copy-soft)]">Blackspire</p>
+              <h1 className="workspace-product-name text-xl font-semibold text-white">Property workspace</h1>
             </div>
           </div>
           <p className="workspace-introduction mt-4 text-sm leading-6 text-[var(--copy-soft)]">A place for your properties, people and next steps.</p>

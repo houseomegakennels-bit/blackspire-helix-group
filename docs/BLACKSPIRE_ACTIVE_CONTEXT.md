@@ -1,5 +1,11 @@
 # Blackspire Active Context
 
+## 2026-10-25 — Local luxury workspace candidate, publication held
+
+The user authorized local implementation after the approved environment publication enabled the exact Library reference download. Branch `feat/luxury-reference-20261025` starts at verified remote main `7bc4385d623f181d1f8daa9baf926d45b92018db` (PR170). The reference is `libfile_8d9a8a8336288191845e313d19327cb7`, version 0, 32,725 bytes, SHA-256 `19f364b9a85fc26d7b34f2d0e4424e58264eea5fb3f33506507a30f1977b011c`. Its identity metadata remains on the executor-local original; no Library replacement occurred.
+
+The candidate applies ivory, forest green, muted gold, serif headings and responsive navigation to the existing Today/property shell. Authorized-data summary counts, clearer task/portfolio hierarchy and unobscured utility controls accompany scoped presentation changes. All ten property sections, real data paths, calculations, evidence/unknown states, auth, save logic, backend and migrations are preserved. See `docs/LUXURY_WORKSPACE_LOCAL_20261025.md` for fresh checks and browser evidence. Historical 98-test evidence is not a fresh outcome. Production/physical iPhone/Peggy-account acceptance remains UNVERIFIED. No push, PR, merge, deployment, SQL, credentials, network/security changes or spending is authorized or performed; the reviewed release anchor is unchanged.
+
 ## 2026-10-24 — Auth-status release approved and reviewed
 
 The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.
