@@ -15,8 +15,10 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
     <>
       <WorkspaceNav />
       {children}
-      <GlobalSearch />
-      <BetaFeedback />
+      <div className="workspace-tools" aria-label="Workspace tools" role="group">
+        <GlobalSearch />
+        <BetaFeedback />
+      </div>
     </>
   );
 }

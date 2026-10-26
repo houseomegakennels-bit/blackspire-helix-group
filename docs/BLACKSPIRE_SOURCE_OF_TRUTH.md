@@ -1,5 +1,11 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-25 — Local luxury workspace candidate, publication held
+
+The user authorized local implementation after the approved environment publication enabled the exact Library reference download. Branch `feat/luxury-reference-20261025` starts at verified remote main `7bc4385d623f181d1f8daa9baf926d45b92018db` (PR170). The reference is `libfile_8d9a8a8336288191845e313d19327cb7`, version 0, 32,725 bytes, SHA-256 `19f364b9a85fc26d7b34f2d0e4424e58264eea5fb3f33506507a30f1977b011c`. Its identity metadata remains on the executor-local original; no Library replacement occurred.
+
+The candidate applies ivory, forest green, muted gold, serif headings and responsive navigation to the existing Today/property shell. Authorized-data summary counts, clearer task/portfolio hierarchy and unobscured utility controls accompany scoped presentation changes. All ten property sections, real data paths, calculations, evidence/unknown states, auth, save logic, backend and migrations are preserved. See `docs/LUXURY_WORKSPACE_LOCAL_20261025.md` for fresh checks and browser evidence. Historical 98-test evidence is not a fresh outcome. Production/physical iPhone/Peggy-account acceptance remains UNVERIFIED. No push, PR, merge, deployment, SQL, credentials, network/security changes or spending is authorized or performed; the reviewed release anchor is unchanged.
+
 ## 2026-10-24 — Feedback authorization release approved and reviewed
 
 The user explicitly approved updating PR170, merging and deploying the scoped feedback authorization fix. Implementation 2bd77429e91b9f2e383bdfe508476a1ce7f8da34 passed configured Codex review (receipt 6390005983, no findings), root CI40136168584 and focused CI40136168595. Root CI reports 2746 total tests, 2567 passed, 179 skipped and zero failures; all 309 inventory files completed. The focused workflow passed four frontend authorization tests and frontend lint/types. Five scoped local tests passed; local aggregate execution remains blocked by missing ptrace_scope and local frontend build by Google Fonts access. These local limitations are not CI failures.

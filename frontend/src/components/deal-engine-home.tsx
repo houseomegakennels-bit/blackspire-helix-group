@@ -42,8 +42,8 @@ export function DealEngineHome({ snapshot, workboard }: { snapshot: DealEngineWo
   return (
     <DealEngineShell home>
       {!snapshot.persistence.ready ? <div role="status" className="workspace-connection-notice rounded-xl border px-5 py-4 text-sm leading-6"><strong>Saving is unavailable.</strong> You can review available information, but changes cannot be saved until the connection is restored. Open Workspace status and help below for details.</div> : null}
-      <header className="brand-panel px-6 py-7">
-        <h2 className="brand-display text-4xl leading-tight text-white lg:text-5xl">What needs your attention today?</h2>
+      <header className="workspace-welcome brand-panel px-6 py-7">
+        <h2 className="brand-display text-4xl leading-tight text-white lg:text-5xl">Your day, in focus.</h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--copy-soft)]">Review saved deadlines, see who owns the next step, or find a property. Numbers, offer terms and evidence stay together.</p>
         <div className="workspace-actions mt-5 flex flex-wrap gap-3">
           <Link href="/workspace/harvester" className="workspace-primary brand-button inline-flex px-5 py-3 text-sm">Add property</Link>
