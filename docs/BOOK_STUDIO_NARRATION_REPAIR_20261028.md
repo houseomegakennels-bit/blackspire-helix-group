@@ -17,7 +17,7 @@ Node `22.23.1`; deterministic `npm ci` in root and frontend. No production envir
 
 | Check | Result |
 | --- | --- |
-| `node --test frontend/tests/*.test.mjs` | 27 passed, including 9 new narration regressions |
+| `node --test frontend/tests/*.test.mjs` | 28 passed, including 10 new narration regressions |
 | Before-fix narration reproduction | Initial 7 tests failed; the same 7 passed after repair |
 | Frontend `tsc --noEmit` | Passed |
 | Frontend `npm run lint` | Passed; 6 warnings in unchanged files |
@@ -42,3 +42,13 @@ The supplied resolved Library audit bundle could not be downloaded with the curr
 5. Verify the saved draft on the deployed UI. Generate audio only under separately confirmed spending/runtime authority; code deployment and local tests alone do not fix existing truncated records or regenerate audio.
 
 Local diagnostic logs and the synthetic browser harness are under `/tmp/book-narration-*` and `/workspace/scratch/verify-narration-browser.mjs` in this execution environment. No signed URLs, credentials or private manuscript text are included in this patch.
+
+## Follow-up evidence review
+
+The strengthened fallback tests require exactly 11 scenes, ten longer than 1,400 characters, and both ordered string equality and total-length equality against a 23,897-character / 23,903-byte / 2,815-word synthetic source. Reintroducing only the 1,400-character fallback cap in an isolated in-memory mutation makes the fallback equality test fail. This separately demonstrates coverage of that specific regression; no repository runtime source was changed for the mutation check.
+
+A new test saves Onyx through the actual character PATCH, invokes actual scene narration and actual media request construction, then intercepts fetch. Its captured POST body has voice `onyx`, model `gpt-4o-mini-tts`, input `Old text` and response_format `wav`. Fetch returns a deliberate synthetic 503 before audio generation. No request leaves the test process and the only credential value is a synthetic fixture string. All28 frontend tests pass.
+
+The Chromium375px harness rendered the actual two controls with React and synthetic callbacks. It exercised textarea entry, explicit saving and prop refresh of 13k+ characters, Onyx selection/save, disabled unchanged Save, failed-save draft retention and no page errors. It did not exercise Next routing, a real HTTP server, database persistence, production styling, physical iPhone behavior, real audio or provider acceptance. Browser callback checks plus separate actual route/service/request tests are not a live end-to-end claim.
+
+Audit failure classification: both prepare_materialize calls succeeded (`isError:false`), returned one signed GET transfer with `workspace_path:null`, size29222 and no warnings/unavailable_items. Both supported-helper materialize invocations returned exit1 and exactly `library file transfer failed: download failed`. The local destination directory exists, but no ZIP exists there. Thus this is an observed download/transport-stage failure, not a returned missing workspace path and not an observed access/approval denial. The helper exposed no HTTP status or underlying exception; an underlying authorization failure cannot be excluded or asserted. No retry beyond the initial attempt and one bounded retry was made.

@@ -31,14 +31,14 @@ function setup(modelPayload) {
       deleteAssetFile: () => assert.fail('Repair must retain media files'),
     },
   };
-  function load(file, extra = '') {
+  function load(file, extra = '', globals = {}) {
     const source = readFileSync(new URL(`../src/${file}.ts`, import.meta.url), 'utf8') + extra;
     const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
     const exports = {};
     new vm.Script(js).runInNewContext({ exports, require: name => {
       if (Object.hasOwn(dependencies, name)) return dependencies[name];
       throw new Error(`Unexpected dependency: ${name}`);
-    }, process: { env: {} }, Buffer, console });
+    }, process: { env: {} }, Buffer, console, ...globals });
     return exports;
   }
   dependencies['@/lib/book-studio/types'] = load('lib/book-studio/types');
@@ -61,7 +61,9 @@ for (const [name, payload] of [ ['fallback', undefined], ['plausible-length rewr
     const { service } = setup(payload);
     const result = await service.analyzeChapters([{ id: 'chapter', title: 'Chapter One', text: fullText, order: 1 }], 'Synthetic');
     assert.equal(result.scenes.map(scene => scene.sourceText).join(''), fullText);
-    assert.ok(result.scenes.some(scene => scene.sourceText.length > 1400));
+    assert.equal(result.scenes.length, 11);
+    assert.equal(result.scenes.filter(scene => scene.sourceText.length > 1400).length, 10);
+    assert.equal(result.scenes.reduce((total, scene) => total + scene.sourceText.length, 0), fullText.length);
   });
 }
 test('scene PATCH preserves exact replacement, invalidates dependent playback, and leaves other books and assets intact', async () => {
@@ -118,4 +120,33 @@ test('complete verbatim model scenes retain their metadata and narration', async
   assert.equal(result.scenes.length, 1);
   assert.equal(result.scenes[0].title, 'Model title');
   assert.equal(result.scenes[0].sourceText, fullText);
+});
+
+// Observe the actual outbound JSON without dispatching a request or using credentials.
+test('saved Onyx selection reaches the actual speech HTTP request body', async () => {
+  const s = setup();
+  s.books[0].characters[0].voiceAssignment.characterVoice = 'cedar';
+  const assignment = { narratorVoice: 'onyx', characterVoice: 'onyx', fallbackVoice: 'onyx', rationale: 'Explicit selection' };
+  const response = await s.load('app/api/characters/[characterId]/route').PATCH(
+    { json: async () => ({ voiceAssignment: assignment }) },
+    { params: Promise.resolve({ characterId: 'target-character' }) },
+  );
+  assert.equal(response.status, 200);
+  const requests = [];
+  s.dependencies['node:child_process'] = { spawn: () => assert.fail('No media process allowed') };
+  s.dependencies['node:fs/promises'].unlink = async () => {};
+  const media = s.load('lib/book-studio/media', '', {
+    process: { env: { OPENAI_API_KEY: 'synthetic-test-only' } },
+    AbortSignal,
+    fetch: async (url, options) => {
+      requests.push({ url, method: options.method, body: JSON.parse(options.body) });
+      return { ok: false, status: 503, text: async () => 'Synthetic stop before generation' };
+    },
+  });
+  s.dependencies['@/lib/book-studio/media'].generateSpeechAudio = media.generateSpeechAudio;
+  await assert.rejects(s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]), /Synthetic stop before generation/);
+  assert.deepEqual(requests, [{
+    url: 'https://api.openai.com/v1/audio/speech', method: 'POST',
+    body: { model: 'gpt-4o-mini-tts', voice: 'onyx', input: 'Old text', response_format: 'wav' },
+  }]);
 });
