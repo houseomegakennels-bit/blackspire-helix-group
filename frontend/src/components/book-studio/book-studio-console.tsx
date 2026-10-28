@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { CharacterVoiceEditor, NarrationTextEditor } from "@/components/book-studio/narration-controls";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -898,6 +899,16 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                             <p className="mt-2 text-sm leading-7 text-[var(--copy-soft)]">{scene.summary}</p>
                           </div>
 
+                          <NarrationTextEditor
+                            key={`${scene.id}:${scene.sourceText}`}
+                            sourceText={scene.sourceText}
+                            onSave={(sourceText) => callJson(`/api/scenes/${scene.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ sourceText }),
+                            })}
+                          />
+
                           <div className="grid gap-3 md:grid-cols-2">
                             <label className="block">
                               <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-[var(--copy-muted)]">Location</span>
@@ -1138,6 +1149,16 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                       Voice: {character.voiceAssignment?.characterVoice || "unassigned"}
                     </div>
                   </div>
+
+                  <CharacterVoiceEditor
+                    key={`${character.id}:${character.voiceAssignment?.characterVoice ?? ""}`}
+                    assignment={character.voiceAssignment}
+                    onSave={(voiceAssignment) => callJson(`/api/characters/${character.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ voiceAssignment }),
+                    })}
+                  />
 
                   <div className="brand-card space-y-4 p-4">
                     <div>

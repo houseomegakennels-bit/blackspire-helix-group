@@ -46,20 +46,11 @@ export type CharacterStatus = "draft" | "locked";
 
 export type ScenePriority = "key" | "supporting" | "background";
 
-export type VoiceName =
-  | "alloy"
-  | "ash"
-  | "ballad"
-  | "coral"
-  | "echo"
-  | "fable"
-  | "nova"
-  | "onyx"
-  | "sage"
-  | "shimmer"
-  | "verse"
-  | "marin"
-  | "cedar";
+export const VOICE_NAMES = [
+  "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx",
+  "sage", "shimmer", "verse", "marin", "cedar",
+] as const;
+export type VoiceName = (typeof VOICE_NAMES)[number];
 
 export type AssetRecord = {
   id: string;

@@ -35,6 +35,7 @@ import {
   slugify,
   writeAssetBuffer,
 } from "@/lib/book-studio/store";
+import { VOICE_NAMES } from "@/lib/book-studio/types";
 import type {
   AssetRecord,
   BookRecord,
@@ -141,17 +142,23 @@ function loosePhraseIncludes(haystack: string, candidate: string) {
 }
 
 function splitFallbackScenes(chapterId: string, chapterTitle: string, text: string, chapterOrder: number) {
-  const paragraphs = text
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
+  // Retain separators and whitespace: joining scene text must reproduce the
+  // authoritative chapter exactly, including material beyond the model window.
+  const paragraphs: string[] = [];
+  let offset = 0;
+  for (const match of text.matchAll(/\n[ \t\r]*\n/g)) {
+    const end = match.index + match[0].length;
+    paragraphs.push(text.slice(offset, end));
+    offset = end;
+  }
+  if (offset < text.length) paragraphs.push(text.slice(offset));
 
   const scenes: Array<Omit<SceneRecord, "characterIds" | "modifiers" | "imageStatus" | "audioStatus" | "reviewStatus" | "priority" | "imageAssetId" | "audioAssetId" | "renderManifest">> = [];
   let chunk: string[] = [];
 
   const flush = () => {
     if (!chunk.length) return;
-    const sourceText = chunk.join("\n\n");
+    const sourceText = chunk.join("");
     const order = scenes.length + 1;
     scenes.push({
       id: createId("scene"),
@@ -1498,7 +1505,7 @@ async function analyzeChapters(
         mood: scene.mood,
         location: scene.location,
         timeOfDay: scene.timeOfDay,
-        sourceText: scene.sourceText.slice(0, 1400),
+        sourceText: scene.sourceText,
         characters: fallbackCharacterNames.slice(0, 3),
         priority: scene.priority,
       })),
@@ -1588,22 +1595,14 @@ Return a compact scene list for production. Include only important recurring cha
       fallback: fallbackPayload,
     });
 
-    const chapterTextForAnalysis = chapter.text.slice(0, 12000);
-    const payloadSceneTexts = (payload.scenes ?? []).map((scene: { sourceText?: string; summary?: string }) => scene.sourceText || scene.summary || "");
-    const totalSceneTextLength = payloadSceneTexts.reduce((total: number, value: string) => total + value.length, 0);
-    const averageSceneLength = payloadSceneTexts.length > 0 ? totalSceneTextLength / payloadSceneTexts.length : 0;
-    // The model is told to keep sourceText excerpts "short and representative,"
-    // which for narration purposes means it can legally hand back scenes that
-    // only quote fragments of the chapter and silently drop everything else -
-    // the audio is generated straight from sourceText, so a low-coverage scene
-    // list turns into missing narration, not just a terser summary. Fall back
-    // to the full-text mechanical split whenever the model's scenes don't
-    // account for most of what it was shown.
-    const coverageRatio = chapterTextForAnalysis.length > 0 ? totalSceneTextLength / chapterTextForAnalysis.length : 1;
-    const scenePayload =
-      (payload.scenes ?? []).length > 12 || averageSceneLength < 350 || coverageRatio < 0.92
-        ? fallbackPayload.scenes
-        : (payload.scenes ?? fallbackPayload.scenes);
+    // Model excerpts are analysis notes, never authority to omit or rewrite
+    // narration. Accept them only when they reproduce the complete source.
+    const modelScenes = payload.scenes ?? [];
+    const scenePayload = modelScenes.length > 0 && modelScenes.length <= 12 &&
+      modelScenes.every((scene: { sourceText?: string }) => typeof scene.sourceText === "string" && scene.sourceText.length > 0) &&
+      modelScenes.map((scene: { sourceText: string }) => scene.sourceText).join("") === chapter.text
+        ? modelScenes
+        : fallbackPayload.scenes;
     const characterPayload = (payload.characters ?? fallbackPayload.characters).filter(
       (character: { name?: string }) => character.name && !isLikelyFalseCharacterName(character.name),
     );
@@ -1640,7 +1639,7 @@ Return a compact scene list for production. Include only important recurring cha
         chapterId: chapter.id,
         order: chapter.order * 100 + index + 1,
         title: scene.title || `${chapter.title} Scene ${index + 1}`,
-        sourceText: scene.sourceText || chapter.text.slice(index * 800, index * 800 + 1200),
+        sourceText: scene.sourceText,
         summary: scene.summary || chapter.text.slice(0, 240),
         mood: scene.mood || "dramatic",
         location: scene.location || "unspecified",
@@ -2574,6 +2573,28 @@ export async function extractReferenceCharacterCandidates(referenceId: string) {
   ).book;
 }
 
+// Retain historical assets but remove stale playback references. A later,
+// explicitly requested render can regenerate audio/video for the changed scene.
+function invalidateNarration(book: BookRecord, scene: SceneRecord) {
+  scene.audioAssetId = null;
+  scene.audioStatus = "missing";
+  const chapter = book.chapters.find((candidate) => candidate.id === scene.chapterId);
+  if (chapter) {
+    chapter.audioAssetId = null;
+    chapter.videoAssetId = null;
+  }
+}
+
+function validateVoiceAssignment(value: unknown) {
+  if (!value || typeof value !== "object") throw new Error("A voice assignment is required.");
+  const assignment = value as Record<string, unknown>;
+  for (const key of ["narratorVoice", "characterVoice", "fallbackVoice"]) {
+    if (key === "characterVoice" && assignment[key] === undefined) continue;
+    if (!VOICE_NAMES.includes(assignment[key] as VoiceName)) throw new Error("Unsupported narration voice.");
+  }
+  if (typeof assignment.rationale !== "string") throw new Error("Voice rationale must be text.");
+}
+
 export async function updateCharacterBible(
   characterId: string,
   patch: Partial<
@@ -2590,9 +2611,11 @@ export async function updateCharacterBible(
       | "vibe"
       | "continuityNotes"
       | "requiredForRender"
+      | "voiceAssignment"
     >
   >,
 ) {
+  if (patch.voiceAssignment !== undefined) validateVoiceAssignment(patch.voiceAssignment);
   const store = await readStore();
   const book = store.books.find((candidate) => candidate.characters.some((character) => character.id === characterId));
   if (!book) throw new Error("Character not found.");
@@ -2614,6 +2637,16 @@ export async function updateCharacterBible(
       character.continuityNotes = patch.continuityNotes ?? character.continuityNotes;
       character.requiredForRender = patch.requiredForRender ?? character.requiredForRender;
 
+      if (patch.voiceAssignment !== undefined) {
+        const previousVoice = character.voiceAssignment?.characterVoice || fallbackVoice();
+        character.voiceAssignment = safeJson(patch.voiceAssignment);
+        if (previousVoice !== (character.voiceAssignment?.characterVoice || fallbackVoice())) {
+          for (const scene of draft.scenes) {
+            if (scene.characterIds[0] === character.id) invalidateNarration(draft, scene);
+          }
+        }
+      }
+
       autoLinkReferencesToCharacters(draft);
       syncCharacterBibleReferences(draft);
       draft.scenes = draft.scenes.map((scene) => {
@@ -2627,6 +2660,9 @@ export async function updateCharacterBible(
 }
 
 export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) {
+  if (patch.sourceText !== undefined && (typeof patch.sourceText !== "string" || !patch.sourceText.trim())) {
+    throw new Error("Narration text must be non-empty text.");
+  }
   const store = await readStore();
   const book = store.books.find((candidate) => candidate.scenes.some((scene) => scene.id === sceneId));
   if (!book) throw new Error("Scene not found.");
@@ -2635,6 +2671,11 @@ export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) 
     await mutateBookRecord(book.id, (draft) => {
       const scene = draft.scenes.find((candidate) => candidate.id === sceneId);
       if (!scene) throw new Error("Scene not found.");
+      if (patch.sourceText !== undefined && patch.sourceText !== scene.sourceText) {
+        scene.sourceText = patch.sourceText;
+        scene.estimatedDurationSeconds = estimateDuration(patch.sourceText);
+        invalidateNarration(draft, scene);
+      }
       scene.title = patch.title ?? scene.title;
       scene.summary = patch.summary ?? scene.summary;
       scene.location = patch.location ?? scene.location;
@@ -2657,7 +2698,7 @@ export async function assignVoices(bookId: string) {
     await mutateBookRecord(bookId, (draft) => {
       draft.characters = draft.characters.map((character) => ({
         ...character,
-        voiceAssignment: {
+        voiceAssignment: character.voiceAssignment ?? {
           narratorVoice: narratorVoice(),
           characterVoice: voiceForCharacter(character),
           fallbackVoice: fallbackVoice(),

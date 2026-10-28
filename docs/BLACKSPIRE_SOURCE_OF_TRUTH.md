@@ -1,5 +1,14 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-28 — Book Studio narration repair, local candidate
+
+Based on clean HEAD 7bc4385, the scoped candidate preserves exact complete chapter text when forming narration scenes; model excerpts are accepted only if their concatenation equals the full source. Scene PATCH and an explicit-save editor accept complete sourceText. Character PATCH and an explicit-save selector support Onyx; automatic assignment preserves existing assignments. Changed narration clears only dependent playback references while retaining asset files. No schema, authentication, production records, existing Geminara books, paid audio, credentials, push, PR, merge or deployment were changed.
+
+Under Node22.23.1 with deterministic root/frontend npm ci, all27 frontend tests passed, including9 new narration regressions (the initial7 reproduced failures before the fix). Frontend types and lint passed with6 inherited warnings; root lint/typecheck/build and secret scan passed. Actual isolated Chromium375px component checks passed exact13k+ text saving, Onyx save and failed-save draft retention with no page errors. These are synthetic fixtures, not live Book Studio acceptance.
+
+Blocked checks: frontend production build cannot fetch Google Fonts; root aggregate tests cannot open /proc/sys/kernel/yama/ptrace_scope; the unchanged living-memory checker rejects the environment's origin fetch refspec. The resolved Library audit download failed through the supported helper twice (initial plus one bounded retry); authoritative repair-map bytes were not obtained. No exact private-draft data repair or authoritative2683-word comparison is claimed. Live narration remains UNVERIFIED. See docs/BOOK_STUDIO_NARRATION_REPAIR_20261028.md for remaining steps.
+
+
 ## 2026-10-24 — Feedback authorization release approved and reviewed
 
 The user explicitly approved updating PR170, merging and deploying the scoped feedback authorization fix. Implementation 2bd77429e91b9f2e383bdfe508476a1ce7f8da34 passed configured Codex review (receipt 6390005983, no findings), root CI40136168584 and focused CI40136168595. Root CI reports 2746 total tests, 2567 passed, 179 skipped and zero failures; all 309 inventory files completed. The focused workflow passed four frontend authorization tests and frontend lint/types. Five scoped local tests passed; local aggregate execution remains blocked by missing ptrace_scope and local frontend build by Google Fonts access. These local limitations are not CI failures.

@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-10-28 — Book Studio narration repair, local candidate
+
+Based on clean HEAD 7bc4385, the scoped candidate preserves exact complete chapter text when forming narration scenes; model excerpts are accepted only if their concatenation equals the full source. Scene PATCH and an explicit-save editor accept complete sourceText. Character PATCH and an explicit-save selector support Onyx; automatic assignment preserves existing assignments. Changed narration clears only dependent playback references while retaining asset files. No schema, authentication, production records, existing Geminara books, paid audio, credentials, push, PR, merge or deployment were changed.
+
+Under Node22.23.1 with deterministic root/frontend npm ci, all27 frontend tests passed, including9 new narration regressions (the initial7 reproduced failures before the fix). Frontend types and lint passed with6 inherited warnings; root lint/typecheck/build and secret scan passed. Actual isolated Chromium375px component checks passed exact13k+ text saving, Onyx save and failed-save draft retention with no page errors. These are synthetic fixtures, not live Book Studio acceptance.
+
+Blocked checks: frontend production build cannot fetch Google Fonts; root aggregate tests cannot open /proc/sys/kernel/yama/ptrace_scope; the unchanged living-memory checker rejects the environment's origin fetch refspec. The resolved Library audit download failed through the supported helper twice (initial plus one bounded retry); authoritative repair-map bytes were not obtained. No exact private-draft data repair or authoritative2683-word comparison is claimed. Live narration remains UNVERIFIED. See docs/BOOK_STUDIO_NARRATION_REPAIR_20261028.md for remaining steps.
+
+
 ## 2026-10-24 — Auth-status release approved and reviewed
 
 The user explicitly approved merge and production release of PR169 after exact implementation0ff5b0b775efac1335c65e95fe94dc23bf48369c passed configured Codex review6388783706 with no findings and CI40127156877. Root CI passed2745 tests (2566passed,179intendedskips,0failures); all308 inventory files passed. Eleven synthetic component regressions were separately verified on Command, not executed by root CI. The exact frontend preview dpl_9eBKYZEzNWtu1E6rG6u8pS2uzQzC is READY and passed8/8 synthetic Chrome checks at320/375px, including failure/incomplete/healthy/failed-refresh states, no overflow or page errors. These are simulated phone-width checks; user-reported iPhone loading acceptance remains distinct from Peggy-account/native-keyboard/save acceptance.

@@ -17,6 +17,7 @@ export async function PATCH(
     const { sceneId } = await params;
     const body = (await request.json()) as {
       title?: string;
+      sourceText?: string;
       summary?: string;
       mood?: string;
       location?: string;
