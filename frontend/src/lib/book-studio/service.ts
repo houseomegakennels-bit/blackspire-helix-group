@@ -1309,6 +1309,7 @@ function buildScenePrompt(book: BookRecord, scene: SceneRecord) {
   ].join("\n\n");
 
   const manifest: RenderManifest = {
+    ...(scene.renderManifest?.narrationVoice !== undefined ? { narrationVoice: scene.renderManifest.narrationVoice } : {}),
     compiledPrompt: prompt,
     characterReferenceIds,
     sceneReferenceIds,
@@ -2592,8 +2593,8 @@ function validateNarrationVoice(value: unknown) {
 }
 
 function sceneNarrationVoice(book: BookRecord, scene: SceneRecord): VoiceName {
-  validateNarrationVoice(scene.narrationVoice);
-  if (scene.narrationVoice != null) return scene.narrationVoice;
+  validateNarrationVoice(scene.renderManifest?.narrationVoice);
+  if (scene.renderManifest?.narrationVoice != null) return scene.renderManifest.narrationVoice;
   const primary = scene.characterIds
     .map((id) => book.characters.find((character) => character.id === id))
     .find((character) => Boolean(character));
@@ -2672,7 +2673,7 @@ export async function updateCharacterBible(
   ).book;
 }
 
-export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) {
+export async function updateScene(sceneId: string, patch: Partial<SceneRecord> & { narrationVoice?: VoiceName | null }) {
   validateNarrationVoice(patch.narrationVoice);
   if (patch.sourceText !== undefined && (typeof patch.sourceText !== "string" || !patch.sourceText.trim())) {
     throw new Error("Narration text must be non-empty text.");
@@ -2685,11 +2686,7 @@ export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) 
     await mutateBookRecord(book.id, (draft) => {
       const scene = draft.scenes.find((candidate) => candidate.id === sceneId);
       if (!scene) throw new Error("Scene not found.");
-      if (patch.narrationVoice !== undefined) {
-        const previousVoice = sceneNarrationVoice(draft, scene);
-        scene.narrationVoice = patch.narrationVoice;
-        if (previousVoice !== sceneNarrationVoice(draft, scene)) invalidateNarration(draft, scene);
-      }
+      const previousVoice = patch.narrationVoice !== undefined ? sceneNarrationVoice(draft, scene) : undefined;
       if (patch.sourceText !== undefined && patch.sourceText !== scene.sourceText) {
         scene.sourceText = patch.sourceText;
         scene.estimatedDurationSeconds = estimateDuration(patch.sourceText);
@@ -2706,7 +2703,9 @@ export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) 
       if (patch.modifiers) scene.modifiers = safeJson(patch.modifiers as SceneCharacterModifier[]);
       const { prompt, manifest } = buildScenePrompt(draft, scene);
       scene.imagePrompt = patch.imagePrompt ?? prompt;
+      if (patch.narrationVoice !== undefined) manifest.narrationVoice = patch.narrationVoice;
       scene.renderManifest = manifest;
+      if (previousVoice !== undefined && previousVoice !== sceneNarrationVoice(draft, scene)) invalidateNarration(draft, scene);
       return draft;
     })
   ).book;

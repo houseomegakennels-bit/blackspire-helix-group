@@ -308,20 +308,23 @@ export async function generateImageBuffer({
 
 function splitTextForSpeech(text: string, limit = 3900) {
   const segments: string[] = [];
-  let current = "";
-
-  for (const sentence of text.split(/(?<=[.!?])\s+/)) {
-    if (!sentence) continue;
-    if ((current + sentence).length > limit && current) {
-      segments.push(current.trim());
-      current = sentence;
-    } else {
-      current = `${current} ${sentence}`.trim();
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + limit, text.length);
+    if (end < text.length) {
+      const window = text.slice(start, end);
+      const sentences = [...window.matchAll(/[.!?]\s+/g)];
+      const whitespace = [...window.matchAll(/\s+/g)];
+      const boundary = sentences.at(-1) ?? whitespace.at(-1);
+      if (boundary) end = start + boundary.index + boundary[0].length;
+      // An unusually long word still needs a bounded request; do not split a
+      // UTF-16 surrogate pair. Every character/space remains in exactly one chunk.
+      if (/[\uD800-\uDBFF]/.test(text[end - 1])) end -= 1;
     }
+    segments.push(text.slice(start, end));
+    start = end;
   }
-
-  if (current.trim()) segments.push(current.trim());
-  return segments.length ? segments : [text.slice(0, limit)];
+  return segments;
 }
 
 async function probeMediaDurationSeconds(filePath: string) {

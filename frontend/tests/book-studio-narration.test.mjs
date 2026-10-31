@@ -159,7 +159,7 @@ test('explicit scene Onyx overrides empty or conflicting cast without changing c
     const response = await s.load('app/api/scenes/[sceneId]/route').PATCH(
       { json: async () => ({ narrationVoice: 'onyx' }) }, { params: Promise.resolve({ sceneId: 'target-scene' }) });
     assert.equal(response.status, 200);
-    assert.equal(s.books[0].scenes[0].narrationVoice, 'onyx');
+    assert.equal(s.books[0].scenes[0].renderManifest.narrationVoice, 'onyx');
     assert.deepEqual(s.books[0].scenes[0].characterIds, characterIds);
     await s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]);
     assert.equal(s.speech.at(-1).voice, 'onyx');
@@ -170,7 +170,7 @@ test('invalid explicit narration voice is rejected on save and render, never sil
   const s = setup(); const before = JSON.stringify(s.books);
   for (const narrationVoice of ['', 'ONYX', 'invented', 123, {}]) await assert.rejects(s.service.updateScene('target-scene', { narrationVoice }));
   assert.equal(JSON.stringify(s.books), before);
-  s.books[0].scenes[0].narrationVoice = 'invalid';
+  s.books[0].scenes[0].renderManifest = { narrationVoice: 'invalid' };
   await assert.rejects(s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]), /voice/i);
   assert.equal(s.speech.length, 0);
 });
@@ -190,24 +190,26 @@ test('effective voice changes invalidate playback; identical override and unrela
   assert.equal(s.speech.at(-1).voice, 'ash');
 });
 
-test('scene voice survives actual database serialization and reload; absent schema fails before any writes', async () => {
-  const s = setup(); const rows = new Map(); let absent = true;
+test('scene voice survives existing JSON database serialization and prompt rebuilds without a new column', async () => {
+  const s = setup(); const rows = new Map();
   s.dependencies['@supabase/supabase-js'] = {};
   const store = s.load('lib/book-studio/store', '\nexport { persistBookToDatabase, toBookRecord };', { process: { env: {}, cwd: () => '/synthetic' } });
   const client = { from(table) { return {
-    select(column) { return {
-      limit: async () => ({ error: absent && column === 'narration_voice' ? { message: 'missing column' } : null }),
+    select() { return {
+      limit: async () => ({ error: null }),
       eq: async () => ({ data: [], error: null }),
     }; },
     upsert: async value => { rows.set(table, structuredClone(value)); return { error: null }; },
   }; } };
-  s.books[0].scenes[0].narrationVoice = 'onyx';
-  await assert.rejects(store.persistBookToDatabase(client, s.books[0]), /schema/);
-  assert.equal(rows.size, 0);
-  absent = false;
+  await s.service.updateScene('target-scene', { narrationVoice: 'onyx' });
+  await s.service.updateScene('target-scene', { mood: 'tense' });
+  await s.service.updateCharacterBible('target-character', { coreDescription: 'New visual notes' });
+  assert.equal(s.books[0].scenes[0].renderManifest.narrationVoice, 'onyx');
   await store.persistBookToDatabase(client, s.books[0]);
   const restored = store.toBookRecord({ book: rows.get('book_studio_books'), scenes: rows.get('book_studio_scenes'), chapters: rows.get('book_studio_chapters'), characters: rows.get('book_studio_characters'), assets: rows.get('book_studio_assets'), references: [] });
-  assert.equal(restored.scenes[0].narrationVoice, 'onyx');
+  assert.equal(restored.scenes[0].renderManifest.narrationVoice, 'onyx');
+  assert.equal(Object.hasOwn(rows.get('book_studio_scenes')[0], 'narration_voice'), false);
+  assert.equal(Object.hasOwn(restored.scenes[0], 'narrationVoice'), false);
   assert.equal(restored.scenes[0].sourceText, 'Old text');
   assert.deepEqual(Array.from(restored.scenes[0].characterIds), ['target-character']);
 });
@@ -237,4 +239,16 @@ test('explicit castless scene Onyx reaches the actual speech HTTP request body',
     url: 'https://api.openai.com/v1/audio/speech', method: 'POST',
     body: { model: 'gpt-4o-mini-tts', voice: 'onyx', input: 'Old text', response_format: 'wav' },
   }]);
+});
+
+test('speech chunks stay bounded and preserve exact source for oversized sentences and words', () => {
+  const s = setup(); s.dependencies['node:child_process'] = {};
+  const media = s.load('lib/book-studio/media', '\nexport { splitTextForSpeech };');
+  for (const text of ['word '.repeat(2000).trim(), 'X'.repeat(8000), '😀'.repeat(3000), '  First.\n\n' + 'Unbroken text '.repeat(1500) + ' End.\n']) {
+    const chunks = media.splitTextForSpeech(text);
+    assert.ok(chunks.length > 1);
+    assert.ok(chunks.every(chunk => chunk.length > 0 && chunk.length <= 3900));
+    assert.equal(chunks.join(''), text);
+    assert.ok(chunks.every(chunk => !/[\uD800-\uDBFF]$/.test(chunk)));
+  }
 });

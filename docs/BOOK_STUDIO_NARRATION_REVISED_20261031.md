@@ -30,30 +30,39 @@ Scene PATCH now accepts nullable `narrationVoice` from the supported voice allow
 
 The new explicit-save scene selector does not generate audio. Changing an effective voice clears the scene audio and its chapter playback links while retaining historical asset files. Identical overrides and character-voice changes masked by an override do not invalidate audio. Source text, scene identity and cast identity are preserved.
 
-The database mapper saves/loads `narration_voice`. **A new nullable column with an allowlist CHECK is required before deploying this code.** `BOOK_STUDIO_NARRATION_VOICE_SCHEMA.sql` is an unapplied review proposal. The new writer checks that column before any book writes, refusing cleanly if unavailable. No grants, RLS or credential changes are proposed.
+### Narrower final scope: existing JSON, no schema change
 
-Supported migration generation is pending: the current CLI failed before command handling when attempting to create its default `/home/agent/.supabase` directory on a read-only filesystem. A pinned2.81.3 CLI installation also exited1 before exposing a usable CLI. Neither home permissions nor credentials were changed. The SQL is deliberately not disguised as a CLI-generated migration. Generate/review the migration in a supported isolated CLI environment; do not run a bulk migration push.
+The final candidate stores the sole authoritative override as optional `renderManifest.narrationVoice`, serialized through the existing `render_manifest` JSON column. The API's top-level `narrationVoice` is a validated patch convenience only, never a second persisted field. Every `buildScenePrompt` rebuild carries the nested override forward. No store schema, permissions, cast identity or global default changes are required.
+
+The initial column-based attempt is preserved at local commit `cc1cceb` for review, but is superseded and must not be deployed alone. Its SQL proposal and added store-column code are removed from the final tree. There is no production migration to apply. The existing store source is identical to2937a5e.
+
+Independent review of that predecessor found oversized sentences could exceed the speech chunk limit after full-source preservation. The successor bounds all speech chunks to3900 UTF-16 code units, prefers sentence/whitespace boundaries, preserves every character/space, and avoids splitting surrogate pairs. Long punctuation-free text and long words now have explicit regression coverage. The current nine manuscript segments were already below the limit.
 
 ## Verification
 
 Node22.23.1; installed locked frontend dependencies retained. Results:
 
-- All33 frontend tests passed, including15 narration tests. Initial3 scene-voice regressions failed before implementation.
+- All34 frontend tests passed, including16 narration tests. Initial3 scene-voice regressions failed before implementation.
 - Exact supplied source verified across9 scenes; all nine synthetic narration calls carry Onyx, concatenate exactly, and leave the unrelated-book fixture unchanged.
 - Actual scene PATCH → service → media HTTP JSON has `voice: "onyx"` with an empty cast. Fetch is stubbed to a deliberate failure before generation; no network or cost.
-- Actual database serialization/reload retains the override; missing-column simulation produces zero writes.
-- The SQL proposal executes successfully in fresh embedded PostgreSQL (PGlite), preserves existing rows/text as null-override legacy data, accepts Onyx and rejects invalid values. Native/remote migration acceptance remains UNVERIFIED.
+- Actual existing-JSON database serialization/reload retains the override after scene and character prompt rebuilds; the row contains no new narration_voice column and the model contains no duplicate top-level voice.
 - Actual React controls at375px pass explicit scene Onyx save and all15,725 source characters saved unchanged, with no page errors. The first harness attempt used an overly exact label matcher; DOM inspection showed the implicit label includes select-option text, so the corrected unique label query passed. Callbacks remain synthetic, not production persistence.
 - Frontend types and lint pass with6 inherited warnings. Synthetic-font Next build passes compilation, TypeScript and73 static pages; existing dynamic video-file tracing warning remains. This is not the real-font release build.
 
-Commands: `node --test frontend/tests/*.test.mjs`; `npm --prefix frontend run lint`; `(cd frontend && node node_modules/typescript/bin/tsc --noEmit)`. Private plan/schema/browser verifiers and logs are under `/workspace/scratch/chapter-one-revised` and `/tmp/book-revised-*`.
+Commands: `node --test frontend/tests/*.test.mjs`; `npm --prefix frontend run lint`; `(cd frontend && node node_modules/typescript/bin/tsc --noEmit)`. Private plan/browser verifiers and logs are under `/workspace/scratch/chapter-one-revised` and `/tmp/book-revised-*`.
 
 ## Remaining gates
 
-1. Finish supported migration-file generation, independent review and exact-revision CI. The unchanged aggregate runner still needs Yama/PID-namespace containment. No bypass or retry was attempted. CI must explicitly run frontend narration tests.
+1. Finish independent review of the exact successor and exact-revision CI. No migration is required. The unchanged aggregate runner still needs Yama/PID-namespace containment. No bypass or retry was attempted. CI must explicitly run frontend narration tests.
 2. Real-font build still requires approved network access; the prior proxy403 endpoint was not retried. Synthetic build output is not for release.
-3. Publication approval is recorded for only the tested narration fix. Unresolved verification and schema prerequisites still block release; schema execution needs explicit handling within the approved scope. Apply only the reviewed nullable-column migration before the candidate frontend.
+3. Publication approval is recorded for only the tested narration fix. Unresolved verification prerequisites still block release. Do not apply the superseded SQL proposal. Reverify the approved Vercel project/team and production revision immediately before any later release.
 4. Bind verified existing private-draft scene IDs to this new map, review changed boundaries, and obtain runtime repair authority before source/voice saves. Verify hashes, complete2742-word coverage and all nine stored overrides after save/reload.
 5. Paid audio remains prohibited in this task. Existing metadata cannot establish prior preparation spend plus narration within$1; no usage ledger, spend reservation or hard dollar guard exists. Resolve billed preparation usage and enforce remaining approved budget/no-top-up before any later generation. Never retry uncertain paid requests blindly.
 
 No live narration or production readiness is claimed.
+
+### Production readback and material delta
+
+An authenticated read-only Vercel deployment listing for frontend project `prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou`, team `team_CaRyRaulJaFnCLSfTdyRYNIW`, returned latest production READY deployment `dpl_GVhFqAhEunea8XHfpDiZAMax5eR7` at `7bc4385d623f181d1f8daa9baf926d45b92018db`. This corroborates the supplied baseline; it is not a new deployment or separate current-alias verification. No credentials or environment-secret values were requested.
+
+Relative to the original tested patch, material additions are the explicit per-scene override in existing render-manifest JSON, its selector/patch validation and persistence tests, source-verified nine-segment2742-word plan, and bounded lossless speech chunks. The final net change has no SQL/migration/store implementation delta. Publication is conditional on the remaining gates, and the parent must receive this scope difference before release.

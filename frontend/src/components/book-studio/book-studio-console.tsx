@@ -900,8 +900,8 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                           </div>
 
                           <SceneNarrationVoiceEditor
-                            key={`${scene.id}:voice:${scene.narrationVoice ?? ""}`}
-                            narrationVoice={scene.narrationVoice}
+                            key={`${scene.id}:voice:${scene.renderManifest?.narrationVoice ?? ""}`}
+                            narrationVoice={scene.renderManifest?.narrationVoice}
                             onSave={(narrationVoice) => callJson(`/api/scenes/${scene.id}`, {
                               method: "PATCH",
                               headers: { "Content-Type": "application/json" },

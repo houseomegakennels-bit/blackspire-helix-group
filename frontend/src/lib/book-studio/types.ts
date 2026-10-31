@@ -113,6 +113,7 @@ export type SceneCharacterModifier = {
 };
 
 export type RenderManifest = {
+  narrationVoice?: VoiceName | null;
   compiledPrompt: string;
   characterReferenceIds: string[];
   sceneReferenceIds: string[];
@@ -128,7 +129,6 @@ export type SceneRecord = {
   order: number;
   title: string;
   sourceText: string;
-  narrationVoice?: VoiceName | null;
   summary: string;
   mood: string;
   location: string;
