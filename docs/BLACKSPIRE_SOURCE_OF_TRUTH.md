@@ -1,5 +1,13 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-31 — Narration release approved and independently reviewed
+
+Implementation `88a8cb73eb3a6387e83969f4c5907573501b9b94` passed installed Codex review receipt6544212371 and summary6544197745 with no findings. Existing root CI41205751033 passed (2567 passed,179 skipped,zero failures; all309 inventory files completed with clean containment). Separately,34 frontend tests passed locally and in independent review. Configured normal frontend preview `dpl_FTrMA5qVv8TupMUBvKdrR7id8ojc` is READY. No migration is required.
+
+The user explicitly approved this narrow release and PR172 review, then requested the installed Codex integration. The general engineering skill requires review and approval; independent installed Codex review plus explicit user approval provide those substantive controls. They do not constitute a formal GitHub APPROVED review. GitHub rejected self-approval with422, and no retry or impersonation occurred. Current normal PR metadata reports mergeable=true and mergeable_state=clean; any platform-enforced requirement still applies during ordinary merge, without overrides. Earlier statements that another human reviewer was definitely required were unsupported: merged PR169/170 used clean installed Codex review receipts without formal approval submissions. Branch-protection,collaborator and team reads returned Forbidden; those settings remain UNVERIFIED and denied reads were not retried.
+
+Advance the genuine reviewed implementation anchor to88a8cb7 without changing its checker. This canonical-documentation-only successor requires exact-head CI and installed review before history-preserving merge. Expected premerge REVIEWED_COMMIT_NOT_ANCESTOR is not a bypass; verify ancestry and canonical-only delta after merge. Frontend production remains7bc4385 via `dpl_GVhFqAhEunea8XHfpDiZAMax5eR7`, verified through blackspirehelix.com and marked as a rollback candidate, until release readback proves otherwise. No credentials,security settings,book data or paid audio changes are authorized by this release. Operator sign-in is parent-reported verified; exact source-ID binding,book repair and usage-budget verification remain separate. Live narration remains UNVERIFIED.
+
 ## 2026-10-31 — Narration hosted gates verified; PR approval pending
 
 Exact implementation `88a8cb73eb3a6387e83969f4c5907573501b9b94` passed independent review with no unresolved findings and all34 frontend tests. Existing GitHub CI run41205751033 passed:2746 root tests,2567 passed,179 skipped,zero failures; all309 inventory files completed with clean containment. Database,build,lint,types,security,audit,preflight and evidence checks passed. Those root tests are separate from the34 locally run frontend tests. The configured normal frontend preview build `dpl_FTrMA5qVv8TupMUBvKdrR7id8ojc` is READY for that exact source. The local font proxy403 was not retried; hosted build success resolves the build gate without bypassing local access or containment restrictions.
@@ -1352,7 +1360,7 @@ Supabase quota remains the established account-owner blocker. Current authentica
 
 Retained VPS artifacts passed digest/deployment identity and snapshot schema checks; historical provider success is corroborated for `b71c9cd7178a76c0e86c15d6f3b633ed13c278b8`. Neither artifact is a currently proven healthy rollback because provider/configuration recovery and a functional rehearsal remain outstanding. Independent follow-up found retained `608b10…` and `b71c9c…` reject the new permission names anywhere in grant history; a later successor removing them does not repair old-runtime compatibility. The pre-grant snapshot remains preserved. An immutable current-main `53adf74…` recovery candidate was prepared; its exact authorization modules passed the post-grant snapshot chain and all twelve permissions without rewriting history. This is compatibility evidence only; functional rollback still requires recovered dependencies and a controlled rehearsal. PR merge and deployment remain held. Exact gate table, protected local helper locations, preparation recovery paths, and next actions are maintained in `/tmp/zola-astra-activation-current.md`.
 
-- Last verified implementation commit: `2bd77429e91b9f2e383bdfe508476a1ce7f8da34`
+- Last verified implementation commit: `88a8cb73eb3a6387e83969f4c5907573501b9b94`
 
 ## 2026-09-04 — Activation recovery delta
 
