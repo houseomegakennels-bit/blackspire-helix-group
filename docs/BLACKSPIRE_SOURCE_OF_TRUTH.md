@@ -1,5 +1,15 @@
 # Blackspire Canonical Source of Truth
 
+## 2026-10-31 — Narration hosted gates verified; PR approval pending
+
+Exact implementation `88a8cb73eb3a6387e83969f4c5907573501b9b94` passed independent review with no unresolved findings and all34 frontend tests. Existing GitHub CI run41205751033 passed:2746 root tests,2567 passed,179 skipped,zero failures; all309 inventory files completed with clean containment. Database,build,lint,types,security,audit,preflight and evidence checks passed. Those root tests are separate from the34 locally run frontend tests. The configured normal frontend preview build `dpl_FTrMA5qVv8TupMUBvKdrR7id8ojc` is READY for that exact source. The local font proxy403 was not retried; hosted build success resolves the build gate without bypassing local access or containment restrictions.
+
+The user authorized narrow tested production publication. PR172 remains draft and unmerged; authenticated review readback returned no submitted reviews. The repository CI/CD skill requires at least one approval before merge. No review was submitted on the user's behalf and no direct production deployment was used to bypass that gate. A read-only GitHub branch-protection request returned Forbidden; server-enforced review settings are therefore UNVERIFIED, and the denied request was not retried. Smallest pending release input is an authorized reviewer approval on the exact candidate and verification of any server-required release checks. Canonical release evidence is preserved on a separate documentation branch so the exact tested candidate is unchanged; this documentation commit is not a newly tested release candidate.
+
+Fresh Vercel readback confirms blackspirehelix.com resolves to frontend project `prj_a9x4Tuzgzq6XrvtdtYNxONwL8Fou`, deployment `dpl_GVhFqAhEunea8XHfpDiZAMax5eR7`, READY production at `7bc4385d623f181d1f8daa9baf926d45b92018db`; Vercel marks it a rollback candidate. No production mutation occurred. No migration is required. Operator browser,book records,credentials and paid audio remain untouched. Authenticated narration acceptance remains UNVERIFIED. Parent reports operator sign-in verified; source-ID binding,revision repair and the separate usage-budget gate remain parent/operator tasks.
+
+Evidence: https://github.com/houseomegakennels-bit/blackspire-helix-group/pull/172 and https://github.com/houseomegakennels-bit/blackspire-helix-group/actions/runs/41205751033 .
+
 ## 2026-10-31 — Revised Chapter One, explicit scene narration voice
 
 The revised source is verified as2742 whitespace words,15725 characters, UTF8 SHA256 `5d42b3e6c78a18d00ae8926c8369b4f72316666449dd20f5001d1101a2274534`. It supersedes the historical2683-word repair map. Private prose and the complete nine-segment source plan remain outside Git. The redacted plan records exact contiguous offsets and hashes; production scene IDs remain unbound and must not be guessed.
