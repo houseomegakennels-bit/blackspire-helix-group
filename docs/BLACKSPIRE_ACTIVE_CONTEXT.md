@@ -1,5 +1,14 @@
 # Blackspire Active Context
 
+## 2026-10-31 — Revised Chapter One, explicit scene narration voice
+
+The revised source is verified as2742 whitespace words,15725 characters, UTF8 SHA256 `5d42b3e6c78a18d00ae8926c8369b4f72316666449dd20f5001d1101a2274534`. It supersedes the historical2683-word repair map. Private prose and the complete nine-segment source plan remain outside Git. The redacted plan records exact contiguous offsets and hashes; production scene IDs remain unbound and must not be guessed.
+
+A local candidate adds validated per-scene narrationVoice, an explicit-save selector and database serialization. Explicit Onyx wins over empty/conflicting casts; invalid explicit values fail before narration instead of falling back. Existing global defaults and cast identities are unchanged. Effective voice changes invalidate only dependent playback. A missing database column fails before any book writes. The nullable column/check constraint is a local review-only SQL proposal, not an applied or CLI-generated migration; migration generation/review and approved schema deployment are new release prerequisites.
+
+All33 frontend tests pass, including15 narration tests; the initial3 new scene-voice tests failed before the repair. Exact supplied prose was independently verified across9 scenes, each Onyx, with unchanged unrelated-book fixture. Stubbed actual speech HTTP payload, database serialization/reload and missing-schema refusal pass. Embedded PostgreSQL verifies the SQL constraint and unchanged existing rows; this is not remote Supabase acceptance. Frontend lint/types and synthetic-font build pass, with6 inherited lint warnings and the existing video tracing warning. No publication, credentials, live requests, paid audio, production data repair or old-map application occurred. See docs/BOOK_STUDIO_NARRATION_REVISED_20261031.md for current gates; earlier entries are historical.
+
+
 ## 2026-10-28 — Book Studio narration repair, local candidate
 
 Based on clean HEAD 7bc4385, the scoped candidate preserves exact complete chapter text when forming narration scenes; model excerpts are accepted only if their concatenation equals the full source. Scene PATCH and an explicit-save editor accept complete sourceText. Character PATCH and an explicit-save selector support Onyx; automatic assignment preserves existing assignments. Changed narration clears only dependent playback references while retaining asset files. No schema, authentication, production records, existing Geminara books, paid audio, credentials, push, PR, merge or deployment were changed.

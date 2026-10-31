@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { CharacterVoiceEditor, NarrationTextEditor } from "@/components/book-studio/narration-controls";
+import { CharacterVoiceEditor, NarrationTextEditor, SceneNarrationVoiceEditor } from "@/components/book-studio/narration-controls";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -898,6 +898,16 @@ export function BookStudioConsole({ initialBook }: { initialBook: HydratedBook }
                             <div className="text-xl font-semibold text-white">{scene.title}</div>
                             <p className="mt-2 text-sm leading-7 text-[var(--copy-soft)]">{scene.summary}</p>
                           </div>
+
+                          <SceneNarrationVoiceEditor
+                            key={`${scene.id}:voice:${scene.narrationVoice ?? ""}`}
+                            narrationVoice={scene.narrationVoice}
+                            onSave={(narrationVoice) => callJson(`/api/scenes/${scene.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ narrationVoice }),
+                            })}
+                          />
 
                           <NarrationTextEditor
                             key={`${scene.id}:${scene.sourceText}`}

@@ -1,5 +1,7 @@
 # Book Studio narration repair — local candidate
 
+**Historical checkpoint.** Current source, scene-voice behavior and schema/release requirements are superseded by [the October31 revision](BOOK_STUDIO_NARRATION_REVISED_20261031.md). Do not apply the old2683-word map or use the earlier no-migration/castless-fallback checklist for the new candidate.
+
 Scope: preserve complete source narration and add explicit source/voice controls. Base: `7bc4385`. No production actions or paid generation were performed. Existing books are not automatically migrated. The unrelated luxury and authentication work is excluded.
 
 ## Behavior

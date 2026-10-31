@@ -61,3 +61,29 @@ export function CharacterVoiceEditor({ assignment, onSave }: {
     </form>
   );
 }
+
+export function SceneNarrationVoiceEditor({ narrationVoice, onSave }: {
+  narrationVoice?: VoiceName | null;
+  onSave: (voice: VoiceName | null) => Promise<unknown>;
+}) {
+  const [voice, setVoice] = useState<VoiceName | "">(narrationVoice ?? "");
+  const [saving, setSaving] = useState(false);
+  return (
+    <form className="space-y-3" onSubmit={async (event) => {
+      event.preventDefault();
+      if (saving) return;
+      setSaving(true);
+      try { await onSave(voice || null); } finally { setSaving(false); }
+    }}>
+      <label className="block">
+        <span className="mb-2 block text-sm text-[var(--copy-soft)]">Scene narration voice</span>
+        <select className={fieldClass} value={voice} disabled={saving} onChange={(event) => setVoice(event.currentTarget.value as VoiceName | "")}>
+          <option value="">Existing cast policy (sage if no assigned voice)</option>
+          {VOICE_NAMES.map((name) => <option key={name} value={name}>{name === "onyx" ? "Onyx" : name}</option>)}
+        </select>
+      </label>
+      <p className="text-xs text-[var(--copy-muted)]">An explicit voice reads this entire scene, including scenes without characters. Cast identities stay unchanged. Saving does not generate audio.</p>
+      <button type="submit" className={buttonClass} disabled={saving || voice === (narrationVoice ?? "")}>{saving ? "Saving…" : "Save scene voice"}</button>
+    </form>
+  );
+}

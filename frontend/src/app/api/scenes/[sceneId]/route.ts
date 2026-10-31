@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { guardSignedInApi } from "@/lib/operator-access";
 import { hydrateBookForClient, updateScene } from "@/lib/book-studio/service";
-import type { SceneCharacterModifier, ScenePriority } from "@/lib/book-studio/types";
+import type { SceneCharacterModifier, ScenePriority, VoiceName } from "@/lib/book-studio/types";
 
 export const runtime = "nodejs";
 
@@ -18,6 +18,7 @@ export async function PATCH(
     const body = (await request.json()) as {
       title?: string;
       sourceText?: string;
+      narrationVoice?: VoiceName | null;
       summary?: string;
       mood?: string;
       location?: string;

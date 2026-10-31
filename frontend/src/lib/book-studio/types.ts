@@ -128,6 +128,7 @@ export type SceneRecord = {
   order: number;
   title: string;
   sourceText: string;
+  narrationVoice?: VoiceName | null;
   summary: string;
   mood: string;
   location: string;

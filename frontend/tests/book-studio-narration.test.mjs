@@ -150,3 +150,91 @@ test('saved Onyx selection reaches the actual speech HTTP request body', async (
     body: { model: 'gpt-4o-mini-tts', voice: 'onyx', input: 'Old text', response_format: 'wav' },
   }]);
 });
+
+test('explicit scene Onyx overrides empty or conflicting cast without changing character identity', async () => {
+  const s = setup(); const untouched = structuredClone(s.books[1]);
+  for (const characterIds of [[], ['target-character']]) {
+    s.books[0].scenes[0].characterIds = characterIds;
+    s.books[0].characters[0].voiceAssignment.characterVoice = 'cedar';
+    const response = await s.load('app/api/scenes/[sceneId]/route').PATCH(
+      { json: async () => ({ narrationVoice: 'onyx' }) }, { params: Promise.resolve({ sceneId: 'target-scene' }) });
+    assert.equal(response.status, 200);
+    assert.equal(s.books[0].scenes[0].narrationVoice, 'onyx');
+    assert.deepEqual(s.books[0].scenes[0].characterIds, characterIds);
+    await s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]);
+    assert.equal(s.speech.at(-1).voice, 'onyx');
+  }
+  assert.deepEqual(s.books[1], untouched);
+});
+test('invalid explicit narration voice is rejected on save and render, never silently falls back', async () => {
+  const s = setup(); const before = JSON.stringify(s.books);
+  for (const narrationVoice of ['', 'ONYX', 'invented', 123, {}]) await assert.rejects(s.service.updateScene('target-scene', { narrationVoice }));
+  assert.equal(JSON.stringify(s.books), before);
+  s.books[0].scenes[0].narrationVoice = 'invalid';
+  await assert.rejects(s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]), /voice/i);
+  assert.equal(s.speech.length, 0);
+});
+test('effective voice changes invalidate playback; identical override and unrelated cast voice preserve it', async () => {
+  const s = setup();
+  s.books[0].characters[0].voiceAssignment.characterVoice = 'cedar';
+  await s.service.updateScene('target-scene', { narrationVoice: 'onyx' });
+  assert.equal(s.books[0].scenes[0].audioAssetId, null);
+  assert.equal(s.books[0].chapters[0].videoAssetId, null);
+  s.books[0].scenes[0].audioAssetId = 'retained';
+  await s.service.updateScene('target-scene', { narrationVoice: 'onyx' });
+  await s.service.updateCharacterBible('target-character', { voiceAssignment: { narratorVoice: 'ash', characterVoice: 'ash', fallbackVoice: 'sage', rationale: 'Changed character' } });
+  assert.equal(s.books[0].scenes[0].audioAssetId, 'retained');
+  await s.service.updateScene('target-scene', { narrationVoice: null });
+  assert.equal(s.books[0].scenes[0].audioAssetId, null);
+  await s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]);
+  assert.equal(s.speech.at(-1).voice, 'ash');
+});
+
+test('scene voice survives actual database serialization and reload; absent schema fails before any writes', async () => {
+  const s = setup(); const rows = new Map(); let absent = true;
+  s.dependencies['@supabase/supabase-js'] = {};
+  const store = s.load('lib/book-studio/store', '\nexport { persistBookToDatabase, toBookRecord };', { process: { env: {}, cwd: () => '/synthetic' } });
+  const client = { from(table) { return {
+    select(column) { return {
+      limit: async () => ({ error: absent && column === 'narration_voice' ? { message: 'missing column' } : null }),
+      eq: async () => ({ data: [], error: null }),
+    }; },
+    upsert: async value => { rows.set(table, structuredClone(value)); return { error: null }; },
+  }; } };
+  s.books[0].scenes[0].narrationVoice = 'onyx';
+  await assert.rejects(store.persistBookToDatabase(client, s.books[0]), /schema/);
+  assert.equal(rows.size, 0);
+  absent = false;
+  await store.persistBookToDatabase(client, s.books[0]);
+  const restored = store.toBookRecord({ book: rows.get('book_studio_books'), scenes: rows.get('book_studio_scenes'), chapters: rows.get('book_studio_chapters'), characters: rows.get('book_studio_characters'), assets: rows.get('book_studio_assets'), references: [] });
+  assert.equal(restored.scenes[0].narrationVoice, 'onyx');
+  assert.equal(restored.scenes[0].sourceText, 'Old text');
+  assert.deepEqual(Array.from(restored.scenes[0].characterIds), ['target-character']);
+});
+
+test('explicit castless scene Onyx reaches the actual speech HTTP request body', async () => {
+  const s = setup();
+  s.books[0].scenes[0].characterIds = [];
+  const response = await s.load('app/api/scenes/[sceneId]/route').PATCH(
+    { json: async () => ({ narrationVoice: 'onyx' }) },
+    { params: Promise.resolve({ sceneId: 'target-scene' }) },
+  );
+  assert.equal(response.status, 200);
+  const requests = [];
+  s.dependencies['node:child_process'] = { spawn: () => assert.fail('No media process allowed') };
+  s.dependencies['node:fs/promises'].unlink = async () => {};
+  const media = s.load('lib/book-studio/media', '', {
+    process: { env: { OPENAI_API_KEY: 'synthetic-test-only' } },
+    AbortSignal,
+    fetch: async (url, options) => {
+      requests.push({ url, method: options.method, body: JSON.parse(options.body) });
+      return { ok: false, status: 503, text: async () => 'Synthetic stop before generation' };
+    },
+  });
+  s.dependencies['@/lib/book-studio/media'].generateSpeechAudio = media.generateSpeechAudio;
+  await assert.rejects(s.service.ensureSceneAudioAsset(s.books[0], s.books[0].scenes[0]), /Synthetic stop before generation/);
+  assert.deepEqual(requests, [{
+    url: 'https://api.openai.com/v1/audio/speech', method: 'POST',
+    body: { model: 'gpt-4o-mini-tts', voice: 'onyx', input: 'Old text', response_format: 'wav' },
+  }]);
+});

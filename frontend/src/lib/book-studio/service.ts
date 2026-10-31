@@ -2585,6 +2585,21 @@ function invalidateNarration(book: BookRecord, scene: SceneRecord) {
   }
 }
 
+function validateNarrationVoice(value: unknown) {
+  if (value !== null && value !== undefined && !VOICE_NAMES.includes(value as VoiceName)) {
+    throw new Error("Unsupported explicit narration voice.");
+  }
+}
+
+function sceneNarrationVoice(book: BookRecord, scene: SceneRecord): VoiceName {
+  validateNarrationVoice(scene.narrationVoice);
+  if (scene.narrationVoice != null) return scene.narrationVoice;
+  const primary = scene.characterIds
+    .map((id) => book.characters.find((character) => character.id === id))
+    .find((character) => Boolean(character));
+  return primary?.voiceAssignment?.characterVoice || fallbackVoice();
+}
+
 function validateVoiceAssignment(value: unknown) {
   if (!value || typeof value !== "object") throw new Error("A voice assignment is required.");
   const assignment = value as Record<string, unknown>;
@@ -2638,13 +2653,11 @@ export async function updateCharacterBible(
       character.requiredForRender = patch.requiredForRender ?? character.requiredForRender;
 
       if (patch.voiceAssignment !== undefined) {
-        const previousVoice = character.voiceAssignment?.characterVoice || fallbackVoice();
+        const previousVoices = draft.scenes.map((scene) => sceneNarrationVoice(draft, scene));
         character.voiceAssignment = safeJson(patch.voiceAssignment);
-        if (previousVoice !== (character.voiceAssignment?.characterVoice || fallbackVoice())) {
-          for (const scene of draft.scenes) {
-            if (scene.characterIds[0] === character.id) invalidateNarration(draft, scene);
-          }
-        }
+        draft.scenes.forEach((scene, index) => {
+          if (previousVoices[index] !== sceneNarrationVoice(draft, scene)) invalidateNarration(draft, scene);
+        });
       }
 
       autoLinkReferencesToCharacters(draft);
@@ -2660,6 +2673,7 @@ export async function updateCharacterBible(
 }
 
 export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) {
+  validateNarrationVoice(patch.narrationVoice);
   if (patch.sourceText !== undefined && (typeof patch.sourceText !== "string" || !patch.sourceText.trim())) {
     throw new Error("Narration text must be non-empty text.");
   }
@@ -2671,6 +2685,11 @@ export async function updateScene(sceneId: string, patch: Partial<SceneRecord>) 
     await mutateBookRecord(book.id, (draft) => {
       const scene = draft.scenes.find((candidate) => candidate.id === sceneId);
       if (!scene) throw new Error("Scene not found.");
+      if (patch.narrationVoice !== undefined) {
+        const previousVoice = sceneNarrationVoice(draft, scene);
+        scene.narrationVoice = patch.narrationVoice;
+        if (previousVoice !== sceneNarrationVoice(draft, scene)) invalidateNarration(draft, scene);
+      }
       if (patch.sourceText !== undefined && patch.sourceText !== scene.sourceText) {
         scene.sourceText = patch.sourceText;
         scene.estimatedDurationSeconds = estimateDuration(patch.sourceText);
@@ -2848,12 +2867,7 @@ export async function renderSceneImage(sceneId: string) {
 }
 
 async function ensureSceneAudioAsset(draft: BookRecord, scene: SceneRecord) {
-  const speakingCharacters = scene.characterIds
-    .map((characterId) => draft.characters.find((character) => character.id === characterId))
-    .filter((character): character is CharacterBible => Boolean(character));
-
-  const primaryCharacter = speakingCharacters[0];
-  const voice = primaryCharacter?.voiceAssignment?.characterVoice || fallbackVoice();
+  const voice = sceneNarrationVoice(draft, scene);
   const tempDir = bookStudioTempDir("audio");
   await mkdir(tempDir, { recursive: true });
   const tempPath = path.join(tempDir, `${scene.id}.wav`);

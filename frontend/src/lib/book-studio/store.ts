@@ -227,6 +227,7 @@ type SceneRow = {
   scene_order: number;
   title: string;
   source_text: string;
+  narration_voice?: SceneRecord["narrationVoice"];
   summary: string;
   mood: string;
   location: string;
@@ -418,6 +419,7 @@ function toBookRecord({
       order: scene.scene_order,
       title: scene.title,
       sourceText: scene.source_text,
+      narrationVoice: scene.narration_voice ?? null,
       summary: scene.summary,
       mood: scene.mood,
       location: scene.location,
@@ -590,6 +592,9 @@ async function deleteRowsNotInSet(
 }
 
 async function persistBookToDatabase(supabase: SupabaseClient, book: BookRecord) {
+  // Fail before any writes if the explicit-voice schema has not been deployed.
+  const { error: narrationSchemaError } = await supabase.from(SCENES_TABLE).select("narration_voice").limit(1);
+  if (narrationSchemaError) throw new Error("Book Studio narration voice schema is unavailable; no book changes saved.");
   const updatedAt = nowIso();
   const next = { ...book, updatedAt };
   const supportsReferenceChapterIds = await supportsReferenceChapterIdsColumn(supabase);
@@ -713,6 +718,7 @@ async function persistBookToDatabase(supabase: SupabaseClient, book: BookRecord)
     scene_order: scene.order,
     title: scene.title,
     source_text: scene.sourceText,
+    narration_voice: scene.narrationVoice ?? null,
     summary: scene.summary,
     mood: scene.mood,
     location: scene.location,
