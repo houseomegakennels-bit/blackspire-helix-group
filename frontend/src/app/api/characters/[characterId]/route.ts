@@ -29,6 +29,7 @@ export async function PATCH(
         | "vibe"
         | "continuityNotes"
         | "requiredForRender"
+        | "voiceAssignment"
       >
     >;
     const book = await updateCharacterBible(characterId, body);
